@@ -82,6 +82,12 @@ importers:
         specifier: workspace:*
         version: link:../../packages/ui
 
+  packages/contracts:
+    dependencies:
+      zod:
+        specifier: 4.4.3
+        version: 4.4.3
+
   packages/renderer: {}
 
   packages/simulation: {}

@@ -7,6 +7,9 @@ export default defineConfig({
       "@cnc-render/web/foundation": fileURLToPath(
         new URL("./apps/web/src/foundation.ts", import.meta.url),
       ),
+      "@cnc-render/contracts": fileURLToPath(
+        new URL("./packages/contracts/src/index.ts", import.meta.url),
+      ),
       "@cnc-render/ui": fileURLToPath(
         new URL("./packages/ui/src/index.ts", import.meta.url),
       ),

@@ -1,0 +1,33 @@
+{
+  "length": [
+    {
+      "millimeters": 25.4,
+      "inches": 1
+    },
+    {
+      "millimeters": 127,
+      "inches": 5
+    }
+  ],
+  "angles": [
+    {
+      "degrees": 180,
+      "radians": 3.141592653589793
+    },
+    {
+      "degrees": 90,
+      "radians": 1.5707963267948966
+    }
+  ],
+  "feeds": {
+    "rpm": 6000,
+    "mmPerMin": 254,
+    "inPerMin": 10,
+    "mmPerRev": 0.254,
+    "inPerRev": 0.01,
+    "mmPerTooth": 0.127,
+    "inPerTooth": 0.005
+  },
+  "absoluteTolerance": 1e-12,
+  "relativeTolerance": 1e-12
+}

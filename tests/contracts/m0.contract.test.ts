@@ -76,6 +76,8 @@ describe("M0 repository contract", () => {
       "test:visual",
       "test:a11y",
       "cargo:check",
+      "cargo:test",
+      "generate:contracts",
       "build",
       "bench",
       "check:bundle",
@@ -95,8 +97,9 @@ describe("M0 repository contract", () => {
       "cargo:check":
         "node scripts/run-cargo.mjs check --workspace --all-targets --locked",
       "cargo:test": "node scripts/run-cargo.mjs test --workspace --locked",
+      "generate:contracts": "node scripts/generate-contract-artifacts.mjs",
       verify:
-        "pnpm lint && pnpm typecheck && pnpm cargo:check && pnpm test:unit && pnpm test:contracts && pnpm check:forbidden-ui && pnpm build",
+        "pnpm lint && pnpm typecheck && pnpm cargo:check && pnpm test:unit && pnpm test:contracts && pnpm test:parity && pnpm check:forbidden-ui && pnpm build",
     });
     expect(manifest.scripts?.lint).toContain(
       "depcruise --config dependency-cruiser.config.cjs",
@@ -134,6 +137,7 @@ describe("M0 repository contract", () => {
   it("keeps every workspace package private and ESM-only", async () => {
     const packages = [
       ["apps/web/package.json", "@cnc-render/web"],
+      ["packages/contracts/package.json", "@cnc-render/contracts"],
       ["packages/ui/package.json", "@cnc-render/ui"],
       ["packages/simulation/package.json", "@cnc-render/simulation"],
       ["packages/renderer/package.json", "@cnc-render/renderer"],
@@ -156,6 +160,7 @@ describe("M0 repository contract", () => {
     ) as DependencyCruiserConfiguration;
     const requiredRules = [
       "no-circular",
+      "no-contracts-to-implementations",
       "no-core-to-ui",
       "no-ui-to-core",
       "no-simulation-to-adapters",

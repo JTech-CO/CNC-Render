@@ -1,6 +1,8 @@
 const packageTarget = (name) =>
   `^(?:packages/${name}(?:/|$)|(?:node_modules/)?@cnc-render/${name}(?:/|$))`;
 
+const implementationPackageNames = "ui|simulation|renderer|storage";
+const implementationPackages = `(?:${implementationPackageNames})`;
 const coreSource = "^packages/(?:simulation|renderer|storage)(?:/|$)";
 const coreTarget =
   "^(?:packages/(?:simulation|renderer|storage)(?:/|$)|(?:node_modules/)?@cnc-render/(?:simulation|renderer|storage)(?:/|$))";
@@ -17,6 +19,18 @@ module.exports = {
       from: {},
       to: {
         circular: true,
+      },
+    },
+    {
+      name: "no-contracts-to-implementations",
+      severity: "error",
+      comment:
+        "Domain and transport contracts are the lowest TypeScript layer and cannot import product implementations.",
+      from: {
+        path: "^packages/contracts(?:/|$)",
+      },
+      to: {
+        path: `^(?:packages/${implementationPackages}(?:/|$)|apps/web(?:/|$)|app(?:/|$)|(?:node_modules/)?@cnc-render/${implementationPackages}(?:/|$))`,
       },
     },
     {
@@ -85,7 +99,7 @@ module.exports = {
       comment:
         "Reusable packages cannot import either the web foundation or the site adapter.",
       from: {
-        path: "^packages/(?:ui|simulation|renderer|storage)(?:/|$)",
+        path: `^packages/(?:contracts|${implementationPackageNames})(?:/|$)`,
       },
       to: {
         path: "^(?:apps/web|app)(?:/|$)",
