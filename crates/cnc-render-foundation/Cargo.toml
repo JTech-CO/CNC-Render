@@ -1,0 +1,9 @@
+[package]
+name = "cnc-render-foundation"
+version = "0.1.0"
+edition.workspace = true
+publish = false
+
+[lib]
+path = "src/lib.rs"
+

@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: 24.18.0
+  PNPM_VERSION: 11.5.3
+  RUST_VERSION: 1.97.1
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install pinned pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Install pinned Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install pinned Rust
+        shell: bash
+        run: |
+          rustup toolchain install "$RUST_VERSION" --profile minimal --component clippy --component rustfmt
+          rustup default "$RUST_VERSION"
+
+      - name: Confirm pinned tool versions
+        shell: bash
+        run: |
+          test "$(node --version)" = "v${NODE_VERSION}"
+          test "$(pnpm --version)" = "$PNPM_VERSION"
+          test "$(rustc --version | awk '{print $2}')" = "$RUST_VERSION"
+
+      - name: Install dependencies from lockfile
+        run: pnpm install --frozen-lockfile
+
+      - name: Run repository verification
+        run: pnpm verify
+
+      - name: Check dependency boundaries explicitly
+        run: pnpm exec dependency-cruiser --config dependency-cruiser.config.cjs apps packages crates
+
+      - name: Check prohibited terminology
+        run: node scripts/check-doc-terms.mjs

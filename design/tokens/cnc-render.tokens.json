@@ -1,0 +1,153 @@
+{
+  "formatVersion": 1,
+  "name": "CNC Render Light",
+  "description": "CNC Render 디자인 백서 v1.0 §5.10의 라이트모드 전용 토큰 단일 출처",
+  "policy": {
+    "colorScheme": "light",
+    "lightOnly": true,
+    "allowSystemTheme": false,
+    "cssCustomPropertyPrefix": "--"
+  },
+  "tokens": {
+    "color": {
+      "app-bg": {
+        "$type": "color",
+        "$value": "#f4f6f8"
+      },
+      "surface-primary": {
+        "$type": "color",
+        "$value": "#ffffff"
+      },
+      "surface-secondary": {
+        "$type": "color",
+        "$value": "#f8fafc"
+      },
+      "surface-tertiary": {
+        "$type": "color",
+        "$value": "#eef2f6"
+      },
+      "border-subtle": {
+        "$type": "color",
+        "$value": "#e1e6ec"
+      },
+      "border-strong": {
+        "$type": "color",
+        "$value": "#c5ced8"
+      },
+      "text-primary": {
+        "$type": "color",
+        "$value": "#171a1f"
+      },
+      "text-secondary": {
+        "$type": "color",
+        "$value": "#56606e"
+      },
+      "text-muted": {
+        "$type": "color",
+        "$value": "#7a8492"
+      },
+      "text-disabled": {
+        "$type": "color",
+        "$value": "#a7afba"
+      },
+      "primary-600": {
+        "$type": "color",
+        "$value": "#2859c5"
+      },
+      "primary-700": {
+        "$type": "color",
+        "$value": "#2049a5"
+      },
+      "primary-100": {
+        "$type": "color",
+        "$value": "#e9f0ff"
+      },
+      "focus": {
+        "$type": "color",
+        "$value": "#0b57d0"
+      },
+      "success-fg": {
+        "$type": "color",
+        "$value": "#227447"
+      },
+      "success-bg": {
+        "$type": "color",
+        "$value": "#eaf6ef"
+      },
+      "warning-fg": {
+        "$type": "color",
+        "$value": "#9a5b00"
+      },
+      "warning-bg": {
+        "$type": "color",
+        "$value": "#fff3df"
+      },
+      "danger-fg": {
+        "$type": "color",
+        "$value": "#c13232"
+      },
+      "danger-bg": {
+        "$type": "color",
+        "$value": "#fdecec"
+      }
+    },
+    "space": {
+      "space-1": {
+        "$type": "dimension",
+        "$value": "4px"
+      },
+      "space-2": {
+        "$type": "dimension",
+        "$value": "8px"
+      },
+      "space-3": {
+        "$type": "dimension",
+        "$value": "12px"
+      },
+      "space-4": {
+        "$type": "dimension",
+        "$value": "16px"
+      },
+      "space-5": {
+        "$type": "dimension",
+        "$value": "20px"
+      },
+      "space-6": {
+        "$type": "dimension",
+        "$value": "24px"
+      },
+      "space-8": {
+        "$type": "dimension",
+        "$value": "32px"
+      }
+    },
+    "radius": {
+      "radius-control": {
+        "$type": "dimension",
+        "$value": "6px"
+      },
+      "radius-panel": {
+        "$type": "dimension",
+        "$value": "8px"
+      },
+      "radius-dialog": {
+        "$type": "dimension",
+        "$value": "10px"
+      }
+    },
+    "control": {
+      "control-sm": {
+        "$type": "dimension",
+        "$value": "28px"
+      },
+      "control-md": {
+        "$type": "dimension",
+        "$value": "32px"
+      },
+      "control-lg": {
+        "$type": "dimension",
+        "$value": "36px"
+      }
+    }
+  }
+}

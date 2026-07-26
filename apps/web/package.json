@@ -1,0 +1,19 @@
+{
+  "name": "@cnc-render/web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    "./foundation": {
+      "types": "./src/foundation.ts",
+      "import": "./src/foundation.ts"
+    }
+  },
+  "dependencies": {
+    "@cnc-render/renderer": "workspace:*",
+    "@cnc-render/simulation": "workspace:*",
+    "@cnc-render/storage": "workspace:*",
+    "@cnc-render/ui": "workspace:*"
+  }
+}
