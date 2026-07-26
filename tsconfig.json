@@ -1,0 +1,49 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["DOM", "DOM.Iterable", "ES2023"],
+    "allowJs": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "react-jsx",
+    "forceConsistentCasingInFileNames": true,
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ],
+    "paths": {
+      "@/*": ["./*"],
+      "@cnc-render/web/foundation": ["./apps/web/src/foundation.ts"],
+      "@cnc-render/ui": ["./packages/ui/src/index.ts"],
+      "@cnc-render/simulation": ["./packages/simulation/src/index.ts"],
+      "@cnc-render/renderer": ["./packages/renderer/src/index.ts"],
+      "@cnc-render/storage": ["./packages/storage/src/index.ts"]
+    }
+  },
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    "**/*.mts",
+    "**/*.js",
+    "**/*.mjs",
+    ".next/types/**/*.ts",
+    ".next/dev/types/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    ".next",
+    ".vinext",
+    ".wrangler",
+    "coverage",
+    "dist",
+    "target"
+  ]
+}

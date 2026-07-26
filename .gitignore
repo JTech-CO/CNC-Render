@@ -1,0 +1,68 @@
+# Dependencies
+node_modules/
+/.pnp
+.pnp.*
+/.pnpm-store/
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# Secrets and local environment
+.env*
+!.env.example
+.dev.vars
+.dev.vars.*
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Build and deployment output
+/.next/
+/.vinext/
+/.vite/
+/out/
+/dist/
+/.wrangler/
+/outputs/
+/work/
+/.turbo/
+/.cache/
+
+# Test output
+/coverage/
+/playwright-report/
+/test-results/
+/.nyc_output/
+*.lcov
+junit*.xml
+
+# Rust and generated WASM
+/target/
+**/target/
+crates/**/pkg/
+packages/**/pkg/
+/public/wasm/
+*.wasm
+*.wasm.map
+
+# Editor and operating-system files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Debug logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Deployment state
+/.vercel/
+
+# TypeScript generated files
+next-env.d.ts

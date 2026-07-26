@@ -1,0 +1,57 @@
+{
+  "name": "cnc-render",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.5.3",
+  "engines": {
+    "node": "24.18.0",
+    "pnpm": "11.5.3"
+  },
+  "scripts": {
+    "dev": "vinext dev",
+    "build": "vinext build",
+    "start": "vinext start",
+    "lint": "eslint . && depcruise --config dependency-cruiser.config.cjs apps packages crates && pnpm check:doc-terms && pnpm check:toolchain",
+    "typecheck": "tsc --noEmit",
+    "test": "pnpm test:unit && pnpm test:contracts",
+    "test:unit": "vitest run --config vitest.config.ts",
+    "test:contracts": "vitest run --config vitest.contracts.config.ts",
+    "test:parity": "node scripts/report-phase-gate.mjs test:parity M1",
+    "test:e2e": "node scripts/report-phase-gate.mjs test:e2e M3",
+    "test:visual": "node scripts/report-phase-gate.mjs test:visual M3",
+    "test:a11y": "node scripts/report-phase-gate.mjs test:a11y M9",
+    "cargo:check": "node scripts/run-cargo.mjs check --workspace --all-targets --locked",
+    "cargo:test": "node scripts/run-cargo.mjs test --workspace --locked",
+    "bench": "node scripts/report-phase-gate.mjs bench M3",
+    "check:bundle": "node scripts/report-phase-gate.mjs check:bundle M9",
+    "check:boundaries": "depcruise --config dependency-cruiser.config.cjs apps packages crates",
+    "check:doc-terms": "node scripts/check-doc-terms.mjs",
+    "check:forbidden-ui": "node scripts/check-forbidden-ui.mjs",
+    "check:toolchain": "node scripts/check-toolchain.mjs",
+    "verify": "pnpm lint && pnpm typecheck && pnpm cargo:check && pnpm test:unit && pnpm test:contracts && pnpm check:forbidden-ui && pnpm build"
+  },
+  "dependencies": {
+    "@cnc-render/web": "workspace:*",
+    "next": "16.2.6",
+    "react": "19.2.6",
+    "react-dom": "19.2.6"
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "1.37.1",
+    "@types/node": "22.19.19",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "6.0.2",
+    "@vitejs/plugin-rsc": "0.5.26",
+    "dependency-cruiser": "18.1.0",
+    "eslint": "9.39.4",
+    "eslint-config-next": "16.2.6",
+    "react-server-dom-webpack": "19.2.6",
+    "typescript": "5.9.3",
+    "vinext": "0.0.50",
+    "vite": "8.0.13",
+    "vitest": "4.1.10",
+    "wrangler": "4.92.0"
+  }
+}
