@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "invalid-g95-feed-reset",
+  "dialect": "common-v1",
+  "input": {
+    "file": "g95-feed-reset.nc",
+    "encoding": "utf-8"
+  },
+  "initialState": {
+    "toolpathId": "20000000-0000-4000-8000-000000000241",
+    "operationId": "20000000-0000-4000-8000-000000000242",
+    "positionMm": { "xMm": 0, "yMm": 0, "zMm": 0 }
+  },
+  "expected": {
+    "accepted": false,
+    "diagnostics": [
+      {
+        "code": "semantic.feed.missing",
+        "line": 5,
+        "column": 1,
+        "severity": "error",
+        "recoverable": false
+      }
+    ],
+    "endMm": { "xMm": 0, "yMm": 0, "zMm": 0 },
+    "pathLengthMm": { "total": 0, "rapid": 0, "feed": 0 },
+    "segmentTypes": [],
+    "sourceMap": []
+  },
+  "tolerance": {
+    "positionMm": 1e-9,
+    "pathLengthMm": 1e-9
+  },
+  "basis": {
+    "summary": "Changing from G94 to G95 invalidates the earlier F value.",
+    "calculation": "The first feed move after G95 is line 5 column 1 and must supply a new F.",
+    "references": [
+      "docs/gcode-support-matrix.md §G-code",
+      "LinuxCNC G93/G94/G95 feed modes"
+    ]
+  }
+}

@@ -33,6 +33,16 @@ name = "cnc-render-foundation"
 version = "0.1.0"
 
 [[package]]
+name = "cnc-render-gcode-core"
+version = "0.1.0"
+dependencies = [
+ "cnc-render-contracts",
+ "serde",
+ "serde_json",
+ "sha2",
+]
+
+[[package]]
 name = "const-oid"
 version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"

@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "invalid-initial-rotary-unsupported",
+  "dialect": "common-v1",
+  "input": {
+    "file": "initial-rotary-unsupported.nc",
+    "encoding": "utf-8"
+  },
+  "initialState": {
+    "toolpathId": "20000000-0000-4000-8000-000000000561",
+    "operationId": "20000000-0000-4000-8000-000000000562",
+    "positionMm": { "xMm": 0, "yMm": 0, "zMm": 0 },
+    "rotaryRad": { "aRad": 0.1, "bRad": 0, "cRad": 0 }
+  },
+  "expected": {
+    "accepted": false,
+    "diagnostics": [
+      {
+        "code": "semantic.rotary.not_lowered",
+        "line": 1,
+        "column": 1,
+        "severity": "error",
+        "recoverable": false
+      }
+    ],
+    "endMm": { "xMm": 0, "yMm": 0, "zMm": 0 },
+    "pathLengthMm": { "total": 0, "rapid": 0, "feed": 0 },
+    "segmentTypes": [],
+    "sourceMap": [],
+    "programControlEvents": []
+  },
+  "tolerance": { "positionMm": 1e-9, "pathLengthMm": 1e-9 },
+  "basis": {
+    "summary": "The XYZ-only M1 Toolpath IR cannot preserve a nonzero initial rotary pose.",
+    "calculation": "A=0.1 rad is finite but not lowerable; request validation anchors the fatal diagnostic at 1:1.",
+    "references": [
+      "docs/gcode-support-matrix.md §모달·단위·이송 규칙",
+      "docs/architecture-decisions/0004-gcode-parser.md §3. canonical 상태와 수치"
+    ]
+  }
+}

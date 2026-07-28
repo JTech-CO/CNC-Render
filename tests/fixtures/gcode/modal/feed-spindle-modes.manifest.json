@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "modal-feed-spindle-modes",
+  "dialect": "common-v1",
+  "input": {
+    "file": "feed-spindle-modes.nc",
+    "encoding": "utf-8"
+  },
+  "initialState": {
+    "toolpathId": "20000000-0000-4000-8000-000000000501",
+    "operationId": "20000000-0000-4000-8000-000000000502",
+    "positionMm": { "xMm": 0, "yMm": 0, "zMm": 0 }
+  },
+  "expected": {
+    "accepted": true,
+    "diagnostics": [],
+    "endMm": { "xMm": 40, "yMm": 0, "zMm": 0 },
+    "pathLengthMm": { "total": 40, "rapid": 0, "feed": 40 },
+    "segmentTypes": ["linear", "linear", "linear", "linear"],
+    "segmentDetails": [
+      {
+        "segmentIndex": 0,
+        "segmentType": "linear",
+        "feedMmPerMin": 100
+      },
+      {
+        "segmentIndex": 1,
+        "segmentType": "linear",
+        "feedMmPerMin": 159.15494309189535
+      },
+      {
+        "segmentIndex": 2,
+        "segmentType": "linear",
+        "feedMmPerMin": 100
+      },
+      {
+        "segmentIndex": 3,
+        "segmentType": "linear",
+        "feedMmPerMin": 100
+      }
+    ],
+    "sourceMap": [
+      { "sourceLine": 4, "segmentIndices": [0] },
+      { "sourceLine": 6, "segmentIndices": [1] },
+      { "sourceLine": 8, "segmentIndices": [2] },
+      { "sourceLine": 11, "segmentIndices": [3] }
+    ],
+    "programControlEvents": [],
+    "finalState": {
+      "feedMode": "units-per-revolution",
+      "spindleMode": "rpm",
+      "spindleState": "off",
+      "programEnd": "none",
+      "lastProgramControl": "none"
+    }
+  },
+  "tolerance": { "positionMm": 1e-9, "pathLengthMm": 1e-9 },
+  "basis": {
+    "summary": "G95 resolves scalar segment feed from the active spindle mode; G94/G95 and G96/G97 transitions require fresh values.",
+    "calculation": "Lengths are four 10 mm lines. At endpoint X20, G96 S100 gives rpm=100000/(pi*20), so F0.1 gives feed=500/pi mm/min.",
+    "references": [
+      "docs/gcode-support-matrix.md §모달·기하 규칙",
+      "docs/architecture-decisions/0004-gcode-parser.md §3. canonical 상태"
+    ]
+  }
+}

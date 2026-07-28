@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "invalid-cycle-r-depth-invalid",
+  "dialect": "common-v1",
+  "input": {
+    "file": "cycle-r-depth-invalid.nc",
+    "encoding": "utf-8"
+  },
+  "initialState": {
+    "toolpathId": "20000000-0000-4000-8000-000000000481",
+    "operationId": "20000000-0000-4000-8000-000000000482",
+    "positionMm": { "xMm": 0, "yMm": 0, "zMm": 5 }
+  },
+  "expected": {
+    "accepted": false,
+    "diagnostics": [
+      {
+        "code": "semantic.cycle.invalid_parameter",
+        "line": 3,
+        "column": 1,
+        "severity": "error",
+        "recoverable": false
+      }
+    ],
+    "endMm": { "xMm": 0, "yMm": 0, "zMm": 5 },
+    "pathLengthMm": { "total": 0, "rapid": 0, "feed": 0 },
+    "segmentTypes": [],
+    "sourceMap": [],
+    "programControlEvents": []
+  },
+  "tolerance": { "positionMm": 1e-9, "pathLengthMm": 1e-9 },
+  "basis": {
+    "summary": "common-v1 drilling proceeds toward decreasing cycle-axis coordinates, so R must be above depth.",
+    "calculation": "Z depth 2 is not below R1; the invalid cycle produces no partial path.",
+    "references": ["docs/architecture-decisions/0004-gcode-parser.md §5. 고정 사이클"]
+  }
+}

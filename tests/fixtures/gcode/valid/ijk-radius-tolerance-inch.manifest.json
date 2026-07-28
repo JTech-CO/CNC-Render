@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "valid-ijk-radius-tolerance-inch",
+  "dialect": "common-v1",
+  "input": {
+    "file": "ijk-radius-tolerance-inch.nc",
+    "encoding": "utf-8"
+  },
+  "initialState": {
+    "toolpathId": "20000000-0000-4000-8000-000000000591",
+    "operationId": "20000000-0000-4000-8000-000000000592",
+    "positionMm": { "xMm": 0, "yMm": 0, "zMm": 0 }
+  },
+  "expected": {
+    "accepted": true,
+    "diagnostics": [],
+    "endMm": { "xMm": 25.4, "yMm": 25.4127, "zMm": 0 },
+    "pathLengthMm": {
+      "total": 39.89822670059037,
+      "rapid": 0,
+      "feed": 39.89822670059037
+    },
+    "segmentTypes": ["arc"],
+    "segmentDetails": [
+      {
+        "segmentIndex": 0,
+        "segmentType": "arc",
+        "plane": "xy",
+        "clockwise": true,
+        "centerOffsetMm": { "xMm": 25.4, "yMm": 0, "zMm": 0 },
+        "feedMmPerMin": 254
+      }
+    ],
+    "sourceMap": [
+      { "sourceLine": 2, "segmentIndices": [0] }
+    ]
+  },
+  "tolerance": { "positionMm": 1e-9, "pathLengthMm": 1e-9 },
+  "basis": {
+    "summary": "The inch IJK start/end radius difference at the inclusive 0.0005 in (0.0127 mm) small tolerance is accepted.",
+    "calculation": "Start radius=25.4 mm; end radius=25.4127 mm; diff=0.0127 mm. The quarter sweep length is 25.4*pi/2=12.7*pi mm.",
+    "references": [
+      "docs/gcode-support-matrix.md §원호 규칙",
+      "LinuxCNC center-format arc radius tolerance"
+    ]
+  }
+}

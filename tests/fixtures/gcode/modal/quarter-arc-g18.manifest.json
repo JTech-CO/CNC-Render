@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "modal-quarter-arc-g18",
+  "dialect": "common-v1",
+  "input": { "file": "quarter-arc-g18.nc", "encoding": "utf-8" },
+  "initialState": {
+    "toolpathId": "20000000-0000-4000-8000-000000000411",
+    "operationId": "20000000-0000-4000-8000-000000000412",
+    "positionMm": { "xMm": 0, "yMm": 0, "zMm": 0 }
+  },
+  "expected": {
+    "accepted": true,
+    "diagnostics": [],
+    "endMm": { "xMm": 0, "yMm": 0, "zMm": 10 },
+    "pathLengthMm": {
+      "total": 25.707963267948966,
+      "rapid": 10,
+      "feed": 15.707963267948966
+    },
+    "segmentTypes": ["rapid", "arc"],
+    "segmentDetails": [
+      {
+        "segmentIndex": 1,
+        "segmentType": "arc",
+        "plane": "xz",
+        "clockwise": true,
+        "centerOffsetMm": { "xMm": -10, "yMm": 0, "zMm": 0 }
+      }
+    ],
+    "sourceMap": [
+      { "sourceLine": 2, "segmentIndices": [0] },
+      { "sourceLine": 3, "segmentIndices": [1] }
+    ]
+  },
+  "tolerance": { "positionMm": 1e-9, "pathLengthMm": 1e-9 },
+  "basis": {
+    "summary": "Viewed from the positive Y axis, G18 G2 moves clockwise from +X to +Z; omitted K is zero.",
+    "calculation": "rapid=10; arc=10*pi/2; total=10+5*pi mm.",
+    "references": ["LinuxCNC G2/G3 XZ center format and viewing convention"]
+  }
+}

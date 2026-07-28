@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "valid-ijk-radius-tolerance-mm",
+  "dialect": "common-v1",
+  "input": {
+    "file": "ijk-radius-tolerance-mm.nc",
+    "encoding": "utf-8"
+  },
+  "initialState": {
+    "toolpathId": "20000000-0000-4000-8000-000000000581",
+    "operationId": "20000000-0000-4000-8000-000000000582",
+    "positionMm": { "xMm": 0, "yMm": 0, "zMm": 0 }
+  },
+  "expected": {
+    "accepted": true,
+    "diagnostics": [],
+    "endMm": { "xMm": 1, "yMm": 1.005, "zMm": 0 },
+    "pathLengthMm": {
+      "total": 1.5707963267948966,
+      "rapid": 0,
+      "feed": 1.5707963267948966
+    },
+    "segmentTypes": ["arc"],
+    "segmentDetails": [
+      {
+        "segmentIndex": 0,
+        "segmentType": "arc",
+        "plane": "xy",
+        "clockwise": true,
+        "centerOffsetMm": { "xMm": 1, "yMm": 0, "zMm": 0 },
+        "feedMmPerMin": 100
+      }
+    ],
+    "sourceMap": [
+      { "sourceLine": 2, "segmentIndices": [0] }
+    ]
+  },
+  "tolerance": { "positionMm": 1e-9, "pathLengthMm": 1e-9 },
+  "basis": {
+    "summary": "The millimeter IJK start/end radius difference at the inclusive 0.005 mm small tolerance is accepted.",
+    "calculation": "Start radius=1; end radius=1.005; diff=0.005. The clockwise quarter sweep uses the programmed start radius, so length=pi/2 mm.",
+    "references": [
+      "docs/gcode-support-matrix.md §원호 규칙",
+      "LinuxCNC center-format arc radius tolerance"
+    ]
+  }
+}

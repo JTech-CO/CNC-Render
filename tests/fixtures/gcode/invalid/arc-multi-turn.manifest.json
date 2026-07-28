@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "invalid-arc-multi-turn",
+  "dialect": "common-v1",
+  "input": {
+    "file": "arc-multi-turn.nc",
+    "encoding": "utf-8"
+  },
+  "initialState": {
+    "toolpathId": "20000000-0000-4000-8000-000000000451",
+    "operationId": "20000000-0000-4000-8000-000000000452",
+    "positionMm": { "xMm": 0, "yMm": 0, "zMm": 0 }
+  },
+  "expected": {
+    "accepted": false,
+    "diagnostics": [
+      {
+        "code": "semantic.arc.turns.unsupported",
+        "line": 3,
+        "column": 9,
+        "severity": "error",
+        "recoverable": false
+      }
+    ],
+    "endMm": { "xMm": 0, "yMm": 0, "zMm": 0 },
+    "pathLengthMm": { "total": 0, "rapid": 0, "feed": 0 },
+    "segmentTypes": [],
+    "sourceMap": [],
+    "programControlEvents": []
+  },
+  "tolerance": { "positionMm": 1e-9, "pathLengthMm": 1e-9 },
+  "basis": {
+    "summary": "Arc P turn counts are recognized but multi-turn lowering is outside common-v1.",
+    "calculation": "P begins at line 3 column 9; one fatal diagnostic rejects the earlier rapid as well.",
+    "references": [
+      "docs/gcode-support-matrix.md §모달·기하 규칙",
+      "LinuxCNC G2/G3 P turn count"
+    ]
+  }
+}

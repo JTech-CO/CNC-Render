@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "invalid-malformed-number",
+  "dialect": "common-v1",
+  "input": {
+    "file": "malformed-number.nc",
+    "encoding": "utf-8"
+  },
+  "initialState": {
+    "toolpathId": "20000000-0000-4000-8000-000000000201",
+    "operationId": "20000000-0000-4000-8000-000000000202",
+    "positionMm": { "xMm": 0, "yMm": 0, "zMm": 0 }
+  },
+  "expected": {
+    "accepted": false,
+    "diagnostics": [
+      {
+        "code": "lexer.number.invalid",
+        "line": 2,
+        "column": 4,
+        "severity": "error",
+        "recoverable": false
+      }
+    ],
+    "endMm": { "xMm": 0, "yMm": 0, "zMm": 0 },
+    "pathLengthMm": { "total": 0, "rapid": 0, "feed": 0 },
+    "segmentTypes": [],
+    "sourceMap": []
+  },
+  "tolerance": {
+    "positionMm": 1e-9,
+    "pathLengthMm": 1e-9
+  },
+  "basis": {
+    "summary": "The X word has a sign but no numeric magnitude.",
+    "calculation": "The invalid word begins at the X address, line 2 column 4 (1-based).",
+    "references": ["docs/qa-harness.md M2 DoD 5"]
+  }
+}

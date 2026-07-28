@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "modal-cycle-initial-below-r",
+  "dialect": "common-v1",
+  "input": {
+    "file": "cycle-initial-below-r.nc",
+    "encoding": "utf-8"
+  },
+  "initialState": {
+    "toolpathId": "20000000-0000-4000-8000-000000000191",
+    "operationId": "20000000-0000-4000-8000-000000000192",
+    "positionMm": { "xMm": 0, "yMm": 0, "zMm": 0 }
+  },
+  "expected": {
+    "accepted": true,
+    "diagnostics": [],
+    "endMm": { "xMm": 3, "yMm": 4, "zMm": 2 },
+    "pathLengthMm": { "total": 15, "rapid": 11, "feed": 4 },
+    "segmentTypes": ["rapid", "rapid", "linear", "rapid"],
+    "segmentDetails": [
+      {
+        "segmentIndex": 0,
+        "segmentType": "rapid",
+        "startMm": { "xMm": 0, "yMm": 0, "zMm": 0 },
+        "endMm": { "xMm": 0, "yMm": 0, "zMm": 2 }
+      },
+      {
+        "segmentIndex": 1,
+        "segmentType": "rapid",
+        "startMm": { "xMm": 0, "yMm": 0, "zMm": 2 },
+        "endMm": { "xMm": 3, "yMm": 4, "zMm": 2 }
+      },
+      {
+        "segmentIndex": 2,
+        "segmentType": "linear",
+        "startMm": { "xMm": 3, "yMm": 4, "zMm": 2 },
+        "endMm": { "xMm": 3, "yMm": 4, "zMm": -2 }
+      },
+      {
+        "segmentIndex": 3,
+        "segmentType": "rapid",
+        "startMm": { "xMm": 3, "yMm": 4, "zMm": -2 },
+        "endMm": { "xMm": 3, "yMm": 4, "zMm": 2 }
+      }
+    ],
+    "sourceMap": [
+      { "sourceLine": 3, "segmentIndices": [0, 1, 2, 3] }
+    ]
+  },
+  "tolerance": {
+    "positionMm": 1e-9,
+    "pathLengthMm": 1e-9
+  },
+  "basis": {
+    "summary": "When current Z0 is below R2, preliminary motion raises Z to R before the 3-4-5 plane-parallel hole move.",
+    "calculation": "rapid=2+5+4=11; feed=2-(-2)=4; total=15 mm.",
+    "references": [
+      "docs/gcode-support-matrix.md §모달·기하 규칙",
+      "LinuxCNC canned-cycle preliminary motion"
+    ]
+  }
+}

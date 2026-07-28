@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "modal-positioning-units",
+  "dialect": "common-v1",
+  "input": {
+    "file": "positioning-units.nc",
+    "encoding": "utf-8"
+  },
+  "initialState": {
+    "toolpathId": "20000000-0000-4000-8000-000000000101",
+    "operationId": "20000000-0000-4000-8000-000000000102",
+    "positionMm": { "xMm": 0, "yMm": 0, "zMm": 0 },
+    "workOffsetsMm": {
+      "G54": { "xMm": 0, "yMm": 0, "zMm": 0 }
+    }
+  },
+  "expected": {
+    "accepted": true,
+    "diagnostics": [],
+    "endMm": { "xMm": 0, "yMm": 0, "zMm": 0 },
+    "pathLengthMm": {
+      "total": 107.24641719249937,
+      "rapid": 25.4,
+      "feed": 81.84641719249936
+    },
+    "segmentTypes": ["rapid", "linear", "linear"],
+    "sourceMap": [
+      { "sourceLine": 2, "segmentIndices": [0] },
+      { "sourceLine": 4, "segmentIndices": [1] },
+      { "sourceLine": 6, "segmentIndices": [2] }
+    ]
+  },
+  "tolerance": {
+    "positionMm": 1e-9,
+    "pathLengthMm": 1e-9
+  },
+  "basis": {
+    "summary": "The incremental inch move is converted exactly by 25.4 mm/in before an absolute mm return.",
+    "calculation": "rapid=25.4; inch feed=6.35*sqrt(21); return feed=6.35*sqrt(69); total=25.4+6.35*(sqrt(21)+sqrt(69)) mm.",
+    "references": [
+      "docs/architecture-decisions/0003-domain-contracts.md §2",
+      "docs/qa-harness.md M2 DoD 4"
+    ]
+  }
+}

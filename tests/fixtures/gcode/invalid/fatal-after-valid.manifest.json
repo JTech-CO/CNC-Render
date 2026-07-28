@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "invalid-fatal-after-valid",
+  "dialect": "common-v1",
+  "input": {
+    "file": "fatal-after-valid.nc",
+    "encoding": "utf-8"
+  },
+  "initialState": {
+    "toolpathId": "20000000-0000-4000-8000-000000000271",
+    "operationId": "20000000-0000-4000-8000-000000000272",
+    "positionMm": { "xMm": 0, "yMm": 0, "zMm": 0 }
+  },
+  "expected": {
+    "accepted": false,
+    "diagnostics": [
+      {
+        "code": "semantic.cutter_comp.unsupported",
+        "line": 4,
+        "column": 1,
+        "severity": "error",
+        "recoverable": false
+      }
+    ],
+    "endMm": { "xMm": 0, "yMm": 0, "zMm": 0 },
+    "pathLengthMm": { "total": 0, "rapid": 0, "feed": 0 },
+    "segmentTypes": [],
+    "sourceMap": [],
+    "finalState": { "programEnd": "none" }
+  },
+  "tolerance": {
+    "positionMm": 1e-9,
+    "pathLengthMm": 1e-9
+  },
+  "basis": {
+    "summary": "A fatal G41 after valid moves rejects the whole parse result rather than exposing a partial path.",
+    "calculation": "Fail-closed output returns the initial endpoint and zero path despite earlier valid motion.",
+    "references": ["docs/architecture-decisions/0004-gcode-parser.md §프로그램 종료와 실패 원자성"]
+  }
+}

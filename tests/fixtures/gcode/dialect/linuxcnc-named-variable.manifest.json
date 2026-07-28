@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "dialect-linuxcnc-named-variable",
+  "dialect": "common-v1",
+  "input": {
+    "file": "linuxcnc-named-variable.nc",
+    "encoding": "utf-8"
+  },
+  "initialState": {
+    "toolpathId": "20000000-0000-4000-8000-000000000321",
+    "operationId": "20000000-0000-4000-8000-000000000322",
+    "positionMm": { "xMm": 0, "yMm": 0, "zMm": 0 }
+  },
+  "expected": {
+    "accepted": false,
+    "diagnostics": [
+      {
+        "code": "lexer.macro.unsupported",
+        "line": 1,
+        "column": 1,
+        "severity": "error",
+        "recoverable": false
+      }
+    ],
+    "endMm": { "xMm": 0, "yMm": 0, "zMm": 0 },
+    "pathLengthMm": { "total": 0, "rapid": 0, "feed": 0 },
+    "segmentTypes": [],
+    "sourceMap": []
+  },
+  "tolerance": {
+    "positionMm": 1e-9,
+    "pathLengthMm": 1e-9
+  },
+  "basis": {
+    "summary": "LinuxCNC-like named parameters also begin with # and are outside common-v1.",
+    "calculation": "The unsupported marker is the first character, line 1 column 1.",
+    "requestedPreset": "linuxcnc-like",
+    "references": [
+      "docs/technical-whitepaper.md §4.4 controller dialects",
+      "docs/qa-harness.md M2 DoD 6"
+    ]
+  }
+}

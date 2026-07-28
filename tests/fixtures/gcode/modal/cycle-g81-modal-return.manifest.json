@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "modal-cycle-g81-modal-return",
+  "dialect": "common-v1",
+  "input": {
+    "file": "cycle-g81-modal-return.nc",
+    "encoding": "utf-8"
+  },
+  "initialState": {
+    "toolpathId": "20000000-0000-4000-8000-000000000131",
+    "operationId": "20000000-0000-4000-8000-000000000132",
+    "positionMm": { "xMm": 0, "yMm": 0, "zMm": 10 },
+    "workOffsetsMm": {
+      "G54": { "xMm": 0, "yMm": 0, "zMm": 0 }
+    }
+  },
+  "expected": {
+    "accepted": true,
+    "diagnostics": [],
+    "endMm": { "xMm": 30, "yMm": 0, "zMm": 2 },
+    "pathLengthMm": {
+      "total": 114,
+      "rapid": 92,
+      "feed": 22
+    },
+    "segmentTypes": [
+      "rapid", "rapid", "linear", "rapid",
+      "rapid", "rapid", "linear", "rapid",
+      "rapid", "rapid", "linear", "rapid"
+    ],
+    "sourceMap": [
+      { "sourceLine": 3, "segmentIndices": [0, 1, 2, 3] },
+      { "sourceLine": 4, "segmentIndices": [4, 5, 6, 7] },
+      { "sourceLine": 6, "segmentIndices": [8, 9, 10, 11] }
+    ]
+  },
+  "tolerance": {
+    "positionMm": 1e-9,
+    "pathLengthMm": 1e-9
+  },
+  "basis": {
+    "summary": "G81 remains modal on a coordinate-only block; G98 returns to Z10 and later G99 returns to R2.",
+    "calculation": "first two holes each rapid=10+8+15 and feed=7; third rapid=10+8+8 and feed=8; rapid=92, feed=22, total=114 mm.",
+    "references": [
+      "docs/gcode-support-matrix.md §고정 사이클 규칙",
+      "LinuxCNC G80/G81/G98/G99"
+    ]
+  }
+}

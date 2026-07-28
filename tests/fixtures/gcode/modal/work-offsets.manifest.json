@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "modal-work-offsets",
+  "dialect": "common-v1",
+  "input": {
+    "file": "work-offsets.nc",
+    "encoding": "utf-8"
+  },
+  "initialState": {
+    "toolpathId": "20000000-0000-4000-8000-000000000121",
+    "operationId": "20000000-0000-4000-8000-000000000122",
+    "positionMm": { "xMm": 0, "yMm": 0, "zMm": 0 },
+    "workOffsetsMm": {
+      "G54": { "xMm": 100, "yMm": 0, "zMm": 0 },
+      "G55": { "xMm": -10, "yMm": 20, "zMm": 5 }
+    }
+  },
+  "expected": {
+    "accepted": true,
+    "diagnostics": [],
+    "endMm": { "xMm": 0, "yMm": 20, "zMm": 5 },
+    "pathLengthMm": {
+      "total": 202.10288928331067,
+      "rapid": 100,
+      "feed": 102.10288928331069
+    },
+    "segmentTypes": ["rapid", "linear"],
+    "sourceMap": [
+      { "sourceLine": 2, "segmentIndices": [0] },
+      { "sourceLine": 3, "segmentIndices": [1] }
+    ]
+  },
+  "tolerance": {
+    "positionMm": 1e-9,
+    "pathLengthMm": 1e-9
+  },
+  "basis": {
+    "summary": "Work coordinates are lowered to machine space after selecting G54 and G55.",
+    "calculation": "G54 X0 maps to (100,0,0); G55 (10,0,0) maps to (0,20,5); feed=sqrt(100^2+20^2+5^2)=sqrt(10425) mm.",
+    "references": [
+      "docs/technical-whitepaper.md §4.3",
+      "docs/qa-harness.md M2 DoD 4"
+    ]
+  }
+}

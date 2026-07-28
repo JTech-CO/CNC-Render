@@ -23,6 +23,7 @@
     "test:a11y": "node scripts/report-phase-gate.mjs test:a11y M9",
     "cargo:check": "node scripts/run-cargo.mjs check --workspace --all-targets --locked",
     "cargo:test": "node scripts/run-cargo.mjs test --workspace --locked",
+    "fuzz:gcode": "node scripts/fuzz-gcode.mjs",
     "generate:contracts": "node scripts/generate-contract-artifacts.mjs",
     "bench": "node scripts/report-phase-gate.mjs bench M3",
     "check:bundle": "node scripts/report-phase-gate.mjs check:bundle M9",
