@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "invalid-arc-missing-center",
+  "dialect": "common-v1",
+  "input": {
+    "file": "arc-missing-center.nc",
+    "encoding": "utf-8"
+  },
+  "initialState": {
+    "toolpathId": "20000000-0000-4000-8000-000000000231",
+    "operationId": "20000000-0000-4000-8000-000000000232",
+    "positionMm": { "xMm": 0, "yMm": 0, "zMm": 0 }
+  },
+  "expected": {
+    "accepted": false,
+    "diagnostics": [
+      {
+        "code": "semantic.arc.missing_center",
+        "line": 3,
+        "column": 1,
+        "severity": "error",
+        "recoverable": false
+      }
+    ],
+    "endMm": { "xMm": 0, "yMm": 0, "zMm": 0 },
+    "pathLengthMm": { "total": 0, "rapid": 0, "feed": 0 },
+    "segmentTypes": [],
+    "sourceMap": []
+  },
+  "tolerance": {
+    "positionMm": 1e-9,
+    "pathLengthMm": 1e-9
+  },
+  "basis": {
+    "summary": "A partial G2 arc requires either the selected-plane IJK offsets or R.",
+    "calculation": "The semantically invalid G2 begins at line 3 column 1.",
+    "references": ["docs/gcode-support-matrix.md §원호 규칙"]
+  }
+}

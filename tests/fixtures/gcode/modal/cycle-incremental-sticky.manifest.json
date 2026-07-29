@@ -1,0 +1,81 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "modal-cycle-incremental-sticky",
+  "dialect": "common-v1",
+  "input": {
+    "file": "cycle-incremental-sticky.nc",
+    "encoding": "utf-8"
+  },
+  "initialState": {
+    "toolpathId": "20000000-0000-4000-8000-000000000571",
+    "operationId": "20000000-0000-4000-8000-000000000572",
+    "positionMm": { "xMm": 0, "yMm": 0, "zMm": 0 }
+  },
+  "expected": {
+    "accepted": true,
+    "diagnostics": [],
+    "endMm": { "xMm": 2, "yMm": 0, "zMm": 1 },
+    "pathLengthMm": { "total": 5, "rapid": 4, "feed": 1 },
+    "segmentTypes": [
+      "rapid", "rapid", "linear", "rapid",
+      "rapid", "linear", "rapid"
+    ],
+    "segmentDetails": [
+      {
+        "segmentIndex": 0,
+        "segmentType": "rapid",
+        "startMm": { "xMm": 0, "yMm": 0, "zMm": 0 },
+        "endMm": { "xMm": 0, "yMm": 0, "zMm": 1 }
+      },
+      {
+        "segmentIndex": 1,
+        "segmentType": "rapid",
+        "startMm": { "xMm": 0, "yMm": 0, "zMm": 1 },
+        "endMm": { "xMm": 1, "yMm": 0, "zMm": 1 }
+      },
+      {
+        "segmentIndex": 2,
+        "segmentType": "linear",
+        "startMm": { "xMm": 1, "yMm": 0, "zMm": 1 },
+        "endMm": { "xMm": 1, "yMm": 0, "zMm": 0.5 }
+      },
+      {
+        "segmentIndex": 3,
+        "segmentType": "rapid",
+        "startMm": { "xMm": 1, "yMm": 0, "zMm": 0.5 },
+        "endMm": { "xMm": 1, "yMm": 0, "zMm": 1 }
+      },
+      {
+        "segmentIndex": 4,
+        "segmentType": "rapid",
+        "startMm": { "xMm": 1, "yMm": 0, "zMm": 1 },
+        "endMm": { "xMm": 2, "yMm": 0, "zMm": 1 }
+      },
+      {
+        "segmentIndex": 5,
+        "segmentType": "linear",
+        "startMm": { "xMm": 2, "yMm": 0, "zMm": 1 },
+        "endMm": { "xMm": 2, "yMm": 0, "zMm": 0.5 }
+      },
+      {
+        "segmentIndex": 6,
+        "segmentType": "rapid",
+        "startMm": { "xMm": 2, "yMm": 0, "zMm": 0.5 },
+        "endMm": { "xMm": 2, "yMm": 0, "zMm": 1 }
+      }
+    ],
+    "sourceMap": [
+      { "sourceLine": 2, "segmentIndices": [0, 1, 2, 3] },
+      { "sourceLine": 3, "segmentIndices": [4, 5, 6] }
+    ]
+  },
+  "tolerance": { "positionMm": 1e-9, "pathLengthMm": 1e-9 },
+  "basis": {
+    "summary": "In G91, explicit R is a delta from the cycle-axis position at block start and sticky Z remains a programmed delta from the resolved R plane.",
+    "calculation": "Line 2 resolves R=0+1 and depth=1-0.5. Line 3 starts at Z1, resolves R=1+0 and reapplies sticky Z delta -0.5; rapid=4, feed=1, total=5 mm.",
+    "references": [
+      "docs/gcode-support-matrix.md §고정 사이클 규칙",
+      "docs/architecture-decisions/0004-gcode-parser.md §5. 고정 사이클"
+    ]
+  }
+}

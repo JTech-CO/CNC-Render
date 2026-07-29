@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "modal-planes-ijk",
+  "dialect": "common-v1",
+  "input": {
+    "file": "planes-ijk.nc",
+    "encoding": "utf-8"
+  },
+  "initialState": {
+    "toolpathId": "20000000-0000-4000-8000-000000000111",
+    "operationId": "20000000-0000-4000-8000-000000000112",
+    "positionMm": { "xMm": 0, "yMm": 0, "zMm": 0 },
+    "workOffsetsMm": {
+      "G54": { "xMm": 0, "yMm": 0, "zMm": 0 }
+    }
+  },
+  "expected": {
+    "accepted": true,
+    "diagnostics": [],
+    "endMm": { "xMm": 10, "yMm": 20, "zMm": 0 },
+    "pathLengthMm": {
+      "total": 104.24777960769379,
+      "rapid": 10,
+      "feed": 94.24777960769379
+    },
+    "segmentTypes": ["rapid", "arc", "arc", "arc"],
+    "sourceMap": [
+      { "sourceLine": 3, "segmentIndices": [0] },
+      { "sourceLine": 4, "segmentIndices": [1] },
+      { "sourceLine": 6, "segmentIndices": [2] },
+      { "sourceLine": 8, "segmentIndices": [3] }
+    ]
+  },
+  "tolerance": {
+    "positionMm": 1e-9,
+    "pathLengthMm": 1e-9
+  },
+  "basis": {
+    "summary": "G17, G18 and G19 each describe one radius-10 semicircle using incremental IJK offsets.",
+    "calculation": "rapid=10; three arcs=3*(10*pi); total=10+30*pi mm.",
+    "references": [
+      "docs/technical-whitepaper.md §4.4",
+      "LinuxCNC G2/G3 center format"
+    ]
+  }
+}

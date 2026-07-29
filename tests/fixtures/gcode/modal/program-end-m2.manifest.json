@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "modal-program-end-m2",
+  "dialect": "common-v1",
+  "input": {
+    "file": "program-end-m2.nc",
+    "encoding": "utf-8"
+  },
+  "initialState": {
+    "toolpathId": "20000000-0000-4000-8000-000000000171",
+    "operationId": "20000000-0000-4000-8000-000000000172",
+    "positionMm": { "xMm": 0, "yMm": 0, "zMm": 0 }
+  },
+  "expected": {
+    "accepted": true,
+    "diagnostics": [],
+    "endMm": { "xMm": 3, "yMm": 4, "zMm": 0 },
+    "pathLengthMm": { "total": 5, "rapid": 5, "feed": 0 },
+    "segmentTypes": ["rapid"],
+    "sourceMap": [
+      { "sourceLine": 2, "segmentIndices": [0] }
+    ],
+    "finalState": { "programEnd": "m2" }
+  },
+  "tolerance": {
+    "positionMm": 1e-9,
+    "pathLengthMm": 1e-9
+  },
+  "basis": {
+    "summary": "M2 preserves the path before it and prevents all following blocks from being lowered.",
+    "calculation": "Only the 3-4-5 rapid before M2 remains; the line after M2 contributes zero.",
+    "references": ["docs/architecture-decisions/0004-gcode-parser.md §프로그램 종료와 실패 원자성"]
+  }
+}

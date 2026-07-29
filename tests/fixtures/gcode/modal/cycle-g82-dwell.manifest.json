@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "modal-cycle-g82-dwell",
+  "dialect": "common-v1",
+  "input": {
+    "file": "cycle-g82-dwell.nc",
+    "encoding": "utf-8"
+  },
+  "initialState": {
+    "toolpathId": "20000000-0000-4000-8000-000000000141",
+    "operationId": "20000000-0000-4000-8000-000000000142",
+    "positionMm": { "xMm": 0, "yMm": 0, "zMm": 5 },
+    "workOffsetsMm": {
+      "G54": { "xMm": 0, "yMm": 0, "zMm": 0 }
+    }
+  },
+  "expected": {
+    "accepted": true,
+    "diagnostics": [],
+    "endMm": { "xMm": 3, "yMm": 4, "zMm": 1 },
+    "pathLengthMm": {
+      "total": 17,
+      "rapid": 13,
+      "feed": 4
+    },
+    "segmentTypes": ["rapid", "rapid", "linear", "dwell", "rapid"],
+    "sourceMap": [
+      { "sourceLine": 3, "segmentIndices": [0, 1, 2, 3, 4] }
+    ]
+  },
+  "tolerance": {
+    "positionMm": 1e-9,
+    "pathLengthMm": 1e-9
+  },
+  "basis": {
+    "summary": "G82 adds a 1.25 second zero-length dwell to the G81 geometry and G99 returns to R1.",
+    "calculation": "rapid=sqrt(3^2+4^2)+(5-1)+(1-(-3))=13; feed=1-(-3)=4; total=17 mm.",
+    "references": [
+      "docs/gcode-support-matrix.md §고정 사이클 규칙",
+      "LinuxCNC G82"
+    ]
+  }
+}

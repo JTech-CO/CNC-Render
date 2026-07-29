@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "invalid-g96-repeated-missing-s",
+  "dialect": "common-v1",
+  "input": {
+    "file": "g96-repeated-missing-s.nc",
+    "encoding": "utf-8"
+  },
+  "initialState": {
+    "toolpathId": "20000000-0000-4000-8000-000000000541",
+    "operationId": "20000000-0000-4000-8000-000000000542",
+    "positionMm": { "xMm": 0, "yMm": 0, "zMm": 0 }
+  },
+  "expected": {
+    "accepted": false,
+    "diagnostics": [
+      {
+        "code": "semantic.spindle.missing",
+        "line": 3,
+        "column": 1,
+        "severity": "error",
+        "recoverable": false
+      }
+    ],
+    "endMm": { "xMm": 0, "yMm": 0, "zMm": 0 },
+    "pathLengthMm": { "total": 0, "rapid": 0, "feed": 0 },
+    "segmentTypes": [],
+    "sourceMap": [],
+    "programControlEvents": []
+  },
+  "tolerance": { "positionMm": 1e-9, "pathLengthMm": 1e-9 },
+  "basis": {
+    "summary": "Every explicit G96 block requires its own positive S, even when surface-speed mode is already active.",
+    "calculation": "The second explicit G96 starts at line 3 column 1 and cannot reuse line 2 S100.",
+    "references": [
+      "docs/gcode-support-matrix.md §모달·단위·이송 규칙",
+      "docs/architecture-decisions/0004-gcode-parser.md §3. canonical 상태와 수치"
+    ]
+  }
+}

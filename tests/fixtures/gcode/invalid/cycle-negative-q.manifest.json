@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "invalid-cycle-negative-q",
+  "dialect": "common-v1",
+  "input": {
+    "file": "cycle-negative-q.nc",
+    "encoding": "utf-8"
+  },
+  "initialState": {
+    "toolpathId": "20000000-0000-4000-8000-000000000471",
+    "operationId": "20000000-0000-4000-8000-000000000472",
+    "positionMm": { "xMm": 0, "yMm": 0, "zMm": 5 }
+  },
+  "expected": {
+    "accepted": false,
+    "diagnostics": [
+      {
+        "code": "semantic.cycle.invalid_parameter",
+        "line": 3,
+        "column": 18,
+        "severity": "error",
+        "recoverable": false
+      }
+    ],
+    "endMm": { "xMm": 0, "yMm": 0, "zMm": 5 },
+    "pathLengthMm": { "total": 0, "rapid": 0, "feed": 0 },
+    "segmentTypes": [],
+    "sourceMap": [],
+    "programControlEvents": []
+  },
+  "tolerance": { "positionMm": 1e-9, "pathLengthMm": 1e-9 },
+  "basis": {
+    "summary": "G83 Q is a positive peck distance.",
+    "calculation": "Q-2 begins at line 3 column 18 and is present but outside the valid range.",
+    "references": ["docs/gcode-support-matrix.md §모달·기하 규칙"]
+  }
+}

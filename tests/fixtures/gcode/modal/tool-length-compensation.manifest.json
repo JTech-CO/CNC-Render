@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "modal-tool-length-compensation",
+  "dialect": "common-v1",
+  "input": {
+    "file": "tool-length-compensation.nc",
+    "encoding": "utf-8"
+  },
+  "initialState": {
+    "toolpathId": "20000000-0000-4000-8000-000000000161",
+    "operationId": "20000000-0000-4000-8000-000000000162",
+    "positionMm": { "xMm": 0, "yMm": 0, "zMm": 0 },
+    "workOffsetsMm": {
+      "G54": { "xMm": 0, "yMm": 0, "zMm": 0 }
+    },
+    "toolLengthOffsetsMm": {
+      "1": 50
+    }
+  },
+  "expected": {
+    "accepted": true,
+    "diagnostics": [],
+    "endMm": { "xMm": 0, "yMm": 0, "zMm": 0 },
+    "pathLengthMm": {
+      "total": 100,
+      "rapid": 50,
+      "feed": 50
+    },
+    "segmentTypes": ["rapid", "linear", "linear"],
+    "sourceMap": [
+      { "sourceLine": 3, "segmentIndices": [0] },
+      { "sourceLine": 5, "segmentIndices": [1] },
+      { "sourceLine": 7, "segmentIndices": [2] }
+    ]
+  },
+  "tolerance": {
+    "positionMm": 1e-9,
+    "pathLengthMm": 1e-9
+  },
+  "basis": {
+    "summary": "G43 H1 adds 50 mm to an absolute Z target, incremental Z changes only by its delta, and G49 removes the offset.",
+    "calculation": "absolute Z0 with H1 maps to Z50 (rapid 50); G91 Z-10 reaches Z40 (feed 10); G49 then absolute Z0 returns 40 mm (feed 40); total=100 mm.",
+    "references": [
+      "docs/gcode-support-matrix.md §모달·수치 규칙",
+      "docs/technical-whitepaper.md §4.4"
+    ]
+  }
+}

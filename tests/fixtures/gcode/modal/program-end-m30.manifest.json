@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "modal-program-end-m30",
+  "dialect": "common-v1",
+  "input": {
+    "file": "program-end-m30.nc",
+    "encoding": "utf-8"
+  },
+  "initialState": {
+    "toolpathId": "20000000-0000-4000-8000-000000000181",
+    "operationId": "20000000-0000-4000-8000-000000000182",
+    "positionMm": { "xMm": 0, "yMm": 0, "zMm": 0 }
+  },
+  "expected": {
+    "accepted": true,
+    "diagnostics": [],
+    "endMm": { "xMm": 3, "yMm": 4, "zMm": 5 },
+    "pathLengthMm": { "total": 10, "rapid": 5, "feed": 5 },
+    "segmentTypes": ["rapid", "linear"],
+    "sourceMap": [
+      { "sourceLine": 2, "segmentIndices": [0] },
+      { "sourceLine": 3, "segmentIndices": [1] }
+    ],
+    "finalState": { "programEnd": "m30" }
+  },
+  "tolerance": {
+    "positionMm": 1e-9,
+    "pathLengthMm": 1e-9
+  },
+  "basis": {
+    "summary": "Motion on the M30 block commits, then later blocks are ignored while the M30 end kind is retained.",
+    "calculation": "Z rapid=5 and same-Z 3-4-5 feed=5; total=10 mm.",
+    "references": ["docs/architecture-decisions/0004-gcode-parser.md §프로그램 종료와 실패 원자성"]
+  }
+}

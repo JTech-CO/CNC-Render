@@ -1,0 +1,416 @@
+{
+  "schemaVersion": 1,
+  "dialect": "common-v1",
+  "gCodes": [
+    {
+      "code": "G0",
+      "status": "supported",
+      "behavior": "rapid"
+    },
+    {
+      "code": "G1",
+      "status": "supported",
+      "behavior": "linear"
+    },
+    {
+      "code": "G2",
+      "status": "supported",
+      "behavior": "arc-clockwise"
+    },
+    {
+      "code": "G3",
+      "status": "supported",
+      "behavior": "arc-counterclockwise"
+    },
+    {
+      "code": "G17",
+      "status": "supported",
+      "behavior": "plane-xy"
+    },
+    {
+      "code": "G18",
+      "status": "supported",
+      "behavior": "plane-xz"
+    },
+    {
+      "code": "G19",
+      "status": "supported",
+      "behavior": "plane-yz"
+    },
+    {
+      "code": "G20",
+      "status": "supported",
+      "behavior": "units-inch"
+    },
+    {
+      "code": "G21",
+      "status": "supported",
+      "behavior": "units-mm"
+    },
+    {
+      "code": "G40",
+      "status": "supported",
+      "behavior": "cutter-compensation-cancel"
+    },
+    {
+      "code": "G41",
+      "status": "recognized-unsupported",
+      "behavior": "cutter-compensation-left"
+    },
+    {
+      "code": "G42",
+      "status": "recognized-unsupported",
+      "behavior": "cutter-compensation-right"
+    },
+    {
+      "code": "G43",
+      "status": "supported",
+      "behavior": "tool-length-compensation-enable"
+    },
+    {
+      "code": "G49",
+      "status": "supported",
+      "behavior": "tool-length-compensation-cancel"
+    },
+    {
+      "code": "G54",
+      "status": "supported",
+      "behavior": "work-offset-1"
+    },
+    {
+      "code": "G55",
+      "status": "supported",
+      "behavior": "work-offset-2"
+    },
+    {
+      "code": "G56",
+      "status": "supported",
+      "behavior": "work-offset-3"
+    },
+    {
+      "code": "G57",
+      "status": "supported",
+      "behavior": "work-offset-4"
+    },
+    {
+      "code": "G58",
+      "status": "supported",
+      "behavior": "work-offset-5"
+    },
+    {
+      "code": "G59",
+      "status": "supported",
+      "behavior": "work-offset-6"
+    },
+    {
+      "code": "G80",
+      "status": "supported",
+      "behavior": "canned-cycle-cancel"
+    },
+    {
+      "code": "G81",
+      "status": "supported",
+      "behavior": "drill-cycle-expand"
+    },
+    {
+      "code": "G82",
+      "status": "supported",
+      "behavior": "drill-dwell-cycle-expand"
+    },
+    {
+      "code": "G83",
+      "status": "supported",
+      "behavior": "peck-drill-cycle-expand"
+    },
+    {
+      "code": "G84",
+      "status": "recognized-unsupported",
+      "behavior": "tapping-cycle"
+    },
+    {
+      "code": "G85",
+      "status": "recognized-unsupported",
+      "behavior": "boring-feed-out-cycle"
+    },
+    {
+      "code": "G86",
+      "status": "recognized-unsupported",
+      "behavior": "boring-spindle-stop-cycle"
+    },
+    {
+      "code": "G87",
+      "status": "recognized-unsupported",
+      "behavior": "back-boring-cycle"
+    },
+    {
+      "code": "G88",
+      "status": "recognized-unsupported",
+      "behavior": "boring-manual-out-cycle"
+    },
+    {
+      "code": "G89",
+      "status": "recognized-unsupported",
+      "behavior": "boring-dwell-feed-out-cycle"
+    },
+    {
+      "code": "G90",
+      "status": "supported",
+      "behavior": "distance-absolute"
+    },
+    {
+      "code": "G91",
+      "status": "supported",
+      "behavior": "distance-incremental"
+    },
+    {
+      "code": "G94",
+      "status": "supported",
+      "behavior": "feed-per-minute"
+    },
+    {
+      "code": "G95",
+      "status": "supported",
+      "behavior": "feed-per-revolution"
+    },
+    {
+      "code": "G96",
+      "status": "supported",
+      "behavior": "spindle-constant-surface-speed"
+    },
+    {
+      "code": "G97",
+      "status": "supported",
+      "behavior": "spindle-rpm"
+    },
+    {
+      "code": "G98",
+      "status": "supported",
+      "behavior": "cycle-return-initial-plane"
+    },
+    {
+      "code": "G99",
+      "status": "supported",
+      "behavior": "cycle-return-r-plane"
+    }
+  ],
+  "mCodes": [
+    {
+      "code": "M0",
+      "status": "supported",
+      "behavior": "program-stop"
+    },
+    {
+      "code": "M1",
+      "status": "supported",
+      "behavior": "optional-program-stop"
+    },
+    {
+      "code": "M2",
+      "status": "supported",
+      "behavior": "program-end"
+    },
+    {
+      "code": "M3",
+      "status": "supported",
+      "behavior": "spindle-clockwise"
+    },
+    {
+      "code": "M4",
+      "status": "supported",
+      "behavior": "spindle-counterclockwise"
+    },
+    {
+      "code": "M5",
+      "status": "supported",
+      "behavior": "spindle-stop"
+    },
+    {
+      "code": "M6",
+      "status": "supported",
+      "behavior": "tool-change"
+    },
+    {
+      "code": "M8",
+      "status": "supported",
+      "behavior": "coolant-on"
+    },
+    {
+      "code": "M9",
+      "status": "supported",
+      "behavior": "coolant-off"
+    },
+    {
+      "code": "M30",
+      "status": "supported",
+      "behavior": "program-end-rewind"
+    }
+  ],
+  "words": [
+    {
+      "word": "T",
+      "status": "supported",
+      "contexts": [
+        "tool-selection"
+      ]
+    },
+    {
+      "word": "S",
+      "status": "supported",
+      "contexts": [
+        "spindle-rpm",
+        "surface-speed"
+      ]
+    },
+    {
+      "word": "F",
+      "status": "supported",
+      "contexts": [
+        "feed-per-minute",
+        "feed-per-revolution"
+      ]
+    },
+    {
+      "word": "X",
+      "status": "supported",
+      "contexts": [
+        "linear-axis",
+        "arc-endpoint",
+        "cycle"
+      ]
+    },
+    {
+      "word": "Y",
+      "status": "supported",
+      "contexts": [
+        "linear-axis",
+        "arc-endpoint",
+        "cycle"
+      ]
+    },
+    {
+      "word": "Z",
+      "status": "supported",
+      "contexts": [
+        "linear-axis",
+        "arc-endpoint",
+        "cycle"
+      ]
+    },
+    {
+      "word": "A",
+      "status": "recognized-unsupported",
+      "contexts": [
+        "rotary-axis",
+        "parsed-not-lowered"
+      ]
+    },
+    {
+      "word": "B",
+      "status": "recognized-unsupported",
+      "contexts": [
+        "rotary-axis",
+        "parsed-not-lowered"
+      ]
+    },
+    {
+      "word": "C",
+      "status": "recognized-unsupported",
+      "contexts": [
+        "rotary-axis",
+        "parsed-not-lowered"
+      ]
+    },
+    {
+      "word": "I",
+      "status": "supported",
+      "contexts": [
+        "arc-center-x"
+      ]
+    },
+    {
+      "word": "J",
+      "status": "supported",
+      "contexts": [
+        "arc-center-y"
+      ]
+    },
+    {
+      "word": "K",
+      "status": "supported",
+      "contexts": [
+        "arc-center-z"
+      ]
+    },
+    {
+      "word": "H",
+      "status": "supported",
+      "contexts": [
+        "tool-length-offset"
+      ]
+    },
+    {
+      "word": "R",
+      "status": "supported",
+      "contexts": [
+        "arc-radius",
+        "cycle-retract-plane"
+      ]
+    },
+    {
+      "word": "P",
+      "status": "supported",
+      "contexts": [
+        "cycle-dwell-seconds",
+        "arc-turn-count-recognized-unsupported"
+      ]
+    },
+    {
+      "word": "Q",
+      "status": "supported",
+      "contexts": [
+        "cycle-peck-depth"
+      ]
+    }
+  ],
+  "diagnosticCodes": [
+    "request.resource_limit",
+    "request.dialect.unsupported",
+    "request.uuid.invalid",
+    "request.work_offset.invalid",
+    "lexer.macro.unsupported",
+    "lexer.symbol.unsupported",
+    "lexer.number.invalid",
+    "lexer.comment.unterminated",
+    "parser.word.unsupported",
+    "parser.word.duplicate",
+    "parser.gcode.unsupported",
+    "parser.mcode.unsupported",
+    "parser.modal.conflict",
+    "semantic.word.context",
+    "semantic.cutter_comp.unsupported",
+    "semantic.numeric.non_finite",
+    "semantic.motion.missing",
+    "semantic.motion.limit",
+    "semantic.feed.missing",
+    "semantic.feed.non_positive",
+    "semantic.feed.unresolved_per_revolution",
+    "semantic.arc.missing_center",
+    "semantic.arc.invalid_radius",
+    "semantic.arc.radius_mismatch",
+    "semantic.arc.full_circle_r_unsupported",
+    "semantic.arc.center_conflict",
+    "semantic.arc.turns.unsupported",
+    "semantic.cycle.parameter_missing",
+    "semantic.cycle.invalid_parameter",
+    "semantic.cycle.plane_change",
+    "semantic.cycle.expansion_limit",
+    "semantic.tool_length.missing_h",
+    "semantic.tool_length.unmapped",
+    "semantic.tool.not_selected",
+    "semantic.tool.unmapped",
+    "semantic.tool.invalid",
+    "semantic.rotary.not_lowered",
+    "semantic.spindle.missing",
+    "semantic.spindle.non_positive"
+  ]
+}

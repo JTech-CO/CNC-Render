@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "valid-recoverable-comment",
+  "dialect": "common-v1",
+  "input": {
+    "file": "recoverable-comment.nc",
+    "encoding": "utf-8"
+  },
+  "initialState": {
+    "toolpathId": "20000000-0000-4000-8000-000000000531",
+    "operationId": "20000000-0000-4000-8000-000000000532",
+    "positionMm": { "xMm": 0, "yMm": 0, "zMm": 0 }
+  },
+  "expected": {
+    "accepted": true,
+    "diagnostics": [
+      {
+        "code": "lexer.comment.unterminated",
+        "line": 2,
+        "column": 7,
+        "severity": "error",
+        "recoverable": true
+      }
+    ],
+    "endMm": { "xMm": 10, "yMm": 0, "zMm": 0 },
+    "pathLengthMm": { "total": 10, "rapid": 5, "feed": 5 },
+    "segmentTypes": ["rapid", "linear"],
+    "sourceMap": [
+      { "sourceLine": 2, "segmentIndices": [0] },
+      { "sourceLine": 3, "segmentIndices": [1] }
+    ],
+    "programControlEvents": [],
+    "finalState": {
+      "programEnd": "none",
+      "lastProgramControl": "none"
+    }
+  },
+  "tolerance": { "positionMm": 1e-9, "pathLengthMm": 1e-9 },
+  "basis": {
+    "summary": "An unterminated parenthesized comment safely consumes only the rest of its source line.",
+    "calculation": "The comment begins at line 2 column 7; rapid=5 and the next-line feed=5 remain executable.",
+    "references": [
+      "docs/gcode-support-matrix.md §공개 진단 코드",
+      "docs/architecture-decisions/0004-gcode-parser.md §7. 진단과 source map"
+    ]
+  }
+}

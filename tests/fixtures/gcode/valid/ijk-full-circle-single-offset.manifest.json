@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "valid-ijk-full-circle-single-offset",
+  "dialect": "common-v1",
+  "input": {
+    "file": "ijk-full-circle-single-offset.nc",
+    "encoding": "utf-8"
+  },
+  "initialState": {
+    "toolpathId": "20000000-0000-4000-8000-000000000431",
+    "operationId": "20000000-0000-4000-8000-000000000432",
+    "positionMm": { "xMm": 0, "yMm": 0, "zMm": 0 }
+  },
+  "expected": {
+    "accepted": true,
+    "diagnostics": [],
+    "endMm": { "xMm": 10, "yMm": 0, "zMm": 0 },
+    "pathLengthMm": {
+      "total": 72.83185307179586,
+      "rapid": 10,
+      "feed": 62.83185307179586
+    },
+    "segmentTypes": ["rapid", "arc"],
+    "segmentDetails": [
+      {
+        "segmentIndex": 1,
+        "segmentType": "arc",
+        "plane": "xy",
+        "clockwise": true,
+        "centerOffsetMm": { "xMm": -10, "yMm": 0, "zMm": 0 }
+      }
+    ],
+    "sourceMap": [
+      { "sourceLine": 2, "segmentIndices": [0] },
+      { "sourceLine": 3, "segmentIndices": [1] }
+    ]
+  },
+  "tolerance": { "positionMm": 1e-9, "pathLengthMm": 1e-9 },
+  "basis": {
+    "summary": "A center-format full circle may specify one active-plane offset; omitted J is zero.",
+    "calculation": "rapid=10; full circle=2*pi*10; total=10+20*pi mm.",
+    "references": ["LinuxCNC G2/G3 center-format full circles"]
+  }
+}
