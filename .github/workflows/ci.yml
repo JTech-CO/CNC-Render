@@ -51,6 +51,19 @@ jobs:
       - name: Run repository verification
         run: pnpm verify
 
+      - name: Run M1 filtered unit and parity gates
+        run: |
+          pnpm test:unit --filter units
+          pnpm test:parity --filter schema
+
+      - name: Check Rust formatting and lints
+        run: |
+          cargo fmt --all -- --check
+          cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      - name: Run Rust execution tests
+        run: pnpm cargo:test
+
       - name: Check dependency boundaries explicitly
         run: pnpm exec dependency-cruiser --config dependency-cruiser.config.cjs apps packages crates
 

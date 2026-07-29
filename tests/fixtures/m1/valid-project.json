@@ -1,0 +1,231 @@
+{
+  "$schema": "urn:cnc-render:schema:project:1",
+  "schemaVersion": 1,
+  "id": "00000000-0000-4000-8000-000000000001",
+  "name": "M1 contract fixture",
+  "createdAt": "2026-07-26T00:00:00Z",
+  "updatedAt": "2026-07-26T00:00:00Z",
+  "unitSystem": "metric",
+  "machineId": "00000000-0000-4000-8000-000000000002",
+  "stockId": "00000000-0000-4000-8000-000000000008",
+  "operationIds": [
+    "00000000-0000-4000-8000-000000000009"
+  ],
+  "machines": [
+    {
+      "schemaVersion": 1,
+      "id": "00000000-0000-4000-8000-000000000002",
+      "name": "Training VMC",
+      "machineType": "vertical-machining-center",
+      "kinematicRootAxisIds": [
+        "00000000-0000-4000-8000-000000000003"
+      ],
+      "axes": [
+        {
+          "schemaVersion": 1,
+          "id": "00000000-0000-4000-8000-000000000003",
+          "name": "X",
+          "kind": "linear",
+          "parentId": null,
+          "directionUnit": {
+            "x": 1,
+            "y": 0,
+            "z": 0
+          },
+          "pivotMm": {
+            "xMm": 0,
+            "yMm": 0,
+            "zMm": 0
+          },
+          "minMm": -250,
+          "maxMm": 250,
+          "maxVelocityMmPerMin": 12000,
+          "maxAccelerationMmPerS2": 1200,
+          "homeMm": 0
+        }
+      ],
+      "spindles": [
+        {
+          "schemaVersion": 1,
+          "id": "00000000-0000-4000-8000-000000000004",
+          "name": "Main spindle",
+          "maxSpindleSpeedRpm": 12000
+        }
+      ],
+      "workEnvelope": {
+        "minMm": {
+          "xMm": -250,
+          "yMm": -200,
+          "zMm": -300
+        },
+        "maxMm": {
+          "xMm": 250,
+          "yMm": 200,
+          "zMm": 0
+        }
+      },
+      "maxFeedMmPerMin": 12000,
+      "modelAssetResourceId": null,
+      "collisionGroups": []
+    }
+  ],
+  "materials": [
+    {
+      "schemaVersion": 1,
+      "id": "00000000-0000-4000-8000-000000000005",
+      "name": "Aluminum 6061",
+      "materialGroup": "aluminum",
+      "densityKgPerM3": 2700
+    }
+  ],
+  "setups": [
+    {
+      "schemaVersion": 1,
+      "id": "00000000-0000-4000-8000-000000000006",
+      "name": "G54 setup",
+      "workOffsetMm": {
+        "xMm": 0,
+        "yMm": 0,
+        "zMm": 50
+      },
+      "rotationRad": {
+        "xRad": 0,
+        "yRad": 0,
+        "zRad": 0
+      },
+      "fixtureResourceIds": []
+    }
+  ],
+  "toolAssemblies": [
+    {
+      "schemaVersion": 1,
+      "id": "00000000-0000-4000-8000-000000000007",
+      "name": "10 mm flat end mill",
+      "toolType": "milling-cutter",
+      "cutterGeometry": {
+        "geometryType": "flat-end-mill",
+        "diameterMm": 10,
+        "cornerRadiusMm": 0,
+        "fluteCount": 3,
+        "cuttingLengthMm": 25,
+        "overallLengthMm": 75
+      },
+      "holderGeometry": {
+        "diameterMm": 32,
+        "lengthMm": 45
+      },
+      "gaugeLengthMm": 70,
+      "stickoutLengthMm": 35,
+      "maxSpindleSpeedRpm": 12000,
+      "wearRatio": 0,
+      "materialCompatibilityIds": [
+        "00000000-0000-4000-8000-000000000005"
+      ]
+    }
+  ],
+  "stocks": [
+    {
+      "schemaVersion": 1,
+      "id": "00000000-0000-4000-8000-000000000008",
+      "name": "Training block",
+      "geometry": {
+        "primitiveType": "box",
+        "sizeMm": {
+          "xMm": 100,
+          "yMm": 80,
+          "zMm": 30
+        }
+      },
+      "transform": {
+        "positionMm": {
+          "xMm": 0,
+          "yMm": 0,
+          "zMm": 0
+        },
+        "rotationRad": {
+          "xRad": 0,
+          "yRad": 0,
+          "zRad": 0
+        }
+      },
+      "materialId": "00000000-0000-4000-8000-000000000005",
+      "representationType": "analytic",
+      "resolutionMm": 1,
+      "sourceModelResourceId": null
+    }
+  ],
+  "operations": [
+    {
+      "schemaVersion": 1,
+      "id": "00000000-0000-4000-8000-000000000009",
+      "name": "Top facing pass",
+      "operationType": "facing",
+      "setupId": "00000000-0000-4000-8000-000000000006",
+      "toolAssemblyId": "00000000-0000-4000-8000-000000000007",
+      "strategy": "zig-zag",
+      "feed": {
+        "mode": "per-minute",
+        "feedMmPerMin": 800
+      },
+      "spindleSpeedRpm": 6000,
+      "spindleDirection": "clockwise",
+      "depthOfCutMm": 1,
+      "widthOfCutMm": 6,
+      "targetGeometryResourceId": null,
+      "generatedToolpathId": "00000000-0000-4000-8000-00000000000a"
+    }
+  ],
+  "toolpaths": [
+    {
+      "schemaVersion": 1,
+      "id": "00000000-0000-4000-8000-00000000000a",
+      "operationId": "00000000-0000-4000-8000-000000000009",
+      "coordinateSystem": "work",
+      "feedMode": "units-per-minute",
+      "spindleMode": "rpm",
+      "segments": [
+        {
+          "schemaVersion": 1,
+          "id": "00000000-0000-4000-8000-00000000000b",
+          "sequence": 0,
+          "segmentType": "linear",
+          "startMm": {
+            "xMm": -40,
+            "yMm": -30,
+            "zMm": 31
+          },
+          "endMm": {
+            "xMm": 40,
+            "yMm": -30,
+            "zMm": 31
+          },
+          "feedMmPerMin": 800
+        }
+      ],
+      "sourceLineMap": [
+        {
+          "segmentId": "00000000-0000-4000-8000-00000000000b",
+          "sourceLine": 12
+        }
+      ]
+    }
+  ],
+  "resources": [
+    {
+      "schemaVersion": 1,
+      "id": "00000000-0000-4000-8000-00000000000c",
+      "path": "programs/main.nc",
+      "role": "gcode-program",
+      "mediaType": "text/x-gcode",
+      "byteLength": 128,
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "authoritative": true
+    }
+  ],
+  "settings": {
+    "schemaVersion": 1,
+    "accuracyPreset": "balanced",
+    "displayDecimalPlaces": 3,
+    "deterministicSeed": 42
+  }
+}

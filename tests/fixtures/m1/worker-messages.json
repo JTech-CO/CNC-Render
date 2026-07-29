@@ -1,0 +1,82 @@
+[
+  {
+    "protocolVersion": 1,
+    "messageId": "10000000-0000-4000-8000-000000000001",
+    "replyTo": null,
+    "kind": "command",
+    "type": "worker.handshake",
+    "runId": null,
+    "sequence": 0,
+    "payload": {
+      "supportedProtocolVersions": [
+        1
+      ],
+      "clientVersion": "0.1.0",
+      "transferModes": [
+        "transferable",
+        "copy"
+      ]
+    }
+  },
+  {
+    "protocolVersion": 1,
+    "messageId": "10000000-0000-4000-8000-000000000002",
+    "replyTo": "10000000-0000-4000-8000-000000000001",
+    "kind": "event",
+    "type": "worker.ready",
+    "runId": null,
+    "sequence": 0,
+    "payload": {
+      "selectedProtocolVersion": 1,
+      "coreVersion": "0.1.0",
+      "transferMode": "transferable"
+    }
+  },
+  {
+    "protocolVersion": 1,
+    "messageId": "10000000-0000-4000-8000-000000000003",
+    "replyTo": null,
+    "kind": "event",
+    "type": "simulation.event",
+    "runId": "20000000-0000-4000-8000-000000000001",
+    "sequence": 0,
+    "payload": {
+      "event": {
+        "schemaVersion": 1,
+        "runId": "20000000-0000-4000-8000-000000000001",
+        "sequence": 0,
+        "timeS": 0,
+        "eventType": "simulation.initialized",
+        "projectId": "00000000-0000-4000-8000-000000000001"
+      },
+      "binaryHandles": []
+    }
+  },
+  {
+    "protocolVersion": 1,
+    "messageId": "10000000-0000-4000-8000-000000000004",
+    "replyTo": null,
+    "kind": "event",
+    "type": "simulation.event",
+    "runId": "20000000-0000-4000-8000-000000000001",
+    "sequence": 1,
+    "payload": {
+      "event": {
+        "schemaVersion": 1,
+        "runId": "20000000-0000-4000-8000-000000000001",
+        "sequence": 1,
+        "timeS": 0.5,
+        "eventType": "simulation.progress",
+        "progressRatio": 0.25,
+        "toolpathSegmentIndex": 0,
+        "stockRevision": 1,
+        "toolPositionMm": {
+          "xMm": -20,
+          "yMm": -30,
+          "zMm": 31
+        }
+      },
+      "binaryHandles": []
+    }
+  }
+]

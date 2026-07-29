@@ -1,0 +1,2814 @@
+{
+  "$id": "urn:cnc-render:schema:worker-protocol:1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "oneOf": [
+    {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "command",
+          "type": "string"
+        },
+        "messageId": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "type": "string"
+        },
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "clientVersion": {
+              "maxLength": 64,
+              "minLength": 1,
+              "type": "string"
+            },
+            "supportedProtocolVersions": {
+              "items": {
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991,
+                "type": "integer"
+              },
+              "minItems": 1,
+              "type": "array"
+            },
+            "transferModes": {
+              "items": {
+                "enum": [
+                  "transferable",
+                  "shared-array-buffer",
+                  "copy"
+                ],
+                "type": "string"
+              },
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": [
+            "supportedProtocolVersions",
+            "clientVersion",
+            "transferModes"
+          ],
+          "type": "object"
+        },
+        "protocolVersion": {
+          "const": 1,
+          "type": "number"
+        },
+        "replyTo": {
+          "type": "null"
+        },
+        "runId": {
+          "type": "null"
+        },
+        "sequence": {
+          "const": 0,
+          "type": "number"
+        },
+        "type": {
+          "const": "worker.handshake",
+          "type": "string"
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "messageId",
+        "replyTo",
+        "kind",
+        "type",
+        "runId",
+        "sequence",
+        "payload"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "command",
+          "type": "string"
+        },
+        "messageId": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "type": "string"
+        },
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "binaryHandles": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "binaryKind": {
+                    "enum": [
+                      "toolpath-segments",
+                      "stock-field",
+                      "render-mesh",
+                      "checkpoint"
+                    ],
+                    "type": "string"
+                  },
+                  "byteLength": {
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991,
+                    "type": "integer"
+                  },
+                  "elementType": {
+                    "enum": [
+                      "uint8",
+                      "uint16",
+                      "uint32",
+                      "int32",
+                      "float32",
+                      "float64"
+                    ],
+                    "type": "string"
+                  },
+                  "handleId": {
+                    "maxLength": 36,
+                    "minLength": 36,
+                    "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                    "type": "string"
+                  },
+                  "ownership": {
+                    "enum": [
+                      "sender",
+                      "receiver",
+                      "shared",
+                      "copy"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "handleId",
+                  "binaryKind",
+                  "byteLength",
+                  "elementType",
+                  "ownership"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "project": {
+              "$id": "urn:cnc-render:schema:project:1",
+              "additionalProperties": false,
+              "description": "Version 1 CNC Render project root document",
+              "properties": {
+                "$schema": {
+                  "const": "urn:cnc-render:schema:project:1",
+                  "type": "string"
+                },
+                "createdAt": {
+                  "pattern": "^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})(?:\\.(\\d{1,9}))?Z(?![\\s\\S])",
+                  "type": "string"
+                },
+                "id": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                  "type": "string"
+                },
+                "machineId": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                  "type": "string"
+                },
+                "machines": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "axes": {
+                        "items": {
+                          "oneOf": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "directionUnit": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "x": {
+                                      "type": "number"
+                                    },
+                                    "y": {
+                                      "type": "number"
+                                    },
+                                    "z": {
+                                      "type": "number"
+                                    }
+                                  },
+                                  "required": [
+                                    "x",
+                                    "y",
+                                    "z"
+                                  ],
+                                  "type": "object"
+                                },
+                                "homeMm": {
+                                  "type": "number"
+                                },
+                                "id": {
+                                  "maxLength": 36,
+                                  "minLength": 36,
+                                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                                  "type": "string"
+                                },
+                                "kind": {
+                                  "const": "linear",
+                                  "type": "string"
+                                },
+                                "maxAccelerationMmPerS2": {
+                                  "exclusiveMinimum": 0,
+                                  "type": "number"
+                                },
+                                "maxMm": {
+                                  "type": "number"
+                                },
+                                "maxVelocityMmPerMin": {
+                                  "exclusiveMinimum": 0,
+                                  "type": "number"
+                                },
+                                "minMm": {
+                                  "type": "number"
+                                },
+                                "name": {
+                                  "maxLength": 64,
+                                  "minLength": 1,
+                                  "type": "string"
+                                },
+                                "parentId": {
+                                  "anyOf": [
+                                    {
+                                      "maxLength": 36,
+                                      "minLength": 36,
+                                      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "pivotMm": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "xMm": {
+                                      "type": "number"
+                                    },
+                                    "yMm": {
+                                      "type": "number"
+                                    },
+                                    "zMm": {
+                                      "type": "number"
+                                    }
+                                  },
+                                  "required": [
+                                    "xMm",
+                                    "yMm",
+                                    "zMm"
+                                  ],
+                                  "type": "object"
+                                },
+                                "schemaVersion": {
+                                  "const": 1,
+                                  "type": "number"
+                                }
+                              },
+                              "required": [
+                                "schemaVersion",
+                                "id",
+                                "name",
+                                "kind",
+                                "parentId",
+                                "directionUnit",
+                                "pivotMm",
+                                "minMm",
+                                "maxMm",
+                                "maxVelocityMmPerMin",
+                                "maxAccelerationMmPerS2",
+                                "homeMm"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "directionUnit": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "x": {
+                                      "type": "number"
+                                    },
+                                    "y": {
+                                      "type": "number"
+                                    },
+                                    "z": {
+                                      "type": "number"
+                                    }
+                                  },
+                                  "required": [
+                                    "x",
+                                    "y",
+                                    "z"
+                                  ],
+                                  "type": "object"
+                                },
+                                "homeRad": {
+                                  "type": "number"
+                                },
+                                "id": {
+                                  "maxLength": 36,
+                                  "minLength": 36,
+                                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                                  "type": "string"
+                                },
+                                "kind": {
+                                  "const": "rotary",
+                                  "type": "string"
+                                },
+                                "maxAccelerationRadPerS2": {
+                                  "exclusiveMinimum": 0,
+                                  "type": "number"
+                                },
+                                "maxRad": {
+                                  "type": "number"
+                                },
+                                "maxVelocityRadPerS": {
+                                  "exclusiveMinimum": 0,
+                                  "type": "number"
+                                },
+                                "minRad": {
+                                  "type": "number"
+                                },
+                                "name": {
+                                  "maxLength": 64,
+                                  "minLength": 1,
+                                  "type": "string"
+                                },
+                                "parentId": {
+                                  "anyOf": [
+                                    {
+                                      "maxLength": 36,
+                                      "minLength": 36,
+                                      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "pivotMm": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "xMm": {
+                                      "type": "number"
+                                    },
+                                    "yMm": {
+                                      "type": "number"
+                                    },
+                                    "zMm": {
+                                      "type": "number"
+                                    }
+                                  },
+                                  "required": [
+                                    "xMm",
+                                    "yMm",
+                                    "zMm"
+                                  ],
+                                  "type": "object"
+                                },
+                                "schemaVersion": {
+                                  "const": 1,
+                                  "type": "number"
+                                }
+                              },
+                              "required": [
+                                "schemaVersion",
+                                "id",
+                                "name",
+                                "kind",
+                                "parentId",
+                                "directionUnit",
+                                "pivotMm",
+                                "minRad",
+                                "maxRad",
+                                "maxVelocityRadPerS",
+                                "maxAccelerationRadPerS2",
+                                "homeRad"
+                              ],
+                              "type": "object"
+                            }
+                          ]
+                        },
+                        "minItems": 1,
+                        "type": "array"
+                      },
+                      "collisionGroups": {
+                        "items": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "id": {
+                              "maxLength": 36,
+                              "minLength": 36,
+                              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                              "type": "string"
+                            },
+                            "memberResourceIds": {
+                              "items": {
+                                "maxLength": 36,
+                                "minLength": 36,
+                                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                                "type": "string"
+                              },
+                              "type": "array"
+                            },
+                            "name": {
+                              "maxLength": 64,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "schemaVersion": {
+                              "const": 1,
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "schemaVersion",
+                            "id",
+                            "name",
+                            "memberResourceIds"
+                          ],
+                          "type": "object"
+                        },
+                        "type": "array"
+                      },
+                      "id": {
+                        "maxLength": 36,
+                        "minLength": 36,
+                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                        "type": "string"
+                      },
+                      "kinematicRootAxisIds": {
+                        "items": {
+                          "maxLength": 36,
+                          "minLength": 36,
+                          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                          "type": "string"
+                        },
+                        "minItems": 1,
+                        "type": "array"
+                      },
+                      "machineType": {
+                        "enum": [
+                          "vertical-machining-center",
+                          "horizontal-machining-center",
+                          "lathe",
+                          "mill-turn"
+                        ],
+                        "type": "string"
+                      },
+                      "maxFeedMmPerMin": {
+                        "exclusiveMinimum": 0,
+                        "type": "number"
+                      },
+                      "modelAssetResourceId": {
+                        "anyOf": [
+                          {
+                            "maxLength": 36,
+                            "minLength": 36,
+                            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "name": {
+                        "maxLength": 128,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "schemaVersion": {
+                        "const": 1,
+                        "type": "number"
+                      },
+                      "spindles": {
+                        "items": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "id": {
+                              "maxLength": 36,
+                              "minLength": 36,
+                              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                              "type": "string"
+                            },
+                            "maxSpindleSpeedRpm": {
+                              "exclusiveMinimum": 0,
+                              "type": "number"
+                            },
+                            "name": {
+                              "maxLength": 64,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "schemaVersion": {
+                              "const": 1,
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "schemaVersion",
+                            "id",
+                            "name",
+                            "maxSpindleSpeedRpm"
+                          ],
+                          "type": "object"
+                        },
+                        "minItems": 1,
+                        "type": "array"
+                      },
+                      "workEnvelope": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "maxMm": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "xMm": {
+                                "type": "number"
+                              },
+                              "yMm": {
+                                "type": "number"
+                              },
+                              "zMm": {
+                                "type": "number"
+                              }
+                            },
+                            "required": [
+                              "xMm",
+                              "yMm",
+                              "zMm"
+                            ],
+                            "type": "object"
+                          },
+                          "minMm": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "xMm": {
+                                "type": "number"
+                              },
+                              "yMm": {
+                                "type": "number"
+                              },
+                              "zMm": {
+                                "type": "number"
+                              }
+                            },
+                            "required": [
+                              "xMm",
+                              "yMm",
+                              "zMm"
+                            ],
+                            "type": "object"
+                          }
+                        },
+                        "required": [
+                          "minMm",
+                          "maxMm"
+                        ],
+                        "type": "object"
+                      }
+                    },
+                    "required": [
+                      "schemaVersion",
+                      "id",
+                      "name",
+                      "machineType",
+                      "kinematicRootAxisIds",
+                      "axes",
+                      "spindles",
+                      "workEnvelope",
+                      "maxFeedMmPerMin",
+                      "modelAssetResourceId",
+                      "collisionGroups"
+                    ],
+                    "type": "object"
+                  },
+                  "minItems": 1,
+                  "type": "array"
+                },
+                "materials": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "densityKgPerM3": {
+                        "exclusiveMinimum": 0,
+                        "type": "number"
+                      },
+                      "id": {
+                        "maxLength": 36,
+                        "minLength": 36,
+                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                        "type": "string"
+                      },
+                      "materialGroup": {
+                        "enum": [
+                          "aluminum",
+                          "steel",
+                          "stainless-steel",
+                          "titanium",
+                          "brass",
+                          "plastic",
+                          "wood"
+                        ],
+                        "type": "string"
+                      },
+                      "name": {
+                        "maxLength": 128,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "schemaVersion": {
+                        "const": 1,
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "schemaVersion",
+                      "id",
+                      "name",
+                      "materialGroup",
+                      "densityKgPerM3"
+                    ],
+                    "type": "object"
+                  },
+                  "minItems": 1,
+                  "type": "array"
+                },
+                "name": {
+                  "maxLength": 200,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "operationIds": {
+                  "items": {
+                    "maxLength": 36,
+                    "minLength": 36,
+                    "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "operations": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "depthOfCutMm": {
+                        "exclusiveMinimum": 0,
+                        "type": "number"
+                      },
+                      "feed": {
+                        "oneOf": [
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "feedMmPerMin": {
+                                "exclusiveMinimum": 0,
+                                "type": "number"
+                              },
+                              "mode": {
+                                "const": "per-minute",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "mode",
+                              "feedMmPerMin"
+                            ],
+                            "type": "object"
+                          },
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "feedMmPerRev": {
+                                "exclusiveMinimum": 0,
+                                "type": "number"
+                              },
+                              "mode": {
+                                "const": "per-revolution",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "mode",
+                              "feedMmPerRev"
+                            ],
+                            "type": "object"
+                          },
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "feedMmPerTooth": {
+                                "exclusiveMinimum": 0,
+                                "type": "number"
+                              },
+                              "mode": {
+                                "const": "per-tooth",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "mode",
+                              "feedMmPerTooth"
+                            ],
+                            "type": "object"
+                          }
+                        ]
+                      },
+                      "generatedToolpathId": {
+                        "anyOf": [
+                          {
+                            "maxLength": 36,
+                            "minLength": 36,
+                            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "id": {
+                        "maxLength": 36,
+                        "minLength": 36,
+                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                        "type": "string"
+                      },
+                      "name": {
+                        "maxLength": 128,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "operationType": {
+                        "enum": [
+                          "milling",
+                          "drilling",
+                          "turning",
+                          "facing",
+                          "boring"
+                        ],
+                        "type": "string"
+                      },
+                      "schemaVersion": {
+                        "const": 1,
+                        "type": "number"
+                      },
+                      "setupId": {
+                        "maxLength": 36,
+                        "minLength": 36,
+                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                        "type": "string"
+                      },
+                      "spindleDirection": {
+                        "enum": [
+                          "clockwise",
+                          "counterclockwise"
+                        ],
+                        "type": "string"
+                      },
+                      "spindleSpeedRpm": {
+                        "exclusiveMinimum": 0,
+                        "type": "number"
+                      },
+                      "strategy": {
+                        "maxLength": 128,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "targetGeometryResourceId": {
+                        "anyOf": [
+                          {
+                            "maxLength": 36,
+                            "minLength": 36,
+                            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "toolAssemblyId": {
+                        "maxLength": 36,
+                        "minLength": 36,
+                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                        "type": "string"
+                      },
+                      "widthOfCutMm": {
+                        "exclusiveMinimum": 0,
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "schemaVersion",
+                      "id",
+                      "name",
+                      "operationType",
+                      "setupId",
+                      "toolAssemblyId",
+                      "strategy",
+                      "feed",
+                      "spindleSpeedRpm",
+                      "spindleDirection",
+                      "depthOfCutMm",
+                      "widthOfCutMm",
+                      "targetGeometryResourceId",
+                      "generatedToolpathId"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "resources": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "authoritative": {
+                        "type": "boolean"
+                      },
+                      "byteLength": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "id": {
+                        "maxLength": 36,
+                        "minLength": 36,
+                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                        "type": "string"
+                      },
+                      "mediaType": {
+                        "pattern": "^[a-z0-9][a-z0-9!#$&^_.+-]*\\/[a-z0-9][a-z0-9!#$&^_.+-]*(?![\\s\\S])",
+                        "type": "string"
+                      },
+                      "path": {
+                        "maxLength": 512,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "role": {
+                        "enum": [
+                          "gcode-program",
+                          "machine-model",
+                          "stock-model",
+                          "target-model",
+                          "toolpath",
+                          "checkpoint",
+                          "preview",
+                          "report"
+                        ],
+                        "type": "string"
+                      },
+                      "schemaVersion": {
+                        "const": 1,
+                        "type": "number"
+                      },
+                      "sha256": {
+                        "maxLength": 64,
+                        "minLength": 64,
+                        "pattern": "^[a-f0-9]{64}$",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "schemaVersion",
+                      "id",
+                      "path",
+                      "role",
+                      "mediaType",
+                      "byteLength",
+                      "sha256",
+                      "authoritative"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "schemaVersion": {
+                  "const": 1,
+                  "type": "number"
+                },
+                "settings": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "accuracyPreset": {
+                      "enum": [
+                        "preview",
+                        "balanced",
+                        "precision"
+                      ],
+                      "type": "string"
+                    },
+                    "deterministicSeed": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "displayDecimalPlaces": {
+                      "maximum": 9,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "schemaVersion": {
+                      "const": 1,
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "schemaVersion",
+                    "accuracyPreset",
+                    "displayDecimalPlaces",
+                    "deterministicSeed"
+                  ],
+                  "type": "object"
+                },
+                "setups": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "fixtureResourceIds": {
+                        "items": {
+                          "maxLength": 36,
+                          "minLength": 36,
+                          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "id": {
+                        "maxLength": 36,
+                        "minLength": 36,
+                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                        "type": "string"
+                      },
+                      "name": {
+                        "maxLength": 128,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "rotationRad": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "xRad": {
+                            "type": "number"
+                          },
+                          "yRad": {
+                            "type": "number"
+                          },
+                          "zRad": {
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "xRad",
+                          "yRad",
+                          "zRad"
+                        ],
+                        "type": "object"
+                      },
+                      "schemaVersion": {
+                        "const": 1,
+                        "type": "number"
+                      },
+                      "workOffsetMm": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "xMm": {
+                            "type": "number"
+                          },
+                          "yMm": {
+                            "type": "number"
+                          },
+                          "zMm": {
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "xMm",
+                          "yMm",
+                          "zMm"
+                        ],
+                        "type": "object"
+                      }
+                    },
+                    "required": [
+                      "schemaVersion",
+                      "id",
+                      "name",
+                      "workOffsetMm",
+                      "rotationRad",
+                      "fixtureResourceIds"
+                    ],
+                    "type": "object"
+                  },
+                  "minItems": 1,
+                  "type": "array"
+                },
+                "stockId": {
+                  "maxLength": 36,
+                  "minLength": 36,
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                  "type": "string"
+                },
+                "stocks": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "geometry": {
+                        "oneOf": [
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "primitiveType": {
+                                "const": "box",
+                                "type": "string"
+                              },
+                              "sizeMm": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "xMm": {
+                                    "exclusiveMinimum": 0,
+                                    "type": "number"
+                                  },
+                                  "yMm": {
+                                    "exclusiveMinimum": 0,
+                                    "type": "number"
+                                  },
+                                  "zMm": {
+                                    "exclusiveMinimum": 0,
+                                    "type": "number"
+                                  }
+                                },
+                                "required": [
+                                  "xMm",
+                                  "yMm",
+                                  "zMm"
+                                ],
+                                "type": "object"
+                              }
+                            },
+                            "required": [
+                              "primitiveType",
+                              "sizeMm"
+                            ],
+                            "type": "object"
+                          },
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "diameterMm": {
+                                "exclusiveMinimum": 0,
+                                "type": "number"
+                              },
+                              "lengthMm": {
+                                "exclusiveMinimum": 0,
+                                "type": "number"
+                              },
+                              "primitiveType": {
+                                "const": "cylinder",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "primitiveType",
+                              "diameterMm",
+                              "lengthMm"
+                            ],
+                            "type": "object"
+                          }
+                        ]
+                      },
+                      "id": {
+                        "maxLength": 36,
+                        "minLength": 36,
+                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                        "type": "string"
+                      },
+                      "materialId": {
+                        "maxLength": 36,
+                        "minLength": 36,
+                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                        "type": "string"
+                      },
+                      "name": {
+                        "maxLength": 128,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "representationType": {
+                        "enum": [
+                          "analytic",
+                          "mesh",
+                          "dexel",
+                          "voxel"
+                        ],
+                        "type": "string"
+                      },
+                      "resolutionMm": {
+                        "exclusiveMinimum": 0,
+                        "type": "number"
+                      },
+                      "schemaVersion": {
+                        "const": 1,
+                        "type": "number"
+                      },
+                      "sourceModelResourceId": {
+                        "anyOf": [
+                          {
+                            "maxLength": 36,
+                            "minLength": 36,
+                            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "transform": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "positionMm": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "xMm": {
+                                "type": "number"
+                              },
+                              "yMm": {
+                                "type": "number"
+                              },
+                              "zMm": {
+                                "type": "number"
+                              }
+                            },
+                            "required": [
+                              "xMm",
+                              "yMm",
+                              "zMm"
+                            ],
+                            "type": "object"
+                          },
+                          "rotationRad": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "xRad": {
+                                "type": "number"
+                              },
+                              "yRad": {
+                                "type": "number"
+                              },
+                              "zRad": {
+                                "type": "number"
+                              }
+                            },
+                            "required": [
+                              "xRad",
+                              "yRad",
+                              "zRad"
+                            ],
+                            "type": "object"
+                          }
+                        },
+                        "required": [
+                          "positionMm",
+                          "rotationRad"
+                        ],
+                        "type": "object"
+                      }
+                    },
+                    "required": [
+                      "schemaVersion",
+                      "id",
+                      "name",
+                      "geometry",
+                      "transform",
+                      "materialId",
+                      "representationType",
+                      "resolutionMm",
+                      "sourceModelResourceId"
+                    ],
+                    "type": "object"
+                  },
+                  "minItems": 1,
+                  "type": "array"
+                },
+                "toolAssemblies": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "cutterGeometry": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "cornerRadiusMm": {
+                            "minimum": 0,
+                            "type": "number"
+                          },
+                          "cuttingLengthMm": {
+                            "exclusiveMinimum": 0,
+                            "type": "number"
+                          },
+                          "diameterMm": {
+                            "exclusiveMinimum": 0,
+                            "type": "number"
+                          },
+                          "fluteCount": {
+                            "exclusiveMinimum": 0,
+                            "maximum": 64,
+                            "type": "integer"
+                          },
+                          "geometryType": {
+                            "enum": [
+                              "flat-end-mill",
+                              "ball-end-mill",
+                              "bull-nose-end-mill",
+                              "drill",
+                              "turning-insert"
+                            ],
+                            "type": "string"
+                          },
+                          "overallLengthMm": {
+                            "exclusiveMinimum": 0,
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "geometryType",
+                          "diameterMm",
+                          "cornerRadiusMm",
+                          "fluteCount",
+                          "cuttingLengthMm",
+                          "overallLengthMm"
+                        ],
+                        "type": "object"
+                      },
+                      "gaugeLengthMm": {
+                        "exclusiveMinimum": 0,
+                        "type": "number"
+                      },
+                      "holderGeometry": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "diameterMm": {
+                            "exclusiveMinimum": 0,
+                            "type": "number"
+                          },
+                          "lengthMm": {
+                            "exclusiveMinimum": 0,
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "diameterMm",
+                          "lengthMm"
+                        ],
+                        "type": "object"
+                      },
+                      "id": {
+                        "maxLength": 36,
+                        "minLength": 36,
+                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                        "type": "string"
+                      },
+                      "materialCompatibilityIds": {
+                        "items": {
+                          "maxLength": 36,
+                          "minLength": 36,
+                          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "maxSpindleSpeedRpm": {
+                        "exclusiveMinimum": 0,
+                        "type": "number"
+                      },
+                      "name": {
+                        "maxLength": 128,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "schemaVersion": {
+                        "const": 1,
+                        "type": "number"
+                      },
+                      "stickoutLengthMm": {
+                        "exclusiveMinimum": 0,
+                        "type": "number"
+                      },
+                      "toolType": {
+                        "enum": [
+                          "milling-cutter",
+                          "drill",
+                          "turning-tool",
+                          "boring-bar"
+                        ],
+                        "type": "string"
+                      },
+                      "wearRatio": {
+                        "maximum": 1,
+                        "minimum": 0,
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "schemaVersion",
+                      "id",
+                      "name",
+                      "toolType",
+                      "cutterGeometry",
+                      "holderGeometry",
+                      "gaugeLengthMm",
+                      "stickoutLengthMm",
+                      "maxSpindleSpeedRpm",
+                      "wearRatio",
+                      "materialCompatibilityIds"
+                    ],
+                    "type": "object"
+                  },
+                  "minItems": 1,
+                  "type": "array"
+                },
+                "toolpaths": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "coordinateSystem": {
+                        "enum": [
+                          "machine",
+                          "work",
+                          "tool"
+                        ],
+                        "type": "string"
+                      },
+                      "feedMode": {
+                        "enum": [
+                          "units-per-minute",
+                          "units-per-revolution"
+                        ],
+                        "type": "string"
+                      },
+                      "id": {
+                        "maxLength": 36,
+                        "minLength": 36,
+                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                        "type": "string"
+                      },
+                      "operationId": {
+                        "maxLength": 36,
+                        "minLength": 36,
+                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                        "type": "string"
+                      },
+                      "schemaVersion": {
+                        "const": 1,
+                        "type": "number"
+                      },
+                      "segments": {
+                        "items": {
+                          "oneOf": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "endMm": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "xMm": {
+                                      "type": "number"
+                                    },
+                                    "yMm": {
+                                      "type": "number"
+                                    },
+                                    "zMm": {
+                                      "type": "number"
+                                    }
+                                  },
+                                  "required": [
+                                    "xMm",
+                                    "yMm",
+                                    "zMm"
+                                  ],
+                                  "type": "object"
+                                },
+                                "id": {
+                                  "maxLength": 36,
+                                  "minLength": 36,
+                                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                                  "type": "string"
+                                },
+                                "schemaVersion": {
+                                  "const": 1,
+                                  "type": "number"
+                                },
+                                "segmentType": {
+                                  "const": "rapid",
+                                  "type": "string"
+                                },
+                                "sequence": {
+                                  "maximum": 9007199254740991,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "startMm": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "xMm": {
+                                      "type": "number"
+                                    },
+                                    "yMm": {
+                                      "type": "number"
+                                    },
+                                    "zMm": {
+                                      "type": "number"
+                                    }
+                                  },
+                                  "required": [
+                                    "xMm",
+                                    "yMm",
+                                    "zMm"
+                                  ],
+                                  "type": "object"
+                                }
+                              },
+                              "required": [
+                                "schemaVersion",
+                                "id",
+                                "sequence",
+                                "segmentType",
+                                "startMm",
+                                "endMm"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "endMm": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "xMm": {
+                                      "type": "number"
+                                    },
+                                    "yMm": {
+                                      "type": "number"
+                                    },
+                                    "zMm": {
+                                      "type": "number"
+                                    }
+                                  },
+                                  "required": [
+                                    "xMm",
+                                    "yMm",
+                                    "zMm"
+                                  ],
+                                  "type": "object"
+                                },
+                                "feedMmPerMin": {
+                                  "exclusiveMinimum": 0,
+                                  "type": "number"
+                                },
+                                "id": {
+                                  "maxLength": 36,
+                                  "minLength": 36,
+                                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                                  "type": "string"
+                                },
+                                "schemaVersion": {
+                                  "const": 1,
+                                  "type": "number"
+                                },
+                                "segmentType": {
+                                  "const": "linear",
+                                  "type": "string"
+                                },
+                                "sequence": {
+                                  "maximum": 9007199254740991,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "startMm": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "xMm": {
+                                      "type": "number"
+                                    },
+                                    "yMm": {
+                                      "type": "number"
+                                    },
+                                    "zMm": {
+                                      "type": "number"
+                                    }
+                                  },
+                                  "required": [
+                                    "xMm",
+                                    "yMm",
+                                    "zMm"
+                                  ],
+                                  "type": "object"
+                                }
+                              },
+                              "required": [
+                                "schemaVersion",
+                                "id",
+                                "sequence",
+                                "segmentType",
+                                "startMm",
+                                "endMm",
+                                "feedMmPerMin"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "centerOffsetMm": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "xMm": {
+                                      "type": "number"
+                                    },
+                                    "yMm": {
+                                      "type": "number"
+                                    },
+                                    "zMm": {
+                                      "type": "number"
+                                    }
+                                  },
+                                  "required": [
+                                    "xMm",
+                                    "yMm",
+                                    "zMm"
+                                  ],
+                                  "type": "object"
+                                },
+                                "clockwise": {
+                                  "type": "boolean"
+                                },
+                                "endMm": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "xMm": {
+                                      "type": "number"
+                                    },
+                                    "yMm": {
+                                      "type": "number"
+                                    },
+                                    "zMm": {
+                                      "type": "number"
+                                    }
+                                  },
+                                  "required": [
+                                    "xMm",
+                                    "yMm",
+                                    "zMm"
+                                  ],
+                                  "type": "object"
+                                },
+                                "feedMmPerMin": {
+                                  "exclusiveMinimum": 0,
+                                  "type": "number"
+                                },
+                                "id": {
+                                  "maxLength": 36,
+                                  "minLength": 36,
+                                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                                  "type": "string"
+                                },
+                                "plane": {
+                                  "enum": [
+                                    "xy",
+                                    "xz",
+                                    "yz"
+                                  ],
+                                  "type": "string"
+                                },
+                                "schemaVersion": {
+                                  "const": 1,
+                                  "type": "number"
+                                },
+                                "segmentType": {
+                                  "const": "arc",
+                                  "type": "string"
+                                },
+                                "sequence": {
+                                  "maximum": 9007199254740991,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "startMm": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "xMm": {
+                                      "type": "number"
+                                    },
+                                    "yMm": {
+                                      "type": "number"
+                                    },
+                                    "zMm": {
+                                      "type": "number"
+                                    }
+                                  },
+                                  "required": [
+                                    "xMm",
+                                    "yMm",
+                                    "zMm"
+                                  ],
+                                  "type": "object"
+                                }
+                              },
+                              "required": [
+                                "schemaVersion",
+                                "id",
+                                "sequence",
+                                "segmentType",
+                                "startMm",
+                                "endMm",
+                                "centerOffsetMm",
+                                "plane",
+                                "clockwise",
+                                "feedMmPerMin"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "durationS": {
+                                  "exclusiveMinimum": 0,
+                                  "type": "number"
+                                },
+                                "id": {
+                                  "maxLength": 36,
+                                  "minLength": 36,
+                                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                                  "type": "string"
+                                },
+                                "positionMm": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "xMm": {
+                                      "type": "number"
+                                    },
+                                    "yMm": {
+                                      "type": "number"
+                                    },
+                                    "zMm": {
+                                      "type": "number"
+                                    }
+                                  },
+                                  "required": [
+                                    "xMm",
+                                    "yMm",
+                                    "zMm"
+                                  ],
+                                  "type": "object"
+                                },
+                                "schemaVersion": {
+                                  "const": 1,
+                                  "type": "number"
+                                },
+                                "segmentType": {
+                                  "const": "dwell",
+                                  "type": "string"
+                                },
+                                "sequence": {
+                                  "maximum": 9007199254740991,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                }
+                              },
+                              "required": [
+                                "schemaVersion",
+                                "id",
+                                "sequence",
+                                "segmentType",
+                                "positionMm",
+                                "durationS"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "id": {
+                                  "maxLength": 36,
+                                  "minLength": 36,
+                                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                                  "type": "string"
+                                },
+                                "positionMm": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "xMm": {
+                                      "type": "number"
+                                    },
+                                    "yMm": {
+                                      "type": "number"
+                                    },
+                                    "zMm": {
+                                      "type": "number"
+                                    }
+                                  },
+                                  "required": [
+                                    "xMm",
+                                    "yMm",
+                                    "zMm"
+                                  ],
+                                  "type": "object"
+                                },
+                                "schemaVersion": {
+                                  "const": 1,
+                                  "type": "number"
+                                },
+                                "segmentType": {
+                                  "const": "tool-change",
+                                  "type": "string"
+                                },
+                                "sequence": {
+                                  "maximum": 9007199254740991,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "toolAssemblyId": {
+                                  "maxLength": 36,
+                                  "minLength": 36,
+                                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "schemaVersion",
+                                "id",
+                                "sequence",
+                                "segmentType",
+                                "positionMm",
+                                "toolAssemblyId"
+                              ],
+                              "type": "object"
+                            }
+                          ]
+                        },
+                        "type": "array"
+                      },
+                      "sourceLineMap": {
+                        "items": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "segmentId": {
+                              "maxLength": 36,
+                              "minLength": 36,
+                              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                              "type": "string"
+                            },
+                            "sourceLine": {
+                              "exclusiveMinimum": 0,
+                              "maximum": 9007199254740991,
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "segmentId",
+                            "sourceLine"
+                          ],
+                          "type": "object"
+                        },
+                        "type": "array"
+                      },
+                      "spindleMode": {
+                        "enum": [
+                          "rpm",
+                          "surface-speed"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "schemaVersion",
+                      "id",
+                      "operationId",
+                      "coordinateSystem",
+                      "feedMode",
+                      "spindleMode",
+                      "segments",
+                      "sourceLineMap"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "unitSystem": {
+                  "enum": [
+                    "metric",
+                    "imperial"
+                  ],
+                  "type": "string"
+                },
+                "updatedAt": {
+                  "pattern": "^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})(?:\\.(\\d{1,9}))?Z(?![\\s\\S])",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "$schema",
+                "schemaVersion",
+                "id",
+                "name",
+                "createdAt",
+                "updatedAt",
+                "unitSystem",
+                "machineId",
+                "stockId",
+                "operationIds",
+                "machines",
+                "materials",
+                "setups",
+                "toolAssemblies",
+                "stocks",
+                "operations",
+                "toolpaths",
+                "resources",
+                "settings"
+              ],
+              "title": "CNC Render Project",
+              "type": "object"
+            },
+            "transferMode": {
+              "enum": [
+                "transferable",
+                "shared-array-buffer",
+                "copy"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "project",
+            "transferMode",
+            "binaryHandles"
+          ],
+          "type": "object"
+        },
+        "protocolVersion": {
+          "const": 1,
+          "type": "number"
+        },
+        "replyTo": {
+          "type": "null"
+        },
+        "runId": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "type": "string"
+        },
+        "sequence": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "type": {
+          "const": "project.load",
+          "type": "string"
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "messageId",
+        "replyTo",
+        "kind",
+        "type",
+        "runId",
+        "sequence",
+        "payload"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "command",
+          "type": "string"
+        },
+        "messageId": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "type": "string"
+        },
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "reason": {
+              "enum": [
+                "completed",
+                "cancelled",
+                "replaced",
+                "shutdown"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "reason"
+          ],
+          "type": "object"
+        },
+        "protocolVersion": {
+          "const": 1,
+          "type": "number"
+        },
+        "replyTo": {
+          "type": "null"
+        },
+        "runId": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "type": "string"
+        },
+        "sequence": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "type": {
+          "const": "run.dispose",
+          "type": "string"
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "messageId",
+        "replyTo",
+        "kind",
+        "type",
+        "runId",
+        "sequence",
+        "payload"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "event",
+          "type": "string"
+        },
+        "messageId": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "type": "string"
+        },
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "coreVersion": {
+              "maxLength": 64,
+              "minLength": 1,
+              "type": "string"
+            },
+            "selectedProtocolVersion": {
+              "const": 1,
+              "type": "number"
+            },
+            "transferMode": {
+              "enum": [
+                "transferable",
+                "shared-array-buffer",
+                "copy"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "selectedProtocolVersion",
+            "coreVersion",
+            "transferMode"
+          ],
+          "type": "object"
+        },
+        "protocolVersion": {
+          "const": 1,
+          "type": "number"
+        },
+        "replyTo": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "type": "string"
+        },
+        "runId": {
+          "type": "null"
+        },
+        "sequence": {
+          "const": 0,
+          "type": "number"
+        },
+        "type": {
+          "const": "worker.ready",
+          "type": "string"
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "messageId",
+        "replyTo",
+        "kind",
+        "type",
+        "runId",
+        "sequence",
+        "payload"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "event",
+          "type": "string"
+        },
+        "messageId": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "type": "string"
+        },
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "projectId": {
+              "maxLength": 36,
+              "minLength": 36,
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            "semanticHashSha256": {
+              "maxLength": 64,
+              "minLength": 64,
+              "pattern": "^[a-f0-9]{64}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "projectId",
+            "semanticHashSha256"
+          ],
+          "type": "object"
+        },
+        "protocolVersion": {
+          "const": 1,
+          "type": "number"
+        },
+        "replyTo": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "type": "string"
+        },
+        "runId": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "type": "string"
+        },
+        "sequence": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "type": {
+          "const": "project.accepted",
+          "type": "string"
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "messageId",
+        "replyTo",
+        "kind",
+        "type",
+        "runId",
+        "sequence",
+        "payload"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "event",
+          "type": "string"
+        },
+        "messageId": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "type": "string"
+        },
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[a-z0-9]+(?:\\.[a-z0-9]+)*(?![\\s\\S])",
+              "type": "string"
+            },
+            "messageKey": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[a-z0-9]+(?:\\.[a-z0-9]+)*(?![\\s\\S])",
+              "type": "string"
+            },
+            "path": {
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                ]
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "code",
+            "messageKey",
+            "path"
+          ],
+          "type": "object"
+        },
+        "protocolVersion": {
+          "const": 1,
+          "type": "number"
+        },
+        "replyTo": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "type": "string"
+        },
+        "runId": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "type": "string"
+        },
+        "sequence": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "type": {
+          "const": "project.rejected",
+          "type": "string"
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "messageId",
+        "replyTo",
+        "kind",
+        "type",
+        "runId",
+        "sequence",
+        "payload"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "event",
+          "type": "string"
+        },
+        "messageId": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "type": "string"
+        },
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "binaryHandles": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "binaryKind": {
+                    "enum": [
+                      "toolpath-segments",
+                      "stock-field",
+                      "render-mesh",
+                      "checkpoint"
+                    ],
+                    "type": "string"
+                  },
+                  "byteLength": {
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991,
+                    "type": "integer"
+                  },
+                  "elementType": {
+                    "enum": [
+                      "uint8",
+                      "uint16",
+                      "uint32",
+                      "int32",
+                      "float32",
+                      "float64"
+                    ],
+                    "type": "string"
+                  },
+                  "handleId": {
+                    "maxLength": 36,
+                    "minLength": 36,
+                    "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                    "type": "string"
+                  },
+                  "ownership": {
+                    "enum": [
+                      "sender",
+                      "receiver",
+                      "shared",
+                      "copy"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "handleId",
+                  "binaryKind",
+                  "byteLength",
+                  "elementType",
+                  "ownership"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "event": {
+              "oneOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "eventType": {
+                      "const": "simulation.initialized",
+                      "type": "string"
+                    },
+                    "projectId": {
+                      "maxLength": 36,
+                      "minLength": 36,
+                      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                      "type": "string"
+                    },
+                    "runId": {
+                      "maxLength": 36,
+                      "minLength": 36,
+                      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                      "type": "string"
+                    },
+                    "schemaVersion": {
+                      "const": 1,
+                      "type": "number"
+                    },
+                    "sequence": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "timeS": {
+                      "minimum": 0,
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "schemaVersion",
+                    "runId",
+                    "sequence",
+                    "timeS",
+                    "eventType",
+                    "projectId"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "eventType": {
+                      "const": "simulation.progress",
+                      "type": "string"
+                    },
+                    "progressRatio": {
+                      "maximum": 1,
+                      "minimum": 0,
+                      "type": "number"
+                    },
+                    "runId": {
+                      "maxLength": 36,
+                      "minLength": 36,
+                      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                      "type": "string"
+                    },
+                    "schemaVersion": {
+                      "const": 1,
+                      "type": "number"
+                    },
+                    "sequence": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "stockRevision": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "timeS": {
+                      "minimum": 0,
+                      "type": "number"
+                    },
+                    "toolpathSegmentIndex": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "toolPositionMm": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "xMm": {
+                          "type": "number"
+                        },
+                        "yMm": {
+                          "type": "number"
+                        },
+                        "zMm": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "xMm",
+                        "yMm",
+                        "zMm"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "schemaVersion",
+                    "runId",
+                    "sequence",
+                    "timeS",
+                    "eventType",
+                    "progressRatio",
+                    "toolpathSegmentIndex",
+                    "stockRevision",
+                    "toolPositionMm"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "code": {
+                      "maxLength": 128,
+                      "minLength": 1,
+                      "pattern": "^[a-z0-9]+(?:\\.[a-z0-9]+)*(?![\\s\\S])",
+                      "type": "string"
+                    },
+                    "eventType": {
+                      "const": "simulation.diagnostic",
+                      "type": "string"
+                    },
+                    "messageKey": {
+                      "maxLength": 128,
+                      "minLength": 1,
+                      "pattern": "^[a-z0-9]+(?:\\.[a-z0-9]+)*(?![\\s\\S])",
+                      "type": "string"
+                    },
+                    "runId": {
+                      "maxLength": 36,
+                      "minLength": 36,
+                      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                      "type": "string"
+                    },
+                    "schemaVersion": {
+                      "const": 1,
+                      "type": "number"
+                    },
+                    "sequence": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "severity": {
+                      "enum": [
+                        "info",
+                        "warning",
+                        "error"
+                      ],
+                      "type": "string"
+                    },
+                    "sourceLine": {
+                      "anyOf": [
+                        {
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991,
+                          "type": "integer"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "timeS": {
+                      "minimum": 0,
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "schemaVersion",
+                    "runId",
+                    "sequence",
+                    "timeS",
+                    "eventType",
+                    "severity",
+                    "code",
+                    "messageKey",
+                    "sourceLine"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "eventType": {
+                      "const": "simulation.collision",
+                      "type": "string"
+                    },
+                    "objectAId": {
+                      "maxLength": 36,
+                      "minLength": 36,
+                      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                      "type": "string"
+                    },
+                    "objectBId": {
+                      "maxLength": 36,
+                      "minLength": 36,
+                      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                      "type": "string"
+                    },
+                    "penetrationEstimateMm": {
+                      "exclusiveMinimum": 0,
+                      "type": "number"
+                    },
+                    "positionMm": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "xMm": {
+                          "type": "number"
+                        },
+                        "yMm": {
+                          "type": "number"
+                        },
+                        "zMm": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "xMm",
+                        "yMm",
+                        "zMm"
+                      ],
+                      "type": "object"
+                    },
+                    "runId": {
+                      "maxLength": 36,
+                      "minLength": 36,
+                      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                      "type": "string"
+                    },
+                    "schemaVersion": {
+                      "const": 1,
+                      "type": "number"
+                    },
+                    "sequence": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "severity": {
+                      "enum": [
+                        "warning",
+                        "stop"
+                      ],
+                      "type": "string"
+                    },
+                    "sourceLine": {
+                      "anyOf": [
+                        {
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991,
+                          "type": "integer"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "timeS": {
+                      "minimum": 0,
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "schemaVersion",
+                    "runId",
+                    "sequence",
+                    "timeS",
+                    "eventType",
+                    "severity",
+                    "objectAId",
+                    "objectBId",
+                    "positionMm",
+                    "penetrationEstimateMm",
+                    "sourceLine"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "durationS": {
+                      "minimum": 0,
+                      "type": "number"
+                    },
+                    "eventType": {
+                      "const": "simulation.completed",
+                      "type": "string"
+                    },
+                    "runId": {
+                      "maxLength": 36,
+                      "minLength": 36,
+                      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                      "type": "string"
+                    },
+                    "schemaVersion": {
+                      "const": 1,
+                      "type": "number"
+                    },
+                    "sequence": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "stockRevision": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "timeS": {
+                      "minimum": 0,
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "schemaVersion",
+                    "runId",
+                    "sequence",
+                    "timeS",
+                    "eventType",
+                    "durationS",
+                    "stockRevision"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "code": {
+                      "maxLength": 128,
+                      "minLength": 1,
+                      "pattern": "^[a-z0-9]+(?:\\.[a-z0-9]+)*(?![\\s\\S])",
+                      "type": "string"
+                    },
+                    "eventType": {
+                      "const": "simulation.failed",
+                      "type": "string"
+                    },
+                    "messageKey": {
+                      "maxLength": 128,
+                      "minLength": 1,
+                      "pattern": "^[a-z0-9]+(?:\\.[a-z0-9]+)*(?![\\s\\S])",
+                      "type": "string"
+                    },
+                    "recoverable": {
+                      "type": "boolean"
+                    },
+                    "runId": {
+                      "maxLength": 36,
+                      "minLength": 36,
+                      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                      "type": "string"
+                    },
+                    "schemaVersion": {
+                      "const": 1,
+                      "type": "number"
+                    },
+                    "sequence": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "timeS": {
+                      "minimum": 0,
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "schemaVersion",
+                    "runId",
+                    "sequence",
+                    "timeS",
+                    "eventType",
+                    "code",
+                    "messageKey",
+                    "recoverable"
+                  ],
+                  "type": "object"
+                }
+              ]
+            }
+          },
+          "required": [
+            "event",
+            "binaryHandles"
+          ],
+          "type": "object"
+        },
+        "protocolVersion": {
+          "const": 1,
+          "type": "number"
+        },
+        "replyTo": {
+          "anyOf": [
+            {
+              "maxLength": 36,
+              "minLength": 36,
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "runId": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "type": "string"
+        },
+        "sequence": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "type": {
+          "const": "simulation.event",
+          "type": "string"
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "messageId",
+        "replyTo",
+        "kind",
+        "type",
+        "runId",
+        "sequence",
+        "payload"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "event",
+          "type": "string"
+        },
+        "messageId": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "type": "string"
+        },
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[a-z0-9]+(?:\\.[a-z0-9]+)*(?![\\s\\S])",
+              "type": "string"
+            },
+            "messageKey": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[a-z0-9]+(?:\\.[a-z0-9]+)*(?![\\s\\S])",
+              "type": "string"
+            },
+            "recoverable": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "code",
+            "messageKey",
+            "recoverable"
+          ],
+          "type": "object"
+        },
+        "protocolVersion": {
+          "const": 1,
+          "type": "number"
+        },
+        "replyTo": {
+          "anyOf": [
+            {
+              "maxLength": 36,
+              "minLength": 36,
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "runId": {
+          "anyOf": [
+            {
+              "maxLength": 36,
+              "minLength": 36,
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sequence": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "type": {
+          "const": "worker.error",
+          "type": "string"
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "messageId",
+        "replyTo",
+        "kind",
+        "type",
+        "runId",
+        "sequence",
+        "payload"
+      ],
+      "type": "object"
+    }
+  ],
+  "title": "CNC Render Worker Protocol"
+}

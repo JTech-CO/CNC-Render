@@ -21,6 +21,7 @@
     "paths": {
       "@/*": ["./*"],
       "@cnc-render/web/foundation": ["./apps/web/src/foundation.ts"],
+      "@cnc-render/contracts": ["./packages/contracts/src/index.ts"],
       "@cnc-render/ui": ["./packages/ui/src/index.ts"],
       "@cnc-render/simulation": ["./packages/simulation/src/index.ts"],
       "@cnc-render/renderer": ["./packages/renderer/src/index.ts"],

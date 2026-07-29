@@ -1,0 +1,49 @@
+[
+  {
+    "name": "negative diameter",
+    "path": [
+      "toolAssemblies",
+      0,
+      "cutterGeometry",
+      "diameterMm"
+    ],
+    "value": -10
+  },
+  {
+    "name": "zero feed",
+    "path": [
+      "operations",
+      0,
+      "feed",
+      "feedMmPerMin"
+    ],
+    "value": 0
+  },
+  {
+    "name": "reversed axis range",
+    "path": [
+      "machines",
+      0,
+      "axes",
+      0,
+      "minMm"
+    ],
+    "value": 300
+  },
+  {
+    "name": "broken stock reference",
+    "path": [
+      "stockId"
+    ],
+    "value": "00000000-0000-4000-8000-0000000000ff"
+  },
+  {
+    "name": "unsafe resource path",
+    "path": [
+      "resources",
+      0,
+      "path"
+    ],
+    "value": "../escape.nc"
+  }
+]
