@@ -1,11 +1,75 @@
 # CNC Render Progress
 
-- Current phase: M2 — G-code 파서·모달 상태·Toolpath IR 생성
-- Status: complete
-- Last completed: Rust `common-v1` parser에서 canonical motion·Toolpath IR·source map 생성
-- Next task: M3 — 렌더러·3D 작업실 셸
-- Open questions: M3 진입 시 WebGPU/WebGL 2 기능 차이와 성능 budget을 하네스 기준으로 확정
+- Current phase: M3 — 렌더러·3D 작업실 셸
+- Status: complete — M3 Definition of Done 전체 통과
+- Last completed: WebGPU 우선·WebGL 2 폴백 workcell renderer와 3D 작업실 셸
+- Next task: M3 branch review·merge 후 M4 3축 운동학·충돌 검증 착수
+- Open questions: 없음
 - Known regressions: 없음
+
+## M3 validation run
+
+2026-07-29에 고정 도구 체인 Node `24.18.0`, pnpm `11.5.3`으로 실행했다.
+WebGPU와 WebGL 2 E2E는 Chromium `140.0.7339.16`, Playwright `1.55.0`을
+사용했다.
+
+| Gate | Result |
+|---|---|
+| `pnpm lint` | 통과 — ESLint, 41 modules/74 dependencies, violation 0, 문서·도구체인 일치 |
+| `pnpm typecheck` | 통과 |
+| `pnpm test:unit --filter renderer` | 통과 — 1 file, 7 tests |
+| `pnpm test:unit` | 통과 — 5 files, 59 tests |
+| `pnpm test:contracts` | 통과 — 11 files, 42 tests |
+| `pnpm test:parity` | 통과 — 3 files, 51 tests |
+| `pnpm test:e2e --project=chromium-webgpu --grep "viewport"` | 통과 — 4 passed, full soak 1 skipped |
+| `pnpm test:e2e --project=chromium-webgl2 --grep "viewport"` | 통과 — 4 passed, full soak 1 skipped |
+| `pnpm test:visual --grep "machine-scene"` | 통과 — WebGPU·WebGL 2·visual 3 projects |
+| Linux Playwright `visual` project | 통과 — official `v1.55.0-noble`, 1 visual regression |
+| `pnpm bench --filter renderer-smoke` | 통과 — 20,000 bounds projections, 750 ms budget |
+| `pnpm check:forbidden-ui` | 통과 |
+| `pnpm build` | 통과 — Vinext 5단계 production build |
+| `CNC_RENDER_SOAK_PHASE_MS=600000` backend별 soak | 통과 — WebGPU·WebGL 2 각 20.3분, 2 passed/21.9분 |
+
+visual baseline은 `875 × 609 px`이고 `#E9EDF1` 배경 432,281 px,
+백색 소재 14,576 px와 고대비 소재 윤곽 892 px를 포함한다. 같은 baseline은
+공식 Playwright Ubuntu Noble 이미지에서 고정 Node `24.18.0`, pnpm `11.5.3`,
+Playwright `1.55.0`으로 재검증했다. 브라우저 제어 플러그인은 로컬 Windows
+ACL 적용 오류로 시작하지 못했으므로 자동 Playwright screenshot·픽셀
+통계로 대체했다.
+
+## Delivered M3 renderer shell
+
+- renderer contract
+  - WebGPU 우선, WebGL 2 안전 폴백과 backend별 limit 공개
+  - `1 scene unit = 1 mm`, CNC Z-up에서 Three.js Y-up으로 단일 변환
+  - 기계·소재·절삭 공구·공구 홀더·고정구·공구 경로 독립 layer와 collision ID
+  - backend projection Golden 허용 오차 `0.75 px`
+- renderer-owned scene
+  - 기계, fixture, 백색 소재와 윤곽, tool assembly, toolpath guide
+  - 오른쪽 Orbit, 가운데 Pan, wheel Zoom, 왼쪽 semantic selection
+  - 정면·평면·우측·등각·Fit·layer focus, `180..5000 mm` focus range
+  - on-demand frame invalidation, resource telemetry와 명시적 dispose
+- React 작업실 셸
+  - light-only command bar, scene graph, viewport, inspector와 program dock
+  - backend·기능 한계·단위·E2 정확도와 교육용 비검증 고지
+  - React commit과 renderer frame을 분리한 browser harness
+- 검증 자산
+  - WebGPU/WebGL 2 E2E, machine-scene visual baseline, renderer smoke benchmark
+  - 10+10분 soak 전용 opt-in gate
+  - production E2E 서버에서 app 요청은 Vinext로 전달하고 `/assets/*`는
+    `dist/client`에서 경로 이탈 방지 후 직접 제공하는 Windows test gateway
+  - 긴 비 ASCII Windows 경로에서만 임시 `subst`를 쓰는 Vinext build wrapper
+
+## M3 limitations and remaining risks
+
+- Vinext `0.0.50` production static cache는 Windows의 `path.relative()` 결과를
+  URL 구분자로 정규화하지 않아 `/assets/*`를 404로 반환한다. E2E 전용
+  gateway가 해당 자산만 직접 제공하며, upstream 수정 버전으로 갱신할 때
+  workaround 제거 여부를 재검증해야 한다.
+- WebGPU material update는 capability budget과 준비 상태만 표시한다. 실제
+  재료 제거, collision, machine kinematics와 Toolpath 실행 연결은 후속 범위다.
+- 현재 scene은 결정론적 교육 fixture이며 실제 장비 형상이나 산업용 검증
+  결과와 동일하지 않다.
 
 ## M2 validation run
 
@@ -97,3 +161,4 @@ M2는 이 계약과 기존 34개 Rust 테스트를 유지한 채 추가되었다
 | 2026-07-27 | Worker command는 명시적 null `replyTo`, ready와 project result는 검증 가능한 reply UUID를 사용하고 `run.dispose`는 one-way stale barrier로 둔다. | 메시지 상관관계와 이전 run 이벤트 유입을 M1 계약 수준에서 차단한다. | `packages/contracts/src/worker.ts`, `crates/cnc-render-contracts/src/worker.rs` |
 | 2026-07-28 | M2 실행 방언을 versioned `common-v1` 부분집합으로 고정하고 지원 매트릭스 밖 기능은 조용히 무시하지 않는다. | 제조사 전체 호환을 과장하지 않으면서 결정론적 교육용 E1/E2 경로를 제공한다. | `crates/gcode-core/`, `docs/architecture-decisions/0004-gcode-parser.md`, `docs/gcode-support-matrix.md` |
 | 2026-07-28 | fatal parse는 전체 결과를 fail-closed하고, 자원 상한·진단 순서·결정론적 ID를 공개 계약으로 둔다. | 부분 경로 소비, 자원 고갈, 실행 간 결과 drift를 M2 경계에서 차단한다. | `crates/gcode-core/`, `tests/fixtures/gcode/`, `tests/parity/gcode-determinism.test.ts` |
+| 2026-07-29 | renderer가 scene·camera·GPU loop를 소유하고 WebGPU 우선·WebGL 2 공개 폴백을 제공한다. | React frame 결합과 backend 기능 과장을 막고 같은 mm fixture의 결정론적 교육용 E2 장면을 제공한다. | `packages/renderer/`, `app/components/`, `docs/architecture-decisions/0005-renderer-workcell-shell.md` |

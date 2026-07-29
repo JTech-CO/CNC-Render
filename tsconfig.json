@@ -24,6 +24,9 @@
       "@cnc-render/contracts": ["./packages/contracts/src/index.ts"],
       "@cnc-render/ui": ["./packages/ui/src/index.ts"],
       "@cnc-render/simulation": ["./packages/simulation/src/index.ts"],
+      "@cnc-render/renderer/workcell": [
+        "./packages/renderer/src/workcell.ts"
+      ],
       "@cnc-render/renderer": ["./packages/renderer/src/index.ts"],
       "@cnc-render/storage": ["./packages/storage/src/index.ts"]
     }
