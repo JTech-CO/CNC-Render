@@ -17,6 +17,7 @@ import {
   Object3D,
   PlaneGeometry,
   Scene,
+  SphereGeometry,
   Vector3,
 } from "three";
 import {
@@ -34,6 +35,7 @@ const HOLDER_COLOR = 0x3f4b57;
 const CUTTER_COLOR = 0xa36a2c;
 const TOOLPATH_COLOR = 0x2859c5;
 const SELECTION_COLOR = 0xc26420;
+const COLLISION_MARKER_COLOR = 0xb42318;
 export const DEFAULT_VIEWPORT_BACKGROUND =
   SCENE_PRESENTATION.viewportBackground;
 
@@ -44,6 +46,9 @@ export interface MachineScene {
   readonly selectableObjects: Object3D[];
   readonly fitBounds: Box3;
   select(object: Object3D | null): SceneLayerId | null;
+  setCollisionMarker(
+    positionMm: readonly [number, number, number] | null,
+  ): void;
   dispose(): void;
 }
 
@@ -455,6 +460,20 @@ export function createMachineScene(): MachineScene {
   selectionBox.renderOrder = 20;
   scene.add(selectionBox);
 
+  const collisionMarker = new Mesh(
+    new SphereGeometry(12, 16, 12),
+    new MeshStandardMaterial({
+      color: COLLISION_MARKER_COLOR,
+      metalness: 0,
+      roughness: 0.55,
+    }),
+  );
+  collisionMarker.name = "collision-location-marker";
+  collisionMarker.visible = false;
+  collisionMarker.renderOrder = 24;
+  tagObject(collisionMarker, "fixture", false);
+  scene.add(collisionMarker);
+
   const fitBounds = new Box3().setFromObject(contentRoot);
 
   return {
@@ -482,6 +501,14 @@ export function createMachineScene(): MachineScene {
       selectionBox.visible = true;
       const layerId = object.userData.sceneLayerId;
       return typeof layerId === "string" ? (layerId as SceneLayerId) : null;
+    },
+    setCollisionMarker(positionMm) {
+      if (positionMm === null) {
+        collisionMarker.visible = false;
+        return;
+      }
+      positionFromDomain(collisionMarker, positionMm);
+      collisionMarker.visible = true;
     },
     dispose() {
       disposeObjectResources(scene);

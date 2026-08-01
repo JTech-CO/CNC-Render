@@ -104,7 +104,11 @@ importers:
         specifier: 0.180.0
         version: 0.180.0
 
-  packages/simulation: {}
+  packages/simulation:
+    dependencies:
+      '@cnc-render/contracts':
+        specifier: workspace:*
+        version: link:../contracts
 
   packages/storage: {}
 

@@ -13,6 +13,10 @@ import type {
   WorkcellRendererDiagnostics,
   WorkcellRendererStatus,
 } from "@cnc-render/renderer/workcell";
+import {
+  runM4CollisionStopDemo,
+  type CollisionEvent,
+} from "@cnc-render/simulation";
 import { useEffect, useRef } from "react";
 
 interface CncRenderM3Harness {
@@ -27,9 +31,22 @@ interface CncRenderM3Harness {
   setLayerVisibility(layerId: SceneLayerId, visible: boolean): void;
 }
 
+type CollisionSimulationState = "idle" | "stopping" | "stopped";
+
+interface CncRenderM4Harness extends CncRenderM3Harness {
+  runCollisionFixture(): CollisionEvent;
+  resetCollisionFixture(): void;
+  getCollisionState(): {
+    readonly state: CollisionSimulationState;
+    readonly event: CollisionEvent | null;
+    readonly stoppedOnRenderFrame: number | null;
+  };
+}
+
 declare global {
   interface Window {
     __CNC_RENDER_M3__?: CncRenderM3Harness;
+    __CNC_RENDER_M4__?: CncRenderM4Harness;
   }
 }
 
@@ -95,6 +112,21 @@ export function MachineWorkspace() {
   const resourceReadoutRef = useRef<HTMLParagraphElement>(null);
   const limitsRef = useRef<HTMLUListElement>(null);
   const errorRef = useRef<HTMLDivElement>(null);
+  const collisionDiagnosticRef = useRef<HTMLDivElement>(null);
+  const collisionStatusRef = useRef<HTMLSpanElement>(null);
+  const collisionObjectsRef = useRef<HTMLParagraphElement>(null);
+  const collisionPositionRef = useRef<HTMLParagraphElement>(null);
+  const collisionSourceRef = useRef<HTMLParagraphElement>(null);
+  const diagnosticsCountRef = useRef<HTMLSpanElement>(null);
+  const programLinesRef = useRef<HTMLOListElement>(null);
+  const pendingCollisionRef = useRef<CollisionEvent | null>(null);
+  const lastCollisionRef = useRef<CollisionEvent | null>(null);
+  const collisionStateRef = useRef<CollisionSimulationState>("idle");
+  const collisionStopFrameRef = useRef<number | null>(null);
+  const runCollisionFixtureRef = useRef<() => CollisionEvent>(() => {
+    throw new Error("M4 collision fixture is not ready.");
+  });
+  const resetCollisionFixtureRef = useRef<() => void>(() => undefined);
 
   useEffect(() => {
     commitCountRef.current += 1;
@@ -179,6 +211,57 @@ export function MachineWorkspace() {
         resourceReadoutRef.current.textContent =
           `${geometries} geometry · ${textures} texture · ${programs} program`;
       }
+
+      const collision = pendingCollisionRef.current;
+      if (collision) {
+        pendingCollisionRef.current = null;
+        collisionStateRef.current = "stopped";
+        collisionStopFrameRef.current = telemetry.framesRendered;
+        viewport.dataset.simulationState = "stopped";
+        viewport.dataset.collisionStoppedFrame = String(
+          telemetry.framesRendered,
+        );
+        viewport.dataset.collisionSourceLine = String(
+          collision.sourceLine ?? "none",
+        );
+        viewport.dataset.collisionPosition = [
+          collision.positionMm.xMm,
+          collision.positionMm.yMm,
+          collision.positionMm.zMm,
+        ].join(",");
+
+        if (collisionStatusRef.current) {
+          collisionStatusRef.current.textContent = "정지";
+          collisionStatusRef.current.dataset.state = "stopped";
+        }
+        if (collisionDiagnosticRef.current) {
+          collisionDiagnosticRef.current.hidden = false;
+          collisionDiagnosticRef.current.dataset.objectAId =
+            collision.objectAId;
+          collisionDiagnosticRef.current.dataset.objectBId =
+            collision.objectBId;
+        }
+        if (collisionObjectsRef.current) {
+          collisionObjectsRef.current.textContent = "공구 ↔ 바이스";
+        }
+        if (collisionPositionRef.current) {
+          collisionPositionRef.current.textContent =
+            `X ${formattedMetric(collision.positionMm.xMm, 2)} mm · ` +
+            `Y ${formattedMetric(collision.positionMm.yMm, 2)} mm · ` +
+            `Z ${formattedMetric(collision.positionMm.zMm, 2)} mm`;
+        }
+        if (collisionSourceRef.current) {
+          collisionSourceRef.current.textContent =
+            `G-code 원본 ${collision.sourceLine ?? "—"}행 · ` +
+            `${formattedMetric(collision.timeS, 3)} s`;
+        }
+        if (diagnosticsCountRef.current) {
+          diagnosticsCountRef.current.textContent = "1";
+        }
+        programLinesRef.current
+          ?.querySelector(`[data-source-line="${collision.sourceLine}"]`)
+          ?.classList.add("is-collision");
+      }
     };
 
     void import("@cnc-render/renderer/workcell")
@@ -221,7 +304,65 @@ export function MachineWorkspace() {
         updateStatus(status);
         resize();
         viewport.dataset.ready = "true";
-        window.__CNC_RENDER_M3__ = {
+
+        const runCollisionFixture = () => {
+          const result = runM4CollisionStopDemo();
+          const collision = result.events[0];
+          pendingCollisionRef.current = collision;
+          lastCollisionRef.current = collision;
+          collisionStateRef.current = "stopping";
+          collisionStopFrameRef.current = null;
+          viewport.dataset.simulationState = "stopping";
+          delete viewport.dataset.collisionStoppedFrame;
+          delete viewport.dataset.collisionSourceLine;
+          delete viewport.dataset.collisionPosition;
+          if (collisionStatusRef.current) {
+            collisionStatusRef.current.textContent = "검증 중";
+            collisionStatusRef.current.dataset.state = "stopping";
+          }
+          if (collisionDiagnosticRef.current) {
+            collisionDiagnosticRef.current.hidden = true;
+          }
+          if (diagnosticsCountRef.current) {
+            diagnosticsCountRef.current.textContent = "0";
+          }
+          programLinesRef.current
+            ?.querySelectorAll(".is-collision")
+            .forEach((line) => line.classList.remove("is-collision"));
+          renderer.setCollisionMarker([
+            collision.positionMm.xMm,
+            collision.positionMm.yMm,
+            collision.positionMm.zMm,
+          ]);
+          return collision;
+        };
+
+        const resetCollisionFixture = () => {
+          pendingCollisionRef.current = null;
+          lastCollisionRef.current = null;
+          collisionStateRef.current = "idle";
+          collisionStopFrameRef.current = null;
+          viewport.dataset.simulationState = "idle";
+          delete viewport.dataset.collisionStoppedFrame;
+          delete viewport.dataset.collisionSourceLine;
+          delete viewport.dataset.collisionPosition;
+          if (collisionStatusRef.current) {
+            collisionStatusRef.current.textContent = "준비";
+            collisionStatusRef.current.dataset.state = "idle";
+          }
+          if (collisionDiagnosticRef.current) {
+            collisionDiagnosticRef.current.hidden = true;
+          }
+          if (diagnosticsCountRef.current) {
+            diagnosticsCountRef.current.textContent = "0";
+          }
+          programLinesRef.current
+            ?.querySelectorAll(".is-collision")
+            .forEach((line) => line.classList.remove("is-collision"));
+          renderer.setCollisionMarker(null);
+        };
+
+        const baseHarness: CncRenderM3Harness = {
           getDiagnostics: () => renderer.getDiagnostics(),
           getReactCommitCount: () => commitCountRef.current,
           setView: (view) => renderer.setCameraPreset(view),
@@ -234,6 +375,19 @@ export function MachineWorkspace() {
           zoom: (factor) => renderer.zoomBy(factor),
           setLayerVisibility: (layerId, visible) =>
             renderer.setLayerVisibility(layerId, visible),
+        };
+        runCollisionFixtureRef.current = runCollisionFixture;
+        resetCollisionFixtureRef.current = resetCollisionFixture;
+        window.__CNC_RENDER_M3__ = baseHarness;
+        window.__CNC_RENDER_M4__ = {
+          ...baseHarness,
+          runCollisionFixture,
+          resetCollisionFixture,
+          getCollisionState: () => ({
+            state: collisionStateRef.current,
+            event: lastCollisionRef.current,
+            stoppedOnRenderFrame: collisionStopFrameRef.current,
+          }),
         };
       })
       .catch((error: unknown) => {
@@ -258,7 +412,12 @@ export function MachineWorkspace() {
       }
       rendererRef.current?.dispose();
       rendererRef.current = null;
+      runCollisionFixtureRef.current = () => {
+        throw new Error("M4 collision fixture is not ready.");
+      };
+      resetCollisionFixtureRef.current = () => undefined;
       delete window.__CNC_RENDER_M3__;
+      delete window.__CNC_RENDER_M4__;
     };
   }, []);
 
@@ -387,6 +546,7 @@ export function MachineWorkspace() {
           data-ready="false"
           data-render-frames="0"
           data-renderer-mode="detecting"
+          data-simulation-state="idle"
           data-testid="machine-viewport"
           ref={viewportRef}
         >
@@ -406,6 +566,18 @@ export function MachineWorkspace() {
             <p ref={backendDetailRef}>렌더링 기능을 확인하고 있습니다.</p>
           </div>
           <div className="viewport-error" hidden ref={errorRef} role="alert" />
+          <div
+            className="collision-stop-banner"
+            data-testid="collision-diagnostic"
+            hidden
+            ref={collisionDiagnosticRef}
+            role="alert"
+          >
+            <strong>충돌로 시뮬레이션 정지</strong>
+            <p ref={collisionObjectsRef}>공구 ↔ 바이스</p>
+            <p ref={collisionPositionRef}>X — mm · Y — mm · Z — mm</p>
+            <p ref={collisionSourceRef}>G-code 원본 —행 · — s</p>
+          </div>
           <div className="viewport-help" aria-label="3D 조작 도움말">
             <span>우클릭 Orbit</span>
             <span>중클릭 Pan</span>
@@ -434,7 +606,7 @@ export function MachineWorkspace() {
         <div className="panel-heading inspector-heading">
           <div>
             <p>INSPECTOR</p>
-            <h2 id="inspector-heading">렌더 진단</h2>
+            <h2 id="inspector-heading">렌더·충돌 진단</h2>
           </div>
           <span className="accuracy-badge">E2</span>
         </div>
@@ -478,6 +650,40 @@ export function MachineWorkspace() {
 
         <section
           className="inspector-section"
+          aria-labelledby="collision-heading"
+        >
+          <div className="section-label">
+            <h3 id="collision-heading">Collision guard</h3>
+            <span data-state="idle" ref={collisionStatusRef}>
+              준비
+            </span>
+          </div>
+          <div className="collision-controls">
+            <button
+              className="collision-control-primary"
+              data-testid="run-collision-fixture"
+              onClick={() => runCollisionFixtureRef.current()}
+              type="button"
+            >
+              충돌 Fixture 실행
+            </button>
+            <button
+              className="secondary-control"
+              data-testid="reset-collision-fixture"
+              onClick={() => resetCollisionFixtureRef.current()}
+              type="button"
+            >
+              초기화
+            </button>
+          </div>
+          <p className="inspector-explanation">
+            단순 충돌 프록시로 검사하며, stop 이벤트는 다음 렌더 프레임에서
+            3D 위치와 원본 줄에 연결됩니다.
+          </p>
+        </section>
+
+        <section
+          className="inspector-section"
           aria-labelledby="resource-heading"
         >
           <div className="section-label">
@@ -494,10 +700,10 @@ export function MachineWorkspace() {
         </section>
 
         <aside className="education-disclaimer">
-          <strong>교육용 시각 Fixture · 정확도 E2</strong>
+          <strong>교육용 운동학·충돌 Fixture · 정확도 E2</strong>
           <p>
-            현재 장면은 렌더러·카메라 계약 검증용입니다. 산업용 충돌 검증이나
-            실제 장비 제어 결과가 아닙니다.
+            현재 결과는 결정론적 단순 형상 검증입니다. 산업용 충돌 검증이나
+            실제 장비 제어 결과와 동일하지 않습니다.
           </p>
         </aside>
       </aside>
@@ -510,34 +716,34 @@ export function MachineWorkspace() {
               G-code
             </button>
             <button aria-selected="false" role="tab" type="button">
-              Diagnostics <span>0</span>
+              Diagnostics <span ref={diagnosticsCountRef}>0</span>
             </button>
           </div>
         </header>
         <div className="program-preview">
-          <ol aria-label="교육용 G-code 미리보기">
-            <li>
+          <ol aria-label="교육용 G-code 미리보기" ref={programLinesRef}>
+            <li data-source-line="1">
               <code>G21 G17 G90</code>
               <span>mm · XY plane · absolute</span>
             </li>
-            <li>
+            <li data-source-line="2">
               <code>G54 G0 X-145 Y-70 Z370</code>
               <span>fixture start</span>
             </li>
-            <li className="is-current">
+            <li className="is-current" data-source-line="3">
               <code>G1 Z338 F420</code>
               <span>preview segment</span>
             </li>
-            <li>
+            <li data-source-line="4">
               <code>G1 X145</code>
               <span>toolpath guide</span>
             </li>
           </ol>
           <div className="dock-summary">
             <span>Fixture</span>
-            <strong>M3-machine-scene</strong>
+            <strong>M4-collision-stop</strong>
             <span>Execution</span>
-            <strong>정적 렌더 검증</strong>
+            <strong>결정론적 E2 검증</strong>
           </div>
         </div>
       </section>

@@ -33,7 +33,7 @@ export default function Home() {
         </nav>
 
         <div className="command-actions">
-          <span className="milestone-label">M3 · RENDERER SHELL</span>
+          <span className="milestone-label">M4 · KINEMATICS &amp; COLLISION</span>
           <button type="button">도움말</button>
         </div>
       </header>

@@ -1,11 +1,73 @@
 # CNC Render Progress
 
-- Current phase: M3 — 렌더러·3D 작업실 셸
-- Status: complete — M3 Definition of Done 전체 통과
-- Last completed: WebGPU 우선·WebGL 2 폴백 workcell renderer와 3D 작업실 셸
-- Next task: M3 branch review·merge 후 M4 3축 운동학·충돌 검증 착수
+- Current phase: M4 — 3축 운동학·축 한계·충돌 검증
+- Status: complete — M4 Definition of Done 전체 통과
+- Last completed: 결정론적 3축 FK·축 guard·충돌 이벤트와 다음-frame 정지 진단
+- Next task: M4 branch review·merge 후 M5 3축 밀링 재료 제거 엔진 착수
 - Open questions: 없음
 - Known regressions: 없음
+
+## M4 validation run
+
+2026-08-01에 고정 도구 체인 Node `24.18.0`, pnpm `11.5.3`, Rust
+`1.97.1`로 실행했다. browser gate는 Playwright `1.55.0`의 WebGPU,
+WebGL 2와 visual 세 프로젝트에서 같은 CPU collision event를 검증했다.
+
+| Gate | Result |
+|---|---|
+| `pnpm test:unit --filter kinematics-3axis` | 통과 — 1 file, 10 tests |
+| `pnpm test:unit --filter collision` | 통과 — 2 files, 14 tests |
+| `pnpm test:parity --filter poses` | 통과 — 1 file, 2 tests, TypeScript↔Rust 100회·별도 프로세스 parity |
+| `pnpm test:e2e --grep "collision-stop"` | 통과 — WebGPU·WebGL 2·visual 3 projects, next-frame stop·3D 위치·G-code 3행 연결 |
+| `pnpm bench --filter collision-fixtures` | 통과 — 121 proxies × 2,000 frames, total 1,500 ms·평균 0.75 ms/frame budget |
+| `cargo fmt --all -- --check` | 통과 |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 통과 |
+| `pnpm cargo:test` | 통과 — Rust workspace 125 tests, M4 simulation core 2 tests |
+| `pnpm lint` | 통과 — ESLint, 45 modules/81 dependencies, violation 0, 문서·도구체인 일치 |
+| `pnpm verify` | 통과 — unit 83, contract 42, parity 53, Cargo check, forbidden UI, production build |
+
+## Delivered M4 kinematics and collision verification
+
+- 3축 VMC 운동학
+  - 하나의 분기 없는 linear-axis kinematic tree와 직교 unit direction 검증
+  - `TCP = tcpAtHome + Σ direction × (position - home)`의 canonical mm FK
+  - home/min/max inclusive travel, rapid/feed velocity와 midpoint acceleration guard
+  - 최대 axis step 기반 결정론적 보간과 1,000,000 step 자원 상한
+  - TypeScript browser reference와 `cnc-render-simulation-core` Rust `f64` parity
+- 충돌 core
+  - renderer visual object와 독립된 UUID collision proxy·group·양방향 mask
+  - Sweep and Prune/AABB broad phase
+  - sphere-sphere, sphere-box, box-box analytic narrow phase
+  - endpoint 사이 rapid 충돌을 찾는 bounded translation interpolation
+  - malformed proxy·frame·run ID·event에서 빈 결과 대신 `CollisionInputError`
+- event와 정지 연결
+  - M1 `simulation.collision`의 time, object pair, world mm position,
+    severity, penetration과 source line 보존
+  - object ID 기준 안정 정렬, contact-enter 발행과 동시 contact 후 frame stop
+  - 3D collision marker를 scene에 적용한 renderer frame 완료 후에만 UI `stopped`
+  - viewport 정지 문구, semantic object, mm 위치, diagnostics count와 G-code 3행 연결
+  - DOM ref 기반 telemetry로 collision frame과 React commit 분리
+- 검증 자산
+  - VMC home/min/max/representative-cut Golden Pose
+  - safe 0-event fixture와 cutter·holder·chuck·vise impact fixture
+  - rapid tunneling, group mask, 세 analytic pair, fail-closed, 100회 결정론 테스트
+  - browser collision-stop fixture와 121-proxy CPU benchmark
+
+## M4 limitations and remaining risks
+
+- 운동학은 정확히 세 개의 직교 linear axis를 가진 VMC만 지원한다. rotary axis,
+  branch, 3+2축과 동시 5축은 근사하지 않고 거부하며 M13 범위로 남긴다.
+- collision proxy는 sphere와 axis-aligned box다. triangle mesh, convex hull,
+  capsule/cylinder와 임의 방향 box narrow phase는 아직 지원하지 않는다.
+- rapid 검사는 bounded discrete interpolation이다. 분석적 continuous time of
+  impact나 controller look-ahead·jerk·servo following error·실제 정지 거리를
+  보증하지 않는다.
+- browser는 TypeScript reference core를 사용한다. Rust core의 Worker/WASM
+  coordinator 연결과 실제 Toolpath playback lifecycle은 M7 범위다.
+- 현재 작업실 버튼은 source-mapped M4 교육 fixture를 실행한다. 임의 사용자
+  G-code를 실제 machine state와 연결하는 UI 실행 경로는 M7 이후 범위다.
+- 결과는 E2 교육용 단순 형상 검증이며 산업용 CAM verification, 기계 안전
+  인증 또는 실제 controller 결과와 동일하지 않다.
 
 ## M3 validation run
 
@@ -162,3 +224,4 @@ M2는 이 계약과 기존 34개 Rust 테스트를 유지한 채 추가되었다
 | 2026-07-28 | M2 실행 방언을 versioned `common-v1` 부분집합으로 고정하고 지원 매트릭스 밖 기능은 조용히 무시하지 않는다. | 제조사 전체 호환을 과장하지 않으면서 결정론적 교육용 E1/E2 경로를 제공한다. | `crates/gcode-core/`, `docs/architecture-decisions/0004-gcode-parser.md`, `docs/gcode-support-matrix.md` |
 | 2026-07-28 | fatal parse는 전체 결과를 fail-closed하고, 자원 상한·진단 순서·결정론적 ID를 공개 계약으로 둔다. | 부분 경로 소비, 자원 고갈, 실행 간 결과 drift를 M2 경계에서 차단한다. | `crates/gcode-core/`, `tests/fixtures/gcode/`, `tests/parity/gcode-determinism.test.ts` |
 | 2026-07-29 | renderer가 scene·camera·GPU loop를 소유하고 WebGPU 우선·WebGL 2 공개 폴백을 제공한다. | React frame 결합과 backend 기능 과장을 막고 같은 mm fixture의 결정론적 교육용 E2 장면을 제공한다. | `packages/renderer/`, `app/components/`, `docs/architecture-decisions/0005-renderer-workcell-shell.md` |
+| 2026-08-01 | 3축 FK·축 guard와 sphere/AABB collision proxy를 simulation core에 두고 stop UI는 marker가 그려진 renderer frame 뒤에 전환한다. | 수치·충돌 결정론, visual/collision 분리와 React frame 독립성을 M4 계약으로 고정한다. | `packages/simulation/`, `crates/simulation-core/`, `packages/renderer/`, `docs/architecture-decisions/0006-three-axis-kinematics-collision.md` |

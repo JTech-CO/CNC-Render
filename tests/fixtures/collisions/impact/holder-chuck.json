@@ -1,0 +1,67 @@
+{
+  "fixtureVersion": 1,
+  "fixtureId": "m4-impact-holder-chuck",
+  "runId": "22000000-0000-4000-8000-000000000000",
+  "objects": [
+    {
+      "id": "22000000-0000-4000-8000-000000000002",
+      "semanticKind": "holder",
+      "visualObjectId": "scene/holder",
+      "collisionGroup": 2,
+      "collisionMask": 4,
+      "severity": "stop",
+      "shape": {
+        "shapeType": "sphere",
+        "centerMm": {
+          "xMm": -30,
+          "yMm": 0,
+          "zMm": 0
+        },
+        "radiusMm": 8
+      }
+    },
+    {
+      "id": "22000000-0000-4000-8000-000000000003",
+      "semanticKind": "chuck",
+      "visualObjectId": "scene/chuck",
+      "collisionGroup": 4,
+      "collisionMask": 2,
+      "severity": "stop",
+      "shape": {
+        "shapeType": "axis-aligned-box",
+        "centerMm": {
+          "xMm": 0,
+          "yMm": 0,
+          "zMm": 0
+        },
+        "halfExtentsMm": {
+          "xMm": 10,
+          "yMm": 10,
+          "zMm": 10
+        }
+      }
+    }
+  ],
+  "frames": [
+    {
+      "timeS": 2.5,
+      "sourceLine": 31,
+      "translationsMm": {
+        "22000000-0000-4000-8000-000000000002": {
+          "xMm": 25,
+          "yMm": 0,
+          "zMm": 0
+        }
+      }
+    }
+  ],
+  "expectedEvents": [
+    {
+      "objectAId": "22000000-0000-4000-8000-000000000002",
+      "objectBId": "22000000-0000-4000-8000-000000000003",
+      "severity": "stop",
+      "sourceLine": 31,
+      "timeS": 2.5
+    }
+  ]
+}

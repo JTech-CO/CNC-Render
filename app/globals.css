@@ -729,6 +729,45 @@ kbd {
   display: none;
 }
 
+.collision-stop-banner {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: min(320px, calc(100% - 24px));
+  padding: 11px 12px;
+  border: 1px solid #e0a4a4;
+  border-radius: var(--radius-panel);
+  background: var(--danger-bg);
+  color: var(--danger-fg);
+  pointer-events: none;
+}
+
+.collision-stop-banner[hidden] {
+  display: none;
+}
+
+.collision-stop-banner strong {
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.collision-stop-banner p {
+  margin: 5px 0 0;
+  overflow: hidden;
+  color: #713535;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.collision-stop-banner p:first-of-type {
+  color: var(--danger-fg);
+  font-family: inherit;
+  font-weight: 750;
+}
+
 .viewport-status {
   display: flex;
   min-width: 0;
@@ -807,6 +846,14 @@ kbd {
   text-transform: uppercase;
 }
 
+.section-label span[data-state="stopping"] {
+  color: var(--warning-fg);
+}
+
+.section-label span[data-state="stopped"] {
+  color: var(--danger-fg);
+}
+
 .limit-list {
   display: grid;
   gap: 7px;
@@ -881,6 +928,30 @@ kbd {
 .secondary-control:hover {
   border-color: #9da9b6;
   background: var(--surface-secondary);
+}
+
+.collision-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 72px;
+  gap: 7px;
+}
+
+.collision-control-primary {
+  min-height: 31px;
+  border: 1px solid #c96f6f;
+  border-radius: var(--radius-control);
+  background: var(--danger-fg);
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.collision-control-primary:hover {
+  background: #a92929;
+}
+
+.collision-control-primary:active {
+  background: #8f2424;
 }
 
 .resource-line {
@@ -1033,6 +1104,34 @@ kbd {
   width: 2px;
   background: var(--primary-600);
   content: "";
+}
+
+.program-preview li.is-collision {
+  background: var(--danger-bg);
+}
+
+.program-preview li.is-collision::after {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -42px;
+  width: 3px;
+  background: var(--danger-fg);
+  content: "";
+}
+
+.program-preview li.is-collision code {
+  color: var(--danger-fg);
+  font-weight: 750;
+}
+
+.program-preview li.is-collision code::before {
+  display: inline-grid;
+  width: 14px;
+  margin-right: 5px;
+  place-items: center;
+  content: "!";
+  font-weight: 900;
 }
 
 .program-preview code {

@@ -1,0 +1,164 @@
+{
+  "fixtureVersion": 1,
+  "units": "mm",
+  "poseToleranceMm": 1e-9,
+  "machine": {
+    "schemaVersion": 1,
+    "id": "10000000-0000-4000-8000-000000000000",
+    "name": "VMC-3X-Education",
+    "machineType": "vertical-machining-center",
+    "kinematicRootAxisIds": [
+      "10000000-0000-4000-8000-000000000001"
+    ],
+    "axes": [
+      {
+        "schemaVersion": 1,
+        "id": "10000000-0000-4000-8000-000000000001",
+        "name": "X",
+        "kind": "linear",
+        "parentId": null,
+        "directionUnit": {
+          "x": 1,
+          "y": 0,
+          "z": 0
+        },
+        "pivotMm": {
+          "xMm": 0,
+          "yMm": 0,
+          "zMm": 0
+        },
+        "minMm": -300,
+        "maxMm": 300,
+        "maxVelocityMmPerMin": 12000,
+        "maxAccelerationMmPerS2": 1000,
+        "homeMm": 0
+      },
+      {
+        "schemaVersion": 1,
+        "id": "10000000-0000-4000-8000-000000000002",
+        "name": "Y",
+        "kind": "linear",
+        "parentId": "10000000-0000-4000-8000-000000000001",
+        "directionUnit": {
+          "x": 0,
+          "y": 1,
+          "z": 0
+        },
+        "pivotMm": {
+          "xMm": 0,
+          "yMm": 0,
+          "zMm": 0
+        },
+        "minMm": -200,
+        "maxMm": 200,
+        "maxVelocityMmPerMin": 12000,
+        "maxAccelerationMmPerS2": 1000,
+        "homeMm": 0
+      },
+      {
+        "schemaVersion": 1,
+        "id": "10000000-0000-4000-8000-000000000003",
+        "name": "Z",
+        "kind": "linear",
+        "parentId": "10000000-0000-4000-8000-000000000002",
+        "directionUnit": {
+          "x": 0,
+          "y": 0,
+          "z": 1
+        },
+        "pivotMm": {
+          "xMm": 0,
+          "yMm": 0,
+          "zMm": 500
+        },
+        "minMm": -500,
+        "maxMm": 0,
+        "maxVelocityMmPerMin": 9000,
+        "maxAccelerationMmPerS2": 800,
+        "homeMm": 0
+      }
+    ],
+    "spindles": [
+      {
+        "schemaVersion": 1,
+        "id": "10000000-0000-4000-8000-000000000010",
+        "name": "Main spindle",
+        "maxSpindleSpeedRpm": 24000
+      }
+    ],
+    "workEnvelope": {
+      "minMm": {
+        "xMm": -300,
+        "yMm": -200,
+        "zMm": 0
+      },
+      "maxMm": {
+        "xMm": 300,
+        "yMm": 200,
+        "zMm": 500
+      }
+    },
+    "maxFeedMmPerMin": 12000,
+    "modelAssetResourceId": null,
+    "collisionGroups": []
+  },
+  "tcpAtHomeMm": {
+    "xMm": 0,
+    "yMm": 0,
+    "zMm": 500
+  },
+  "poses": [
+    {
+      "id": "home",
+      "axisPositionsMm": {
+        "10000000-0000-4000-8000-000000000001": 0,
+        "10000000-0000-4000-8000-000000000002": 0,
+        "10000000-0000-4000-8000-000000000003": 0
+      },
+      "expectedTcpPositionMm": {
+        "xMm": 0,
+        "yMm": 0,
+        "zMm": 500
+      }
+    },
+    {
+      "id": "minimum-travel",
+      "axisPositionsMm": {
+        "10000000-0000-4000-8000-000000000001": -300,
+        "10000000-0000-4000-8000-000000000002": -200,
+        "10000000-0000-4000-8000-000000000003": -500
+      },
+      "expectedTcpPositionMm": {
+        "xMm": -300,
+        "yMm": -200,
+        "zMm": 0
+      }
+    },
+    {
+      "id": "maximum-travel",
+      "axisPositionsMm": {
+        "10000000-0000-4000-8000-000000000001": 300,
+        "10000000-0000-4000-8000-000000000002": 200,
+        "10000000-0000-4000-8000-000000000003": 0
+      },
+      "expectedTcpPositionMm": {
+        "xMm": 300,
+        "yMm": 200,
+        "zMm": 500
+      }
+    },
+    {
+      "id": "representative-cut",
+      "axisPositionsMm": {
+        "10000000-0000-4000-8000-000000000001": 125.5,
+        "10000000-0000-4000-8000-000000000002": -40.25,
+        "10000000-0000-4000-8000-000000000003": -275.125
+      },
+      "expectedTcpPositionMm": {
+        "xMm": 125.5,
+        "yMm": -40.25,
+        "zMm": 224.875
+      }
+    }
+  ]
+}
