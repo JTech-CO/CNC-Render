@@ -26,6 +26,12 @@ import {
   type SceneLayerId,
 } from "./contracts";
 import { domainMmToScene } from "./coordinate-space";
+import {
+  PartialStockSurface,
+  type StockSurfaceBufferDiagnostics,
+  type StockSurfaceDescriptor,
+  type StockSurfacePatch,
+} from "./stock-surface";
 
 const MACHINE_COLOR = 0xaeb8c3;
 const MACHINE_DARK_COLOR = 0x55616f;
@@ -46,6 +52,14 @@ export interface MachineScene {
   readonly selectableObjects: Object3D[];
   readonly fitBounds: Box3;
   select(object: Object3D | null): SceneLayerId | null;
+  configureStockSurface(
+    descriptor: StockSurfaceDescriptor,
+  ): StockSurfaceBufferDiagnostics;
+  applyStockSurfacePatches(
+    patches: readonly StockSurfacePatch[],
+  ): StockSurfaceBufferDiagnostics;
+  getStockSurfaceDiagnostics(): StockSurfaceBufferDiagnostics | null;
+  finishStockSurfaceUpload(): void;
   setCollisionMarker(
     positionMm: readonly [number, number, number] | null,
   ): void;
@@ -248,7 +262,7 @@ function addStock(
   layer: Group,
   selectableObjects: Object3D[],
   material: MeshStandardMaterial,
-): void {
+): Mesh {
   const stock = box(
     layer,
     "stock",
@@ -259,6 +273,7 @@ function addStock(
   stock.name = "education-stock";
   addStockOutline(stock, layer);
   selectableObjects.push(stock);
+  return stock;
 }
 
 function addToolAssembly(
@@ -407,7 +422,13 @@ export function createMachineScene(): MachineScene {
     selectableObjects,
     materials.fixture,
   );
-  addStock(layerGroups.get("stock")!, selectableObjects, materials.stock);
+  const stockLayer = layerGroups.get("stock")!;
+  const educationStock = addStock(
+    stockLayer,
+    selectableObjects,
+    materials.stock,
+  );
+  let partialStockSurface: PartialStockSurface | null = null;
   addToolAssembly(
     layerGroups.get("holder")!,
     layerGroups.get("cutter")!,
@@ -501,6 +522,38 @@ export function createMachineScene(): MachineScene {
       selectionBox.visible = true;
       const layerId = object.userData.sceneLayerId;
       return typeof layerId === "string" ? (layerId as SceneLayerId) : null;
+    },
+    configureStockSurface(descriptor) {
+      if (partialStockSurface) {
+        partialStockSurface.mesh.visible = false;
+        stockLayer.remove(partialStockSurface.mesh);
+        partialStockSurface.dispose();
+      }
+      educationStock.visible = false;
+      partialStockSurface = new PartialStockSurface(
+        descriptor,
+        materials.stock,
+      );
+      tagObject(partialStockSurface.mesh, "stock", true);
+      stockLayer.add(partialStockSurface.mesh);
+      selectableObjects.push(partialStockSurface.mesh);
+      return partialStockSurface.getDiagnostics();
+    },
+    applyStockSurfacePatches(patches) {
+      if (!partialStockSurface) {
+        throw new Error(
+          "Configure the Stock surface before applying partial patches.",
+        );
+      }
+      return partialStockSurface.applyPatches(patches);
+    },
+    getStockSurfaceDiagnostics() {
+      return partialStockSurface?.getDiagnostics() ?? null;
+    },
+    finishStockSurfaceUpload() {
+      if (stockLayer.visible && partialStockSurface?.mesh.visible) {
+        partialStockSurface.finishUpload();
+      }
     },
     setCollisionMarker(positionMm) {
       if (positionMm === null) {

@@ -33,6 +33,11 @@ import {
   DEFAULT_VIEWPORT_BACKGROUND,
   type MachineScene,
 } from "./machine-scene";
+import type {
+  StockSurfaceBufferDiagnostics,
+  StockSurfaceDescriptor,
+  StockSurfacePatch,
+} from "./stock-surface";
 import { ViewportControls } from "./viewport-controls";
 
 type RenderResult = Promise<void> | void;
@@ -91,6 +96,7 @@ export interface WorkcellRendererDiagnostics {
   readonly telemetry: RendererTelemetry;
   readonly camera: WorkcellCameraSnapshot;
   readonly collisionMarkerMm: readonly [number, number, number] | null;
+  readonly stockSurface: StockSurfaceBufferDiagnostics | null;
 }
 
 const MINIMUM_FOCUS_DISTANCE_MM = 180;
@@ -493,6 +499,36 @@ export class WorkcellRenderer {
     this.#onStatus?.(this.#status());
   }
 
+  configureStockSurface(
+    descriptor: StockSurfaceDescriptor,
+  ): StockSurfaceBufferDiagnostics {
+    if (!this.#machineScene) {
+      throw new Error(
+        "Initialize the workcell renderer before configuring Stock.",
+      );
+    }
+    const diagnostics =
+      this.#machineScene.configureStockSurface(descriptor);
+    this.invalidate();
+    return diagnostics;
+  }
+
+  applyStockSurfacePatches(
+    patches: readonly StockSurfacePatch[],
+  ): StockSurfaceBufferDiagnostics {
+    if (!this.#machineScene) {
+      throw new Error(
+        "Initialize the workcell renderer before updating Stock.",
+      );
+    }
+    const diagnostics =
+      this.#machineScene.applyStockSurfacePatches(patches);
+    if (patches.length > 0) {
+      this.invalidate();
+    }
+    return diagnostics;
+  }
+
   setCollisionMarker(
     positionMm: readonly [number, number, number] | null,
   ): void {
@@ -584,6 +620,7 @@ export class WorkcellRenderer {
 
     try {
       await this.#renderer.render(this.#machineScene.scene, this.#camera);
+      this.#machineScene.finishStockSurfaceUpload();
       const duration = Math.max(0, performance.now() - start);
       this.#framesRendered += 1;
       this.#frameDurations.push(duration);
@@ -655,6 +692,7 @@ export class WorkcellRenderer {
         targetMm: sceneToDomainMm(controlsTarget),
       },
       collisionMarkerMm: this.#collisionMarkerMm,
+      stockSurface: this.#machineScene?.getStockSurfaceDiagnostics() ?? null,
     };
   }
 

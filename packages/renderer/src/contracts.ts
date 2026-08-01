@@ -67,7 +67,7 @@ export const RENDERER_LIMITS: Readonly<
     {
       id: "material-update",
       label: "소재 갱신",
-      value: "GPU compute 준비",
+      value: "GPU 부분 buffer update",
     },
     {
       id: "antialiasing",
@@ -89,7 +89,7 @@ export const RENDERER_LIMITS: Readonly<
     {
       id: "material-update",
       label: "소재 갱신",
-      value: "CPU/WASM 메시 프리뷰",
+      value: "CPU/WASM 부분 메시 update",
     },
     {
       id: "antialiasing",

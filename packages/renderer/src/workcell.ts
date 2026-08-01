@@ -11,3 +11,9 @@ export type {
   WorkcellRendererOptions,
   WorkcellRendererStatus,
 } from "./workcell-renderer";
+export type {
+  StockSurfaceBufferDiagnostics,
+  StockSurfaceDescriptor,
+  StockSurfacePatch,
+  StockSurfacePointMm,
+} from "./stock-surface";

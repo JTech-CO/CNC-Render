@@ -90,7 +90,13 @@ describe("M3 renderer contracts", () => {
     expect(fallback.limits).toContainEqual(
       expect.objectContaining({
         id: "material-update",
-        value: "CPU/WASM 메시 프리뷰",
+        value: "CPU/WASM 부분 메시 update",
+      }),
+    );
+    expect(webgpu.limits).toContainEqual(
+      expect.objectContaining({
+        id: "material-update",
+        value: "GPU 부분 buffer update",
       }),
     );
   });

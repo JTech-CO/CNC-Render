@@ -38,3 +38,13 @@ export type {
   ProjectedBounds,
 } from "./projection";
 export { resourceDelta, resourcesAreStable } from "./resource-stability";
+export {
+  PartialStockSurface,
+  StockSurfaceInputError,
+} from "./stock-surface";
+export type {
+  StockSurfaceBufferDiagnostics,
+  StockSurfaceDescriptor,
+  StockSurfacePatch,
+  StockSurfacePointMm,
+} from "./stock-surface";

@@ -1,11 +1,73 @@
 # CNC Render Progress
 
-- Current phase: M4 — 3축 운동학·축 한계·충돌 검증
-- Status: complete — M4 Definition of Done 전체 통과
-- Last completed: 결정론적 3축 FK·축 guard·충돌 이벤트와 다음-frame 정지 진단
-- Next task: M4 branch review·merge 후 M5 3축 밀링 재료 제거 엔진 착수
+- Current phase: M5 — 3축 밀링 재료 제거 엔진
+- Status: complete — M5 Definition of Done 전체 통과
+- Last completed: 희소 Z-multi-dexel 절삭·측정·Stock hash·dirty GPU buffer 갱신
+- Next task: M5 branch review·commit·PR 후 M6 선삭 재료 제거 착수
 - Open questions: 없음
 - Known regressions: 없음
+
+## M5 validation run
+
+2026-08-01에 고정 도구 체인 Node `24.18.0`, pnpm `11.5.3`, Rust
+`1.97.1`, Playwright `1.55.0`으로 실행했다. Golden gate는 face, slot,
+pocket, outer contour의 해석 부피를 세 preset에서 각각 검증했다.
+
+| Gate | Result |
+|---|---|
+| `pnpm test:unit --filter material-removal-milling` | 통과 — 2 files, 24 tests, Golden 부피·비접촉 0·100회 hash·측정·dirty range |
+| `pnpm test:parity --filter stock-hash` | 통과 — 1 file, 2 tests, 4 fixtures × 3 presets TypeScript↔Rust hash·부피·브릭 parity와 Rust 100회 |
+| `pnpm bench --filter milling-golden` | 통과 — 1 file, 2 tests, 12 Golden 실행과 18,000-step 논리적 5분/60 Hz 절삭의 메모리 plateau·5초 CPU 예산 |
+| `pnpm test:e2e --grep "face-milling\|slot\|pocket"` | 통과 — WebGPU·WebGL 2·visual 3 projects × 3 fixtures, 9 tests |
+| `pnpm test:e2e` | 통과 — 기존 viewport·collision 포함 24 tests, 장시간 soak 3 tests opt-in skip |
+| `cargo fmt --all -- --check` | 통과 |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 통과 |
+| `pnpm cargo:test` | 통과 — Rust workspace 전체, simulation-core M5 포함 4 tests |
+| `pnpm lint` | 통과 — ESLint, 49 modules/93 dependencies, 경계 위반 0, 문서·도구 체인 일치 |
+| `pnpm verify` | 통과 — unit 107, contract 42, parity 55, Cargo check, forbidden UI, production build |
+
+## Delivered M5 milling material removal
+
+- Stock·swept-volume core
+  - M1 `Stock`·`ToolAssembly` API를 소비하는 axis-aligned box와 flat-end mill
+  - canonical mm와 Preview 2×·Balanced 1×·Precision 0.5× 해상도
+  - 16×16 희소 브릭, 미할당 브릭은 손상되지 않은 원재료, 덱셀별 정수 깊이 layer
+  - XY capsule의 유효 매개변수 구간에서 최저 cutter-tip Z를 구하는 선형 swept volume
+  - cutter만 재료를 제거하고 cutting length·메모리 cap·Uint32 grid 상한을 fail-closed 검증
+  - 성공한 동일 sweep을 최대 1,024개까지 bounded cache하여 단조 제거의 반복 무변경 경로를 O(1) 처리
+- 정확도·결정론·측정
+  - face, slot, stadium pocket, closed rectangular outer contour 해석 부피 fixture
+  - 상대 부피 오차 상한 Preview 5%, Balanced 2%, Precision 1%
+  - 비접촉 이동의 정확한 0 부피·0 브릭·0 patch
+  - seed·preset·해상도·경계·grid·정렬된 브릭 깊이로 canonical SHA-256 Stock hash
+  - TypeScript와 Rust의 4 fixtures × 3 presets hash·부피·할당 상태 일치
+  - 거리·깊이·벽 두께 결과와 representation resolution 동시 반환
+- dirty surface·browser integration
+  - 초기 surface snapshot 1회 뒤 변경 덱셀만 `Uint32Array` index와
+    `Float32Array` 높이 patch로 추출
+  - renderer가 하나의 사전 할당 BufferGeometry를 유지하고 연속 vertex range만 갱신
+  - 같은 frame 전 들어온 update range를 누적하고 render 완료 뒤 해제
+  - WebGPU는 GPU 부분 buffer update, WebGL 2는 CPU/WASM 부분 메시 update로 차이 공개
+  - engine과 대형 배열은 React state/Zustand가 아닌 simulation ref와 renderer 메모리에 유지
+  - face-milling·slot·pocket browser fixture의 Stock patch가 그려진 frame과 React commit 분리
+
+## M5 limitations and remaining risks
+
+- 표현은 axis-aligned box Stock, flat-end mill, 수직 3축, 언더컷 없는 단일
+  Z solid interval만 지원한다. cylinder Stock, ball/bull tool, 다중 interval,
+  X/Y dexel과 local SDF는 후속 범위다.
+- 브라우저는 M7 Worker/WASM coordinator 전까지 TypeScript reference core를
+  사용한다. Rust parity CLI는 같은 최종 Stock 상태를 검증하지만 현재 renderer의
+  실시간 실행 주체는 아니다.
+- M5 surface는 변경 덱셀별 독립 column geometry다. 전체 remesh는 하지 않지만
+  marching-cubes/dual-contouring 기반의 매끄러운 국부 표면 추출은 후속 범위다.
+- 5분 gate는 18,000 simulation step을 실행하는 논리적 soak다. 실제 wall-clock
+  5분 browser/GPU 장시간 절삭과 다양한 고유 toolpath의 cache 압력은 M7 통합 뒤
+  별도 장시간 gate로 다시 검증해야 한다.
+- browser fixture는 결정론적 교육용 face·slot·pocket 경로다. 임의 사용자
+  G-code playback과 공구 교환 lifecycle 연결은 M7 이후 범위다.
+- 결과는 E2 교육용 근사 검증이며 산업용 CAM verification, 공작기계 안전 인증,
+  실제 controller 결과와 동일하지 않다.
 
 ## M4 validation run
 
@@ -225,3 +287,4 @@ M2는 이 계약과 기존 34개 Rust 테스트를 유지한 채 추가되었다
 | 2026-07-28 | fatal parse는 전체 결과를 fail-closed하고, 자원 상한·진단 순서·결정론적 ID를 공개 계약으로 둔다. | 부분 경로 소비, 자원 고갈, 실행 간 결과 drift를 M2 경계에서 차단한다. | `crates/gcode-core/`, `tests/fixtures/gcode/`, `tests/parity/gcode-determinism.test.ts` |
 | 2026-07-29 | renderer가 scene·camera·GPU loop를 소유하고 WebGPU 우선·WebGL 2 공개 폴백을 제공한다. | React frame 결합과 backend 기능 과장을 막고 같은 mm fixture의 결정론적 교육용 E2 장면을 제공한다. | `packages/renderer/`, `app/components/`, `docs/architecture-decisions/0005-renderer-workcell-shell.md` |
 | 2026-08-01 | 3축 FK·축 guard와 sphere/AABB collision proxy를 simulation core에 두고 stop UI는 marker가 그려진 renderer frame 뒤에 전환한다. | 수치·충돌 결정론, visual/collision 분리와 React frame 독립성을 M4 계약으로 고정한다. | `packages/simulation/`, `crates/simulation-core/`, `packages/renderer/`, `docs/architecture-decisions/0006-three-axis-kinematics-collision.md` |
+| 2026-08-01 | 3축 재료 제거는 16×16 희소 Z-dexel 브릭과 정수 깊이 layer를 simulation core가 소유하고 renderer에는 dirty cell patch만 전달한다. | 비접촉 0, 부피 정확도, Stock hash 결정론과 전체 remesh 없는 부분 GPU 갱신을 같은 계약으로 고정한다. | `packages/simulation/`, `crates/simulation-core/`, `packages/renderer/`, `docs/architecture-decisions/0007-sparse-dexel-milling.md` |

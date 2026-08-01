@@ -1,5 +1,7 @@
 #![forbid(unsafe_code)]
 
+pub mod material_removal;
+
 use cnc_render_contracts::domain::{
     DirectionUnit, KinematicAxis, MachineDefinition, MachineType, Vec3Mm,
 };
