@@ -2,9 +2,9 @@ import type { Metadata } from "next";
 import { headers } from "next/headers";
 import "./globals.css";
 
-const title = "CNC Render | M0 Foundation";
+const title = "CNC Render | 3D 작업실";
 const description =
-  "웹 기반 CNC 가공 학습 시뮬레이터의 M0 저장소 경계와 다음 구축 단계를 소개합니다.";
+  "WebGPU 우선·WebGL 2 폴백으로 동작하는 CNC Render 교육용 3D 작업실과 렌더 진단 화면입니다.";
 
 function requestOrigin(host: string, forwardedProtocol: string | null) {
   const firstProtocol = forwardedProtocol?.split(",")[0]?.trim();
@@ -49,7 +49,7 @@ export async function generateMetadata(): Promise<Metadata> {
           url: socialImageUrl,
           width: 1731,
           height: 909,
-          alt: "수직 머시닝 센터 개념과 CNC Render 워드마크",
+          alt: "CNC Render 3D 작업실과 수직형 머시닝 센터 장면",
         },
       ],
     },

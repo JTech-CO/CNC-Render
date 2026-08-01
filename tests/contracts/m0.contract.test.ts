@@ -92,7 +92,7 @@ describe("M0 repository contract", () => {
 
     expect(manifest.scripts).toMatchObject({
       dev: "vinext dev",
-      build: "vinext build",
+      build: "node scripts/run-vinext-build.mjs",
       start: "vinext start",
       "cargo:check":
         "node scripts/run-cargo.mjs check --workspace --all-targets --locked",
@@ -142,6 +142,7 @@ describe("M0 repository contract", () => {
       ["packages/simulation/package.json", "@cnc-render/simulation"],
       ["packages/renderer/package.json", "@cnc-render/renderer"],
       ["packages/storage/package.json", "@cnc-render/storage"],
+      ["packages/e2e/package.json", "@cnc-render/e2e"],
     ] as const;
 
     for (const [manifestPath, expectedName] of packages) {

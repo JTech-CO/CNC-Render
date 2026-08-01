@@ -8,6 +8,16 @@
     ".": {
       "types": "./src/index.ts",
       "import": "./src/index.ts"
+    },
+    "./workcell": {
+      "types": "./src/workcell.ts",
+      "import": "./src/workcell.ts"
     }
+  },
+  "dependencies": {
+    "three": "0.180.0"
+  },
+  "devDependencies": {
+    "@types/three": "0.180.0"
   }
 }
