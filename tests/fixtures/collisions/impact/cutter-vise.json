@@ -1,0 +1,73 @@
+{
+  "fixtureVersion": 1,
+  "fixtureId": "m4-impact-cutter-vise",
+  "runId": "21000000-0000-4000-8000-000000000000",
+  "objects": [
+    {
+      "id": "21000000-0000-4000-8000-000000000001",
+      "semanticKind": "cutter",
+      "visualObjectId": "scene/cutter",
+      "collisionGroup": 1,
+      "collisionMask": 4,
+      "severity": "stop",
+      "shape": {
+        "shapeType": "sphere",
+        "centerMm": {
+          "xMm": -20,
+          "yMm": 0,
+          "zMm": 0
+        },
+        "radiusMm": 5
+      }
+    },
+    {
+      "id": "21000000-0000-4000-8000-000000000004",
+      "semanticKind": "vise",
+      "visualObjectId": "scene/vise",
+      "collisionGroup": 4,
+      "collisionMask": 1,
+      "severity": "stop",
+      "shape": {
+        "shapeType": "axis-aligned-box",
+        "centerMm": {
+          "xMm": 0,
+          "yMm": 0,
+          "zMm": 0
+        },
+        "halfExtentsMm": {
+          "xMm": 5,
+          "yMm": 10,
+          "zMm": 10
+        }
+      }
+    }
+  ],
+  "frames": [
+    {
+      "timeS": 0,
+      "sourceLine": 20,
+      "translationsMm": {}
+    },
+    {
+      "timeS": 1,
+      "sourceLine": 21,
+      "translationsMm": {
+        "21000000-0000-4000-8000-000000000001": {
+          "xMm": 15,
+          "yMm": 0,
+          "zMm": 0
+        }
+      }
+    }
+  ],
+  "maximumInterpolationStepMm": 1,
+  "expectedEvents": [
+    {
+      "objectAId": "21000000-0000-4000-8000-000000000001",
+      "objectBId": "21000000-0000-4000-8000-000000000004",
+      "severity": "stop",
+      "sourceLine": 21,
+      "timeS": 0.7333333333333333
+    }
+  ]
+}

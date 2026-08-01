@@ -1,0 +1,108 @@
+{
+  "fixtureVersion": 1,
+  "fixtureId": "m4-safe-vmc-clearance",
+  "runId": "20000000-0000-4000-8000-000000000000",
+  "objects": [
+    {
+      "id": "20000000-0000-4000-8000-000000000001",
+      "semanticKind": "cutter",
+      "visualObjectId": "scene/cutter",
+      "collisionGroup": 1,
+      "collisionMask": 4,
+      "severity": "stop",
+      "shape": {
+        "shapeType": "sphere",
+        "centerMm": {
+          "xMm": -50,
+          "yMm": 0,
+          "zMm": 0
+        },
+        "radiusMm": 5
+      }
+    },
+    {
+      "id": "20000000-0000-4000-8000-000000000002",
+      "semanticKind": "holder",
+      "visualObjectId": "scene/holder",
+      "collisionGroup": 2,
+      "collisionMask": 4,
+      "severity": "stop",
+      "shape": {
+        "shapeType": "sphere",
+        "centerMm": {
+          "xMm": -50,
+          "yMm": 0,
+          "zMm": 20
+        },
+        "radiusMm": 8
+      }
+    },
+    {
+      "id": "20000000-0000-4000-8000-000000000003",
+      "semanticKind": "chuck",
+      "visualObjectId": "scene/chuck",
+      "collisionGroup": 4,
+      "collisionMask": 3,
+      "severity": "stop",
+      "shape": {
+        "shapeType": "axis-aligned-box",
+        "centerMm": {
+          "xMm": 60,
+          "yMm": 0,
+          "zMm": 0
+        },
+        "halfExtentsMm": {
+          "xMm": 10,
+          "yMm": 10,
+          "zMm": 10
+        }
+      }
+    },
+    {
+      "id": "20000000-0000-4000-8000-000000000004",
+      "semanticKind": "vise",
+      "visualObjectId": "scene/vise",
+      "collisionGroup": 4,
+      "collisionMask": 3,
+      "severity": "stop",
+      "shape": {
+        "shapeType": "axis-aligned-box",
+        "centerMm": {
+          "xMm": 0,
+          "yMm": 0,
+          "zMm": 0
+        },
+        "halfExtentsMm": {
+          "xMm": 6,
+          "yMm": 12,
+          "zMm": 8
+        }
+      }
+    }
+  ],
+  "frames": [
+    {
+      "timeS": 0,
+      "sourceLine": 10,
+      "translationsMm": {}
+    },
+    {
+      "timeS": 1,
+      "sourceLine": 11,
+      "translationsMm": {
+        "20000000-0000-4000-8000-000000000001": {
+          "xMm": 10,
+          "yMm": 0,
+          "zMm": 0
+        },
+        "20000000-0000-4000-8000-000000000002": {
+          "xMm": 10,
+          "yMm": 0,
+          "zMm": 0
+        }
+      }
+    }
+  ],
+  "maximumInterpolationStepMm": 1,
+  "expectedEvents": []
+}

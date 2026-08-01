@@ -90,6 +90,7 @@ export interface WorkcellRendererDiagnostics {
   readonly status: WorkcellRendererStatus;
   readonly telemetry: RendererTelemetry;
   readonly camera: WorkcellCameraSnapshot;
+  readonly collisionMarkerMm: readonly [number, number, number] | null;
 }
 
 const MINIMUM_FOCUS_DISTANCE_MM = 180;
@@ -162,6 +163,7 @@ export class WorkcellRenderer {
   #dirty = false;
   #disposed = false;
   #pointerMoved = false;
+  #collisionMarkerMm: readonly [number, number, number] | null = null;
 
   constructor(options: WorkcellRendererOptions) {
     this.#canvas = options.canvas;
@@ -491,6 +493,25 @@ export class WorkcellRenderer {
     this.#onStatus?.(this.#status());
   }
 
+  setCollisionMarker(
+    positionMm: readonly [number, number, number] | null,
+  ): void {
+    if (
+      positionMm !== null &&
+      (!Number.isFinite(positionMm[0]) ||
+        !Number.isFinite(positionMm[1]) ||
+        !Number.isFinite(positionMm[2]))
+    ) {
+      throw new RangeError(
+        "Collision marker coordinates must contain finite millimetre values.",
+      );
+    }
+
+    this.#collisionMarkerMm = positionMm === null ? null : [...positionMm];
+    this.#machineScene?.setCollisionMarker(this.#collisionMarkerMm);
+    this.invalidate();
+  }
+
   selectAt(clientX: number, clientY: number): SceneLayerId | null {
     const machineScene = this.#machineScene;
     if (!machineScene) {
@@ -633,6 +654,7 @@ export class WorkcellRenderer {
         positionMm: sceneToDomainMm(this.#camera.position),
         targetMm: sceneToDomainMm(controlsTarget),
       },
+      collisionMarkerMm: this.#collisionMarkerMm,
     };
   }
 
@@ -661,5 +683,6 @@ export class WorkcellRenderer {
     this.#controls = null;
     this.#machineScene = null;
     this.#renderer = null;
+    this.#collisionMarkerMm = null;
   }
 }

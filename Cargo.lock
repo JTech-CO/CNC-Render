@@ -43,6 +43,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "cnc-render-simulation-core"
+version = "0.1.0"
+dependencies = [
+ "cnc-render-contracts",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "const-oid"
 version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"

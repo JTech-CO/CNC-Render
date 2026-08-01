@@ -1,6 +1,11 @@
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
+const benchmarkFiles = new Map([
+  ["renderer-smoke", "tests/bench/renderer-smoke.test.ts"],
+  ["collision-fixtures", "tests/bench/collision-fixtures.test.ts"],
+]);
+
 const inputArguments = process.argv.slice(2);
 const passthroughArguments = [];
 let filter;
@@ -19,8 +24,8 @@ for (let index = 0; index < inputArguments.length; index += 1) {
   passthroughArguments.push(argument);
 }
 
-if (filter !== undefined && filter !== "renderer-smoke") {
-  console.error(`[renderer-bench] Unknown filter "${filter}".`);
+if (filter !== undefined && !benchmarkFiles.has(filter)) {
+  console.error(`[bench] Unknown filter "${filter}".`);
   process.exit(2);
 }
 
@@ -34,6 +39,7 @@ const result = spawnSync(
     "run",
     "--config",
     "vitest.renderer-bench.config.ts",
+    ...(filter === undefined ? [] : [benchmarkFiles.get(filter)]),
     ...passthroughArguments,
   ],
   {
@@ -44,7 +50,7 @@ const result = spawnSync(
 );
 
 if (result.error) {
-  console.error(`[renderer-bench] ${result.error.message}`);
+  console.error(`[bench] ${result.error.message}`);
   process.exit(1);
 }
 
