@@ -27,6 +27,12 @@ import {
 } from "./contracts";
 import { domainMmToScene } from "./coordinate-space";
 import {
+  PartialRotationalStockSurface,
+  type RotationalStockSurfaceDescriptor,
+  type RotationalStockSurfaceDiagnostics,
+  type RotationalStockSurfacePatch,
+} from "./rotational-stock-surface";
+import {
   PartialStockSurface,
   type StockSurfaceBufferDiagnostics,
   type StockSurfaceDescriptor,
@@ -58,6 +64,13 @@ export interface MachineScene {
   applyStockSurfacePatches(
     patches: readonly StockSurfacePatch[],
   ): StockSurfaceBufferDiagnostics;
+  configureRotationalStockSurface(
+    descriptor: RotationalStockSurfaceDescriptor,
+  ): RotationalStockSurfaceDiagnostics;
+  applyRotationalStockSurfacePatches(
+    patches: readonly RotationalStockSurfacePatch[],
+  ): RotationalStockSurfaceDiagnostics;
+  getRotationalStockSurfaceDiagnostics(): RotationalStockSurfaceDiagnostics | null;
   getStockSurfaceDiagnostics(): StockSurfaceBufferDiagnostics | null;
   finishStockSurfaceUpload(): void;
   setCollisionMarker(
@@ -429,6 +442,7 @@ export function createMachineScene(): MachineScene {
     materials.stock,
   );
   let partialStockSurface: PartialStockSurface | null = null;
+  let rotationalStockSurface: PartialRotationalStockSurface | null = null;
   addToolAssembly(
     layerGroups.get("holder")!,
     layerGroups.get("cutter")!,
@@ -529,6 +543,11 @@ export function createMachineScene(): MachineScene {
         stockLayer.remove(partialStockSurface.mesh);
         partialStockSurface.dispose();
       }
+      if (rotationalStockSurface) {
+        stockLayer.remove(rotationalStockSurface.mesh);
+        rotationalStockSurface.dispose();
+        rotationalStockSurface = null;
+      }
       educationStock.visible = false;
       partialStockSurface = new PartialStockSurface(
         descriptor,
@@ -547,12 +566,46 @@ export function createMachineScene(): MachineScene {
       }
       return partialStockSurface.applyPatches(patches);
     },
+    configureRotationalStockSurface(descriptor) {
+      if (partialStockSurface) {
+        stockLayer.remove(partialStockSurface.mesh);
+        partialStockSurface.dispose();
+        partialStockSurface = null;
+      }
+      if (rotationalStockSurface) {
+        stockLayer.remove(rotationalStockSurface.mesh);
+        rotationalStockSurface.dispose();
+      }
+      educationStock.visible = false;
+      rotationalStockSurface = new PartialRotationalStockSurface(
+        descriptor,
+        materials.stock,
+      );
+      tagObject(rotationalStockSurface.mesh, "stock", true);
+      stockLayer.add(rotationalStockSurface.mesh);
+      selectableObjects.push(rotationalStockSurface.mesh);
+      return rotationalStockSurface.getDiagnostics();
+    },
+    applyRotationalStockSurfacePatches(patches) {
+      if (!rotationalStockSurface) {
+        throw new Error(
+          "Configure the rotational Stock surface before applying profile patches.",
+        );
+      }
+      return rotationalStockSurface.applyPatches(patches);
+    },
+    getRotationalStockSurfaceDiagnostics() {
+      return rotationalStockSurface?.getDiagnostics() ?? null;
+    },
     getStockSurfaceDiagnostics() {
       return partialStockSurface?.getDiagnostics() ?? null;
     },
     finishStockSurfaceUpload() {
       if (stockLayer.visible && partialStockSurface?.mesh.visible) {
         partialStockSurface.finishUpload();
+      }
+      if (stockLayer.visible && rotationalStockSurface?.mesh.visible) {
+        rotationalStockSurface.finishUpload();
       }
     },
     setCollisionMarker(positionMm) {

@@ -15,13 +15,19 @@ import type {
 } from "@cnc-render/renderer/workcell";
 import {
   createM5MillingDemoSession,
+  createM6TurningDemoSession,
   runM4CollisionStopDemo,
   type CollisionEvent,
+  type LatheRadiusFieldEngine,
   type M5MillingDemoOperation,
+  type M6TurningDemoOperation,
   type MillingMaterialRemovalDiagnostics,
   type SparseDexelMillingEngine,
+  type TurningMaterialRemovalDiagnostics,
 } from "@cnc-render/simulation";
 import { useEffect, useRef } from "react";
+import { attachM7Pipeline } from "./m7-pipeline-adapter";
+import { attachM8Persistence } from "./m8-persistence-adapter";
 
 interface CncRenderM3Harness {
   getDiagnostics(): WorkcellRendererDiagnostics;
@@ -66,11 +72,31 @@ interface CncRenderM5Harness extends CncRenderM4Harness {
   getMillingState(): M5MillingBrowserRun | null;
 }
 
+interface M6TurningBrowserRun {
+  readonly operation: M6TurningDemoOperation;
+  readonly profileHashSha256: string;
+  readonly removedVolumeMm3: number;
+  readonly engineDiagnostics: TurningMaterialRemovalDiagnostics;
+  readonly rendererDiagnostics: NonNullable<
+    WorkcellRendererDiagnostics["rotationalStockSurface"]
+  >;
+  readonly baselineRenderFrame: number;
+  readonly renderedOnFrame: number | null;
+}
+
+interface CncRenderM6Harness extends CncRenderM5Harness {
+  runTurningFixture(
+    operation: M6TurningDemoOperation,
+  ): Promise<M6TurningBrowserRun>;
+  getTurningState(): M6TurningBrowserRun | null;
+}
+
 declare global {
   interface Window {
     __CNC_RENDER_M3__?: CncRenderM3Harness;
     __CNC_RENDER_M4__?: CncRenderM4Harness;
     __CNC_RENDER_M5__?: CncRenderM5Harness;
+    __CNC_RENDER_M6__?: CncRenderM6Harness;
   }
 }
 
@@ -150,6 +176,9 @@ export function MachineWorkspace() {
   const millingEngineRef = useRef<SparseDexelMillingEngine | null>(null);
   const pendingMillingRunRef = useRef<M5MillingBrowserRun | null>(null);
   const lastMillingRunRef = useRef<M5MillingBrowserRun | null>(null);
+  const turningEngineRef = useRef<LatheRadiusFieldEngine | null>(null);
+  const pendingTurningRunRef = useRef<M6TurningBrowserRun | null>(null);
+  const lastTurningRunRef = useRef<M6TurningBrowserRun | null>(null);
   const runCollisionFixtureRef = useRef<() => CollisionEvent>(() => {
     throw new Error("M4 collision fixture is not ready.");
   });
@@ -169,6 +198,8 @@ export function MachineWorkspace() {
     let resizeTimer: number | null = null;
     let resizeObserver: ResizeObserver | null = null;
     let disposed = false;
+    let pipelineBinding: ReturnType<typeof attachM7Pipeline> | null = null;
+    let persistenceBinding: ReturnType<typeof attachM8Persistence> | null = null;
 
     const updateStatus = (status: WorkcellRendererStatus) => {
       const mode = status.backend.mode;
@@ -308,6 +339,25 @@ export function MachineWorkspace() {
           millingRun.rendererDiagnostics.partialBufferUpdates,
         );
       }
+
+      const turningRun = pendingTurningRunRef.current;
+      if (turningRun) {
+        pendingTurningRunRef.current = null;
+        const renderedRun = {
+          ...turningRun,
+          renderedOnFrame: telemetry.framesRendered,
+        };
+        lastTurningRunRef.current = renderedRun;
+        viewport.dataset.turningState = "rendered";
+        viewport.dataset.turningOperation = turningRun.operation;
+        viewport.dataset.turningRenderedFrame = String(
+          telemetry.framesRendered,
+        );
+        viewport.dataset.turningProfileHash = turningRun.profileHashSha256;
+        viewport.dataset.rotationalStockPartialUpdates = String(
+          turningRun.rendererDiagnostics.partialBufferUpdates,
+        );
+      }
     };
 
     void import("@cnc-render/renderer/workcell")
@@ -351,6 +401,7 @@ export function MachineWorkspace() {
         resize();
         viewport.dataset.ready = "true";
         viewport.dataset.millingState = "idle";
+        viewport.dataset.turningState = "idle";
 
         const runCollisionFixture = () => {
           const result = runM4CollisionStopDemo();
@@ -447,6 +498,45 @@ export function MachineWorkspace() {
           return run;
         };
 
+        const runTurningFixture = async (
+          operation: M6TurningDemoOperation,
+        ): Promise<M6TurningBrowserRun> => {
+          const baselineRenderFrame =
+            renderer.getDiagnostics().telemetry.framesRendered;
+          viewport.dataset.turningState = "updating";
+          viewport.dataset.turningOperation = operation;
+          delete viewport.dataset.turningRenderedFrame;
+          delete viewport.dataset.turningProfileHash;
+          delete viewport.dataset.rotationalStockPartialUpdates;
+
+          const session = createM6TurningDemoSession(operation);
+          turningEngineRef.current = session.engine;
+          renderer.configureRotationalStockSurface(
+            session.engine.createFullSurfaceSnapshot(24),
+          );
+          for (const cut of session.cuts) {
+            session.engine.applyCut(cut);
+          }
+          const profileHashSha256 =
+            await session.engine.profileHashSha256();
+          const rendererDiagnostics =
+            renderer.applyRotationalStockSurfacePatches(
+              session.engine.drainDirtySurfacePatches(),
+            );
+          const run: M6TurningBrowserRun = {
+            operation,
+            profileHashSha256,
+            removedVolumeMm3: session.engine.removedVolumeMm3,
+            engineDiagnostics: session.engine.getDiagnostics(),
+            rendererDiagnostics,
+            baselineRenderFrame,
+            renderedOnFrame: null,
+          };
+          pendingTurningRunRef.current = run;
+          lastTurningRunRef.current = run;
+          return run;
+        };
+
         const baseHarness: CncRenderM3Harness = {
           getDiagnostics: () => renderer.getDiagnostics(),
           getReactCommitCount: () => commitCountRef.current,
@@ -480,6 +570,34 @@ export function MachineWorkspace() {
           runMillingFixture,
           getMillingState: () => lastMillingRunRef.current,
         };
+        window.__CNC_RENDER_M6__ = {
+          ...collisionHarness,
+          runMillingFixture,
+          getMillingState: () => lastMillingRunRef.current,
+          runTurningFixture,
+          getTurningState: () => lastTurningRunRef.current,
+        };
+        pipelineBinding = attachM7Pipeline(renderer, viewport);
+        window.__CNC_RENDER_M7__ = pipelineBinding.harness;
+        viewport.dataset.pipelineState = "idle";
+        viewport.dataset.pipelineWorker = "dedicated";
+        try {
+          persistenceBinding = attachM8Persistence(
+            pipelineBinding.harness,
+            viewport,
+          );
+          window.__CNC_RENDER_M8__ = persistenceBinding.harness;
+          viewport.dataset.persistenceState = "ready";
+        } catch (error) {
+          const diagnostic = error as {
+            readonly diagnosticCode?: unknown;
+          };
+          viewport.dataset.persistenceState = "unavailable";
+          viewport.dataset.persistenceDiagnostic =
+            typeof diagnostic.diagnosticCode === "string"
+              ? diagnostic.diagnosticCode
+              : "storage.persistence.unavailable";
+        }
       })
       .catch((error: unknown) => {
         if (disposed) {
@@ -501,11 +619,16 @@ export function MachineWorkspace() {
       if (resizeTimer !== null) {
         window.clearTimeout(resizeTimer);
       }
+      persistenceBinding?.dispose();
+      pipelineBinding?.dispose();
       rendererRef.current?.dispose();
       rendererRef.current = null;
       millingEngineRef.current = null;
       pendingMillingRunRef.current = null;
       lastMillingRunRef.current = null;
+      turningEngineRef.current = null;
+      pendingTurningRunRef.current = null;
+      lastTurningRunRef.current = null;
       runCollisionFixtureRef.current = () => {
         throw new Error("M4 collision fixture is not ready.");
       };
@@ -513,6 +636,9 @@ export function MachineWorkspace() {
       delete window.__CNC_RENDER_M3__;
       delete window.__CNC_RENDER_M4__;
       delete window.__CNC_RENDER_M5__;
+      delete window.__CNC_RENDER_M6__;
+      delete window.__CNC_RENDER_M7__;
+      delete window.__CNC_RENDER_M8__;
     };
   }, []);
 

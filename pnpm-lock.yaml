@@ -110,7 +110,11 @@ importers:
         specifier: workspace:*
         version: link:../contracts
 
-  packages/storage: {}
+  packages/storage:
+    dependencies:
+      '@cnc-render/contracts':
+        specifier: workspace:*
+        version: link:../contracts
 
   packages/ui: {}
 

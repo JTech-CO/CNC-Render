@@ -1,0 +1,16 @@
+[package]
+name = "cnc-render-wasm"
+version = "0.1.0"
+edition.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+path = "src/lib.rs"
+
+[dependencies]
+cnc-render-contracts = { path = "../cnc-render-contracts" }
+cnc-render-gcode-core = { path = "../gcode-core" }
+cnc-render-simulation-core = { path = "../simulation-core" }
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.151"

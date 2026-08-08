@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -7,6 +7,35 @@ const vinextEntryPath = fileURLToPath(import.meta.resolve("vinext"));
 const vinextCliPath = join(dirname(vinextEntryPath), "cli.js");
 const workspacePath = process.cwd();
 const buildArguments = ["build", ...process.argv.slice(2)];
+const wasmBuild = spawnSync(
+  process.execPath,
+  [join(workspacePath, "scripts", "build-wasm.mjs")],
+  {
+    cwd: workspacePath,
+    env: process.env,
+    stdio: "inherit",
+  },
+);
+if (wasmBuild.error) {
+  throw wasmBuild.error;
+}
+if (wasmBuild.status !== 0) {
+  process.exit(wasmBuild.status ?? 1);
+}
+
+function publishWasmToClientBundle() {
+  const sourcePath = join(
+    workspacePath,
+    "public",
+    "wasm",
+    "cnc_render_wasm.wasm",
+  );
+  const outputDirectory = join(workspacePath, "dist", "client", "wasm");
+  const outputPath = join(outputDirectory, "cnc_render_wasm.wasm");
+  mkdirSync(outputDirectory, { recursive: true });
+  copyFileSync(sourcePath, outputPath);
+  console.info("[build] Published /wasm/cnc_render_wasm.wasm.");
+}
 const needsShortWindowsPath =
   process.platform === "win32" &&
   (workspacePath.length >= 80 || /[^\x20-\x7e]/.test(workspacePath));
@@ -25,6 +54,9 @@ if (!needsShortWindowsPath) {
     throw result.error;
   }
   process.exitCode = result.status ?? 1;
+  if (result.status === 0) {
+    publishWasmToClientBundle();
+  }
 } else {
   const availableDrive = [
     "R",
@@ -83,5 +115,8 @@ if (!needsShortWindowsPath) {
   }
   if (process.exitCode !== 1) {
     process.exitCode = result?.status ?? 1;
+  }
+  if (result?.status === 0 && process.exitCode !== 1) {
+    publishWasmToClientBundle();
   }
 }

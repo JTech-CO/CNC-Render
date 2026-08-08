@@ -1,0 +1,153 @@
+{
+  "fixtureVersion": 1,
+  "units": "mm",
+  "seed": 1779033703,
+  "stock": {
+    "diameterMm": 80,
+    "lengthMm": 120,
+    "positionMm": { "xMm": 0, "yMm": 0, "zMm": 0 },
+    "baseResolutionMm": 1
+  },
+  "machine": {
+    "maxSpindleSpeedRpm": 4500,
+    "chuckGripLengthMm": 20
+  },
+  "fixtures": [
+    {
+      "id": "facing-positive-end",
+      "operation": "facing",
+      "toolKind": "turning",
+      "analyticModel": "outer=inner=0 for cell centres z>=50 mm",
+      "cut": {
+        "operation": "facing",
+        "faceZMm": 50,
+        "freeEnd": "positive-z"
+      }
+    },
+    {
+      "id": "od-turning-60mm",
+      "operation": "od-turning",
+      "toolKind": "turning",
+      "analyticModel": "outer radius 30 mm for -20<=z<=50 mm",
+      "cut": {
+        "operation": "od-turning",
+        "startZMm": -20,
+        "endZMm": 50,
+        "startOuterRadiusMm": 30,
+        "endOuterRadiusMm": 30
+      }
+    },
+    {
+      "id": "linear-taper",
+      "operation": "taper",
+      "toolKind": "turning",
+      "analyticModel": "outer radius linearly decreases from 35 mm at z=-20 to 20 mm at z=50",
+      "cut": {
+        "operation": "taper",
+        "startZMm": -20,
+        "endZMm": 50,
+        "startOuterRadiusMm": 35,
+        "endOuterRadiusMm": 20
+      }
+    },
+    {
+      "id": "square-groove",
+      "operation": "groove",
+      "toolKind": "turning",
+      "analyticModel": "outer radius 25 mm for 20<=z<=30 mm",
+      "cut": {
+        "operation": "groove",
+        "startZMm": 20,
+        "endZMm": 30,
+        "startOuterRadiusMm": 25,
+        "endOuterRadiusMm": 25
+      }
+    },
+    {
+      "id": "parting-through",
+      "operation": "parting",
+      "toolKind": "turning",
+      "analyticModel": "empty profile for 35<=z<=40 mm",
+      "cut": {
+        "operation": "parting",
+        "startZMm": 35,
+        "endZMm": 40,
+        "startOuterRadiusMm": 0,
+        "endOuterRadiusMm": 0
+      }
+    },
+    {
+      "id": "drilling-16mm",
+      "operation": "drilling",
+      "toolKind": "drill",
+      "analyticModel": "inner radius 8 mm for 0<=z<=60 mm",
+      "cut": {
+        "operation": "drilling",
+        "startZMm": 0,
+        "endZMm": 60,
+        "startInnerRadiusMm": 8,
+        "endInnerRadiusMm": 8
+      }
+    },
+    {
+      "id": "boring-24mm",
+      "operation": "boring",
+      "toolKind": "boring",
+      "analyticModel": "inner radius 12 mm for -10<=z<=50 mm",
+      "cut": {
+        "operation": "boring",
+        "startZMm": -10,
+        "endZMm": 50,
+        "startInnerRadiusMm": 12,
+        "endInnerRadiusMm": 12
+      }
+    }
+  ],
+  "spindleCases": [
+    {
+      "id": "g97-unclamped",
+      "mode": "rpm",
+      "commandedValue": 1200,
+      "diameterMm": 80,
+      "expectedRequestedRpm": 1200,
+      "expectedEffectiveRpm": 1200,
+      "expectedClamped": false
+    },
+    {
+      "id": "g97-machine-clamp",
+      "mode": "rpm",
+      "commandedValue": 6000,
+      "diameterMm": 80,
+      "expectedRequestedRpm": 6000,
+      "expectedEffectiveRpm": 4500,
+      "expectedClamped": true
+    },
+    {
+      "id": "g96-100m-min-80mm",
+      "mode": "surface-speed",
+      "commandedValue": 100,
+      "diameterMm": 80,
+      "expectedRequestedRpm": 397.88735772973837,
+      "expectedEffectiveRpm": 397.88735772973837,
+      "expectedClamped": false
+    },
+    {
+      "id": "g96-100m-min-10mm",
+      "mode": "surface-speed",
+      "commandedValue": 100,
+      "diameterMm": 10,
+      "expectedRequestedRpm": 3183.098861837907,
+      "expectedEffectiveRpm": 3183.098861837907,
+      "expectedClamped": false
+    },
+    {
+      "id": "g96-machine-clamp",
+      "mode": "surface-speed",
+      "commandedValue": 200,
+      "diameterMm": 10,
+      "expectedRequestedRpm": 6366.197723675814,
+      "expectedEffectiveRpm": 4500,
+      "expectedClamped": true
+    }
+  ]
+}

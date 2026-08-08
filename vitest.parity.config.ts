@@ -10,6 +10,9 @@ export default defineConfig({
       "@cnc-render/simulation": fileURLToPath(
         new URL("./packages/simulation/src/index.ts", import.meta.url),
       ),
+      "@cnc-render/storage": fileURLToPath(
+        new URL("./packages/storage/src/index.ts", import.meta.url),
+      ),
     },
   },
   test: {

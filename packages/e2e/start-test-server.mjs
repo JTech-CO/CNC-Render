@@ -130,7 +130,10 @@ function proxyToVinext(request, response) {
 
 const gateway = createServer((request, response) => {
   const pathname = new URL(request.url ?? "/", "http://127.0.0.1").pathname;
-  if (pathname.startsWith("/assets/")) {
+  if (
+    pathname.startsWith("/assets/") ||
+    pathname.startsWith("/wasm/")
+  ) {
     void serveClientAsset(request, response, pathname);
     return;
   }
