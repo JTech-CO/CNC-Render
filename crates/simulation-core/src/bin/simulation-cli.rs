@@ -5,6 +5,10 @@ use cnc_render_simulation_core::{
         MillingQualityPreset, MillingStockDiagnostics, MillingStockInput, MillingSweep,
         MillingToolInput, SparseDexelMillingEngine,
     },
+    turning::{
+        LatheRadiusFieldEngine, TurningCut, TurningProfileDiagnostics, TurningQualityPreset,
+        TurningStockInput, TurningToolKind,
+    },
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -25,6 +29,7 @@ struct PoseRequest {
 #[serde(untagged)]
 enum CliRequest {
     StockHash(StockHashRequest),
+    LatheProfile(LatheProfileRequest),
     Poses(PoseRequest),
 }
 
@@ -45,6 +50,26 @@ struct StockHashRequest {
 enum StockHashRequestType {
     #[serde(rename = "stock-hash")]
     StockHash,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct LatheProfileRequest {
+    request_type: LatheProfileRequestType,
+    stock: TurningStockInput,
+    tool_kind: TurningToolKind,
+    preset: TurningQualityPreset,
+    seed: u32,
+    machine_max_spindle_speed_rpm: f64,
+    chuck_grip_length_mm: f64,
+    cuts: Vec<TurningCut>,
+    repetitions: u32,
+}
+
+#[derive(Debug, Deserialize)]
+enum LatheProfileRequestType {
+    #[serde(rename = "lathe-profile")]
+    LatheProfile,
 }
 
 #[derive(Debug, Deserialize)]
@@ -83,6 +108,23 @@ struct StockHashEvaluation {
 struct StockHashResponse {
     stable: bool,
     result: StockHashEvaluation,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LatheProfileEvaluation {
+    profile_hash_sha256: String,
+    removed_volume_mm3: f64,
+    axial_cells: usize,
+    allocated_bytes: usize,
+    revision: u64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LatheProfileResponse {
+    stable: bool,
+    result: LatheProfileEvaluation,
 }
 
 fn execute(request: PoseRequest) -> Result<PoseResponse, SimulationError> {
@@ -172,6 +214,60 @@ fn execute_stock_hash(request: StockHashRequest) -> Result<StockHashResponse, Si
     })
 }
 
+fn evaluate_lathe_profile(
+    request: &LatheProfileRequest,
+) -> Result<LatheProfileEvaluation, SimulationError> {
+    let LatheProfileRequestType::LatheProfile = request.request_type;
+    let mut engine = LatheRadiusFieldEngine::new(
+        request.stock.clone(),
+        request.tool_kind,
+        request.preset,
+        request.seed,
+        request.machine_max_spindle_speed_rpm,
+        request.chuck_grip_length_mm,
+    )?;
+    for cut in &request.cuts {
+        engine.apply_cut(cut)?;
+    }
+    let TurningProfileDiagnostics {
+        axial_cells,
+        allocated_bytes,
+        revision,
+        removed_volume_mm3,
+        ..
+    } = engine.diagnostics();
+    Ok(LatheProfileEvaluation {
+        profile_hash_sha256: engine.profile_hash_sha256()?,
+        removed_volume_mm3,
+        axial_cells,
+        allocated_bytes,
+        revision,
+    })
+}
+
+fn execute_lathe_profile(
+    request: LatheProfileRequest,
+) -> Result<LatheProfileResponse, SimulationError> {
+    if request.repetitions == 0 || request.repetitions > 10_000 {
+        return Err(SimulationError {
+            code: "turning.request.repetitions-invalid".to_owned(),
+            message: "repetitions must be in the inclusive range 1..=10000.".to_owned(),
+        });
+    }
+    let baseline = evaluate_lathe_profile(&request)?;
+    let mut stable = true;
+    for _ in 1..request.repetitions {
+        if evaluate_lathe_profile(&request)? != baseline {
+            stable = false;
+            break;
+        }
+    }
+    Ok(LatheProfileResponse {
+        stable,
+        result: baseline,
+    })
+}
+
 fn run() -> Result<(), String> {
     let mut input = String::new();
     io::stdin()
@@ -186,6 +282,9 @@ fn run() -> Result<(), String> {
         CliRequest::StockHash(request) => {
             serde_json::to_string(&execute_stock_hash(request).map_err(|error| error.to_string())?)
         }
+        CliRequest::LatheProfile(request) => serde_json::to_string(
+            &execute_lathe_profile(request).map_err(|error| error.to_string())?,
+        ),
     }
     .map_err(|error| format!("failed to serialize response: {error}"))?;
     println!("{output}");

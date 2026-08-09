@@ -37,6 +37,7 @@ jobs:
         run: |
           rustup toolchain install "$RUST_VERSION" --profile minimal --component clippy --component rustfmt
           rustup default "$RUST_VERSION"
+          rustup target add wasm32-unknown-unknown --toolchain "$RUST_VERSION"
 
       - name: Confirm pinned tool versions
         shell: bash
@@ -77,3 +78,37 @@ jobs:
 
       - name: Check prohibited terminology
         run: node scripts/check-doc-terms.mjs
+
+
+      - name: Build GitHub Pages demo
+        run: pnpm build:pages
+
+      - name: Upload GitHub Pages artifact
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: dist/pages
+
+  deploy-pages:
+    name: Deploy GitHub Pages demo
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    concurrency:
+      group: github-pages
+      cancel-in-progress: false
+    steps:
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Deploy GitHub Pages artifact
+        id: deployment
+        uses: actions/deploy-pages@v4

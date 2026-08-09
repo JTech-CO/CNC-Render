@@ -9,5 +9,8 @@
       "types": "./src/index.ts",
       "import": "./src/index.ts"
     }
+  },
+  "dependencies": {
+    "@cnc-render/contracts": "workspace:*"
   }
 }

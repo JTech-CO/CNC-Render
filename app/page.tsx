@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { MachineWorkspaceLoader } from "./components/machine-workspace-loader";
 
 function BrandMark() {
@@ -15,7 +14,7 @@ export default function Home() {
   return (
     <main className="application-shell">
       <header className="command-bar">
-        <Link className="product-brand" href="/" aria-label="CNC Render 작업실">
+        <a className="product-brand" href="./" aria-label="CNC Render 작업실">
           <span className="product-mark">
             <BrandMark />
           </span>
@@ -23,7 +22,7 @@ export default function Home() {
             <strong>CNC Render</strong>
             <small>Learning simulator</small>
           </span>
-        </Link>
+        </a>
 
         <nav className="project-breadcrumb" aria-label="현재 프로젝트">
           <span>Projects</span>

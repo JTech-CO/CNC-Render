@@ -1,11 +1,241 @@
 # CNC Render Progress
 
-- Current phase: M5 — 3축 밀링 재료 제거 엔진
-- Status: complete — M5 Definition of Done 전체 통과
-- Last completed: 희소 Z-multi-dexel 절삭·측정·Stock hash·dirty GPU buffer 갱신
-- Next task: M5 branch review·commit·PR 후 M6 선삭 재료 제거 착수
+- Current phase: M8 — 저장·체크포인트·프로젝트 마이그레이션
+- Status: complete — M8 Definition of Done 전체 통과
+- Last completed: IndexedDB metadata → OPFS immutable generation → 전체 WASM Stock checkpoint → `.cncrender` export/import·migration·corruption 방어
+- Next task: GitHub Pages 복구 commit·PR·CI·merge와 Pages workflow 전환·공개 smoke 후 M9 착수
 - Open questions: 없음
-- Known regressions: 없음
+- Known regressions: 복구 변경이 main에 배포되기 전까지 공개 Pages URL이 README를 표시한다.
+
+## GitHub Pages 배포 복구 (2026-08-09)
+
+- 상태: 로컬 구현·검증 완료, 아직 공개 배포 전
+- 원인: 저장소 Pages가 build_type legacy, main:/ 소스로 설정되어 Jekyll이
+  애플리케이션 대신 루트 README.md를 진입 문서로 렌더링했다.
+- 구현:
+  - 일반 Vinext/Sites 빌드와 분리된 apps/pages-demo 순수 Vite 정적 엔트리
+  - /CNC-Render/ base URL을 갖는 앱 JS·CSS·Worker·WASM·OG 자산
+  - 전체 CI 통과 후 actions/upload-pages-artifact와 actions/deploy-pages로만
+    main을 배포하는 Pages job
+  - Worker가 Vite BASE_URL을 사용해 프로젝트 하위 경로의 WASM을 로드하는 계약
+- 검증:
+  - Node 24 런타임에서 Pages build 통과 — 151 modules, 정적 index.html,
+    simulation Worker, 793,271-byte WASM, SHA-256
+    75aea4d133cceedd1514dd74c493989e991ce515556bcac658ba9e868fdb3be8
+  - 기존 Vinext/Sites production build 통과
+  - TypeScript, 변경 파일 ESLint, dependency-cruiser 통과 —
+    80 modules/178 dependencies, 위반 0
+  - simulation-coordinator unit 2 tests 통과
+  - /CNC-Render/ 로컬 HTTP smoke 통과 — index, app JS, Worker, WASM,
+    OG image 모두 200; WASM MIME application/wasm
+- 남은 위험·활성화:
+  - 로컬에서 저장소 고정 Node 24.18.0을 찾지 못해 번들 Node 24.14.0으로 build를
+    검증했다. GitHub CI는 고정 Node 24.18.0에서 동일 build를 다시 검증해야 한다.
+  - 수정 branch를 main에 병합하고 Pages 설정을 legacy에서 workflow로 전환하기
+    전까지 공개 URL은 기존 README를 계속 표시한다.
+  - 공개 배포 후 실제 URL에서 앱 JS·Worker·WASM 200 응답과 첫 렌더를 다시 확인한다.
+## M8 validation run
+
+2026-08-09에 고정 도구 체인 Node `24.18.0`, pnpm `11.5.3`, Rust
+`1.97.1`, Playwright `1.55.0`과 `wasm32-unknown-unknown` target으로
+실행했다. production WASM은 793,271 bytes이며 SHA-256은
+`75aea4d133cceedd1514dd74c493989e991ce515556bcac658ba9e868fdb3be8`이다.
+
+| Gate | Result |
+|---|---|
+| `pnpm test:unit --filter persistence` | 통과 — 3 files, 11 tests, 결정론적 ZIP·v0→v1 migration·원자적 generation·중단 복구/격리·30초 autosave |
+| `pnpm test:contracts --filter project-container` | 통과 — 1 file, 4 tests, 100 MiB·strict manifest·2~5초 checkpoint·redacted telemetry/cloud stub |
+| `pnpm test:parity --filter persisted-project` | 통과 — 1 file, 2 tests, 실제 WASM milling·turning 전체 Stock checkpoint와 동일 step full replay byte parity |
+| `pnpm test:e2e --grep "save-load\|checkpoint\|migration\|corruption"` | 통과 — WebGPU·WebGL 2에서 8 passed, visual 중복 4건 의도적 skip |
+| `cargo fmt --all -- --check` | 통과 |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 통과 |
+| `pnpm cargo:test` | 통과 — Rust workspace 전체, `cnc-render-wasm` native 4 tests 포함 |
+| `pnpm verify` | 통과 — unit 134, contract 49, parity 63, 71 modules/158 dependencies 경계 위반 0, Cargo check, forbidden UI, production build |
+| `pnpm test:e2e` | 통과 — 전체 49 passed, 장시간 soak 3건·M7 visual 중복 4건·M8 visual 중복 4건 의도적 skip |
+| `pnpm test:visual --grep "machine-scene"` | 통과 — WebGPU·WebGL 2·visual 3 projects |
+
+## Delivered M8 persistence and checkpoints
+
+- `.cncrender` 공개 컨테이너
+  - 고정 timestamp·UTF-8 이름·STORE 방식의 결정론적 ZIP writer와 STORE/DEFLATE importer
+  - `schemaVersion`, `engineVersion`, `unitSystem`, project semantic hash,
+    authoritative project hash와 manifest checksum을 포함하는 strict manifest
+  - ZIP magic·CRC-32·SHA-256·경로 순회·정규화 충돌·중복 entry·symlink·암호화·다중 disk,
+    4,096 entries·JSON 깊이 64·압축률 100:1·기본 100 MiB 상한 방어
+  - schema v0 원본 byte를 immutable하게 보존하면서 순수 registry로 v1을 생성하는 migration
+- IndexedDB metadata와 OPFS generation
+  - IndexedDB에 active generation pointer, component hash, checkpoint index와
+    `staging|ready|quarantined` metadata 저장
+  - OPFS에 generation별 immutable project·G-code·Stock/checkpoint chunk와 마지막
+    `generation.json` commit marker 저장
+  - 모든 길이·SHA-256과 IndexedDB/OPFS metadata 일치를 확인한 뒤 하나의 IndexedDB
+    transaction으로 active pointer 전환
+  - 중단된 partial save는 정상 load에서 제외하고, 완전한 staging은 승격하며 불완전·손상
+    staging은 안정된 diagnostic code로 격리
+- WASM checkpoint·autosave
+  - Rust/WASM snapshot이 milling top-Z 전체 surface 또는 turning inner/outer radius 전체
+    profile을 explicit binary layout으로 반환
+  - little-endian float payload, strict metadata, payload SHA-256과 state·Stock hash를 가진
+    checkpoint codec 및 3초 기본/2~5초 계약·operation/terminal boundary
+  - 저장 checkpoint를 renderer에 직접 복원한 reverse scrub 결과를 동일 step 전체 WASM
+    replay와 milling·turning 모두 byte 단위 비교
+  - 일반 변경은 30초 window로 합치고 중요 변경은 즉시 flush하며 동시 save를 직렬화하는
+    autosave controller
+- browser·privacy·cloud 경계
+  - 실제 Chromium restart에서 machine, tool, operation, G-code, Stock, diagnostics,
+    measurements와 project의 8개 semantic hash가 동일함을 OPFS·IndexedDB로 검증
+  - WebGPU와 WebGL 2 모두 동일 persistence·checkpoint 기능을 제공하고 React render loop를
+    추가하지 않음
+  - storage telemetry 계약은 source content를 구조적으로 허용하지 않으며 cloud port는
+    사용자 동의 전 `enabled: false`, D1/R2 `null`, project byte 미포함으로 고정
+  - OPFS/IndexedDB 미지원 환경은 memory fallback으로 위장하지 않고 persistence만
+    `unavailable` diagnostic으로 노출
+
+## M8 limitations and remaining risks
+
+- M8 checkpoint는 결정론적 reverse scrub용 full renderer Stock과 상태 hash를 복원한다.
+  WASM 내부 절삭 engine session 자체를 역직렬화해 checkpoint 이후부터 forward 실행을
+  재개하는 기능은 아직 없다.
+- deterministic export는 재현성을 위해 STORE를 사용하므로 대형 프로젝트의 압축 효율이
+  낮다. DEFLATE import는 브라우저 `DecompressionStream("deflate-raw")` 지원이 필요하다.
+- 기본 100 MiB·entry·깊이·압축률 상한과 손상 방어는 검증했지만 실제 quota 부족,
+  100 MiB 근접 파일과 장시간 다중 checkpoint의 memory plateau는 별도 soak가 필요하다.
+- migration registry는 현재 대표 v0→v1 fixture만 제공한다. 이후 schema version마다 원본
+  보존 golden fixture와 순차 migration을 추가해야 한다.
+- autosave controller의 실제 편집 event 연결은 편집 가능한 workspace를 만드는 M9에서
+  수행해야 한다.
+- cloud persistence는 사용자 동의·계정·권한·충돌 병합 정책이 정의될 때까지 의도적으로
+  비활성이다. 현재 결과는 E2 교육용 근사 검증이며 산업용 CAM 검증과 동일하지 않다.
+
+## M7 validation run
+
+2026-08-09에 고정 도구 체인 Node `24.18.0`, pnpm `11.5.3`, Rust
+`1.97.1`, Playwright `1.55.0`과 `wasm32-unknown-unknown` target으로
+실행했다. production WASM은 793,311 bytes이며 public·client bundle 사본의
+SHA-256은 `a48ee9b2ecd85e0b8e803aeb4bcc9d823b103096b9a372d9269ca9f11dac1d13`으로
+동일하다.
+
+| Gate | Result |
+|---|---|
+| `pnpm test:contracts --filter worker-protocol` | 통과 — 1 file, 3 tests, strict run·배속·Transferable 소유권·상호 배타 terminal 상태 |
+| `pnpm test:parity --filter replay` | 통과 — 1 file, 4 tests, 실제 WASM 밀링·선반 realtime/fast-forward hash parity·pause freeze·collision-stop |
+| `pnpm test:unit --filter simulation-coordinator` | 통과 — 1 file, 2 tests, Worker generation·runId·sequence stale 차단과 10/20 Hz UI sampling |
+| `pnpm test:e2e --grep "playback\|pause\|cancel\|collision-stop"` | 통과 — 11 passed, M7 WebGPU·WebGL 2 lifecycle 8건과 M4 회귀 3건; visual 중복 4건 의도적 skip |
+| `pnpm bench --filter coordinator` | 통과 — 2,000 validated Worker updates, 개별 main-thread handler 50 ms 미만·전체 3초 예산 |
+| `cargo fmt --all -- --check` | 통과 |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 통과 |
+| `pnpm cargo:test` | 통과 — Rust workspace 전체, `cnc-render-wasm` native 3 tests 포함 |
+| `pnpm lint` / `pnpm typecheck` | 통과 — 59 modules/119 dependencies, 경계 위반 0, 문서·도구 체인 일치 |
+| `pnpm verify` | 통과 — unit 123, contract 45, parity 61, Cargo check, forbidden UI, WASM production build |
+| `pnpm test:e2e` | 통과 — 전체 41 passed, 장시간 soak 3건과 M7 visual 중복 4건 의도적 skip |
+| `pnpm test:visual --grep "machine-scene"` | 통과 — WebGPU·WebGL 2·visual 3 projects |
+
+## Delivered M7 Worker/WASM pipeline
+
+- Rust/WASM 실행 core
+  - `cnc-render-wasm` crate가 M2 Rust parser·Toolpath IR과 M4~M6 운동학,
+    충돌, 밀링·선반 재료 제거를 한 session으로 실행
+  - versioned bare C ABI로 input resize, initialize, step, snapshot, cancel과
+    JSON·binary output pointer/length 제공
+  - 밀링 top-Z와 선반 내·외경 dirty cell만 별도 binary layout으로 인코딩하며
+    16 MiB 입력·128 MiB binary 출력 상한 적용
+  - collision-stop과 정상 completed를 상호 배타 상태로 반환하고 두 terminal 모두
+    최종 semantic hash 보존
+- 전용 Worker와 coordinator lifecycle
+  - strict Zod command/event envelope, 별도 `ArrayBuffer`와 receiver-owned
+    Transferable slice descriptor
+  - Worker generation, `runId`, 단조 event sequence의 세 stale-event 방벽
+  - `0.1x..100x`는 표시 지연만 변경하고 논리 step·Stock·최종 hash에는 영향 없음
+  - pause snapshot은 시간·Stock·축·진단을 고정하며 cancel·dispose·restart가
+    timer와 이전 run을 무효화
+  - renderer update는 즉시 전달하고 일반 수치 UI는 최대 10 Hz, 축 UI는 최대
+    20 Hz로 독립 sampling
+- renderer·browser·build 연결
+  - React/Zustand를 거치지 않는 adapter가 밀링·선반 full/dirty patch와 충돌 marker를
+    `WorkcellRenderer`에 직접 반영
+  - WebGPU와 WebGL 2가 같은 WASM surface 계약과 완료 frame을 소비하고 실행 중
+    React commit을 만들지 않음
+  - production build가 고정 Rust target으로 WASM을 생성해
+    `dist/client/wasm/cnc_render_wasm.wasm`에 게시하며 E2E gateway도 같은 경로를 제공
+  - browser harness가 replay parity, pause freeze, cancel/restart, collision-stop,
+    render frame과 Long Task telemetry를 검증
+
+## M7 limitations and remaining risks
+
+- 현재 Worker는 한 번에 하나의 WASM session만 소유한다. 동시 비교 실행,
+  multi-worker scheduling과 session pool은 지원하지 않는다.
+- M7 browser fixture는 단일 공구의 작은 대표 직선 밀링·선반 공정이다. 임의 공구
+  교환, macro/subprogram, controller look-ahead, servo 오차, 다중 spindle·turret과
+  대형 장시간 프로그램은 후속 범위다.
+- WASM 메모리에서 Worker로 dirty binary를 한 번 복사한 뒤 Transferable로 넘긴다.
+  `SharedArrayBuffer`·cross-origin isolation 기반 zero-copy ring buffer는 사용하지 않는다.
+- 50 ms Long Task와 coordinator 처리 예산은 대표 fixture와 2,000-event 합성 부하로
+  검증했다. 대형 CAD·Stock 및 수 시간 경로의 메모리 plateau·복구는 M8 이후 별도
+  soak와 checkpoint 검증이 필요하다.
+- Vinext `0.0.50`의 Windows 정적 자산 경로 제약 때문에 build wrapper와 E2E gateway가
+  `/wasm/*`를 명시적으로 게시한다. upstream 동작이 바뀌면 workaround 제거 여부를
+  재검증해야 한다.
+- 결과는 E2 교육용 근사 검증이며 산업용 CAM verification, 공작기계 안전 인증,
+  실제 controller 결과와 동일하지 않다.
+
+## M6 validation run
+
+2026-08-01에 고정 도구 체인 Node `24.18.0`, pnpm `11.5.3`, Rust
+`1.97.1`, Playwright `1.55.0`으로 실행했다. Golden gate는 facing, OD,
+taper, groove, parting, drilling, boring을 세 preset에서 검증했다.
+
+| Gate | Result |
+|---|---|
+| `pnpm test:unit --filter turning` | 통과 — 3 files, 14 tests, 7개 대표 공정·반경 오차·단조 제거·충돌·저장/복원·renderer dirty range |
+| `pnpm test:unit --filter spindle-mode` | 통과 — 1 file, 3 tests, G96·G97와 machine/tool 최대 RPM clamp |
+| `pnpm test:parity --filter lathe-profile` | 통과 — 1 file, 2 tests, 7 fixtures × 3 presets TypeScript↔Rust profile·hash·측정 parity와 Rust 100회 |
+| `pnpm test:e2e --grep "facing\|od-turning\|taper"` | 통과 — WebGPU·WebGL 2·visual 3 projects × 3 fixtures, 9 tests |
+| `pnpm test:e2e` | 통과 — 전체 33 tests, 장시간 soak 3 tests opt-in skip |
+| `pnpm test:visual --grep "machine-scene"` | 통과 — WebGPU·WebGL 2·visual 3 projects |
+| `cargo fmt --all -- --check` | 통과 |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | 통과 |
+| `pnpm cargo:test` | 통과 — Rust workspace 전체, simulation-core M6 포함 6 tests |
+| `pnpm lint` | 통과 — ESLint, 53 modules/105 dependencies, 경계 위반 0, 문서·도구 체인 일치 |
+| `pnpm verify` | 통과 — unit 121, contract 42, parity 57, Cargo check, forbidden UI, production build |
+
+## Delivered M6 lathe material removal
+
+- 반경 필드·절삭 core
+  - canonical Z축 동축 원통과 축방향 셀별 `outerRadiusLayers`·`innerRadiusLayers`
+    정수 반경 필드
+  - Preview 2×·Balanced 1×·Precision 0.5× 해상도와 셀 크기 이하 OD 반경 오차
+  - 외경은 감소하고 내경은 증가하는 단조 제거와
+    `0 <= inner <= outer <= initial` 불변식
+  - facing, OD, taper, groove, parting, drilling, boring 대표 프로파일
+  - 같은 또는 덜 공격적인 재절삭에서 Stock 성장·부호 반전·불필요 revision 없음
+- 주축·충돌·결정론
+  - G96 `1000 × Vc / (π × D)`와 G97 지령 RPM, machine/tool 최대 RPM 중
+    작은 값으로 clamp하고 요청값·유효값을 함께 반환
+  - 공구 끝의 회전축 반대편 통과와 설정된 척 파지 영역 진입을 fail-closed 감지
+  - version·seed·preset·해상도·축 경계·정수 layer 배열의 canonical SHA-256 hash
+  - snapshot에 revision과 내·외경 layer를 저장하며 복원 후 hash·측정 동일
+  - TypeScript reference와 Rust core의 7 fixtures × 3 presets parity
+- dirty surface·browser integration
+  - 축방향 셀 × 고정 radial segment의 BufferGeometry를 한 번 할당하고 변경 셀만 재작성
+  - WebGPU와 WebGL 2가 같은 CPU profile patch를 소비하며 backend별 update range 기록
+  - 대형 반경 배열은 React/Zustand가 아닌 simulation core와 renderer 메모리에 유지
+  - facing·OD turning·taper fixture에서 renderer frame 완료와 React commit 분리
+
+## M6 limitations and remaining risks
+
+- M6는 Z축 동축 원통과 회전 대칭 형상, 이상화된 인서트·드릴만 지원한다.
+  나사산, 편심 가공, 임의 spline 프로파일, 공구 코너의 실제 swept volume,
+  척 jaw 형상과 절단 후 분리된 강체 동역학은 후속 범위다.
+- 브라우저는 M7 Worker/WASM coordinator 전까지 TypeScript reference core를
+  사용한다. Rust parity CLI는 최종 profile·hash·측정을 검증하지만 현재
+  renderer의 실시간 실행 주체는 아니다.
+- 회전체 surface는 셀별 독립 geometry와 고정 radial segment를 사용한다.
+  dirty cell은 부분 갱신하지만 인접 셀을 잇는 매끄러운 법선·공유 topology와
+  compute 기반 표면 재구성은 아직 제공하지 않는다.
+- browser fixture는 결정론적 교육용 facing·OD·taper 경로다. 임의 사용자
+  G-code playback, 공구 교환, 절단 부품 분리 lifecycle 연결은 M7 이후 범위다.
+- 결과는 E2 교육용 근사 검증이며 산업용 CAM verification, 공작기계 안전 인증,
+  실제 controller 결과와 동일하지 않다.
 
 ## M5 validation run
 
@@ -288,3 +518,5 @@ M2는 이 계약과 기존 34개 Rust 테스트를 유지한 채 추가되었다
 | 2026-07-29 | renderer가 scene·camera·GPU loop를 소유하고 WebGPU 우선·WebGL 2 공개 폴백을 제공한다. | React frame 결합과 backend 기능 과장을 막고 같은 mm fixture의 결정론적 교육용 E2 장면을 제공한다. | `packages/renderer/`, `app/components/`, `docs/architecture-decisions/0005-renderer-workcell-shell.md` |
 | 2026-08-01 | 3축 FK·축 guard와 sphere/AABB collision proxy를 simulation core에 두고 stop UI는 marker가 그려진 renderer frame 뒤에 전환한다. | 수치·충돌 결정론, visual/collision 분리와 React frame 독립성을 M4 계약으로 고정한다. | `packages/simulation/`, `crates/simulation-core/`, `packages/renderer/`, `docs/architecture-decisions/0006-three-axis-kinematics-collision.md` |
 | 2026-08-01 | 3축 재료 제거는 16×16 희소 Z-dexel 브릭과 정수 깊이 layer를 simulation core가 소유하고 renderer에는 dirty cell patch만 전달한다. | 비접촉 0, 부피 정확도, Stock hash 결정론과 전체 remesh 없는 부분 GPU 갱신을 같은 계약으로 고정한다. | `packages/simulation/`, `crates/simulation-core/`, `packages/renderer/`, `docs/architecture-decisions/0007-sparse-dexel-milling.md` |
+| 2026-08-01 | 선반 Stock은 Z축 정수 내·외경 필드로 표현하고 renderer에는 dirty axial cell patch만 전달한다. | 대표 회전 대칭 공정의 단조 제거·셀 크기 이하 반경 오차·저장 해시 결정론과 부분 GPU 갱신을 같은 계약으로 고정한다. | `packages/simulation/`, `crates/simulation-core/`, `packages/renderer/`, `docs/architecture-decisions/0008-lathe-radius-field.md` |
+| 2026-08-09 | 전용 Worker가 bare C ABI Rust/WASM session을 소유하고 renderer에는 receiver-owned Transferable dirty buffer만 전달한다. | G-code부터 Stock·충돌·renderer까지 실제 Rust 실행 경로, 재생 결정론, pause/cancel lifecycle과 stale-event 차단을 하나의 공개 계약으로 고정한다. | `crates/cnc-render-wasm/`, `packages/contracts/src/coordinator.ts`, `packages/simulation/src/coordinator.ts`, `docs/architecture-decisions/0009-worker-wasm-simulation-coordinator.md` |

@@ -2,7 +2,7 @@ use crate::SimulationError;
 use cnc_render_contracts::{domain::Vec3Mm, semantic_hash};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 const NUMERIC_EPSILON: f64 = 1e-9;
 const DEFAULT_MEMORY_CAP_BYTES: usize = 64 * 1024 * 1024;
@@ -69,6 +69,25 @@ pub struct MillingStockDiagnostics {
     pub removed_volume_mm3: f64,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MillingSurfaceSnapshot {
+    pub minimum_mm: Vec3Mm,
+    pub maximum_mm: Vec3Mm,
+    pub columns: usize,
+    pub rows: usize,
+    pub resolution_mm: f64,
+    pub top_z_mm: Vec<f32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MillingSurfacePatch {
+    pub revision: u64,
+    pub cell_indices: Vec<u32>,
+    pub top_z_mm: Vec<f32>,
+}
+
 #[derive(Debug, Clone)]
 struct Bounds {
     minimum: Vec3Mm,
@@ -89,6 +108,7 @@ pub struct SparseDexelMillingEngine {
     cutting_length_mm: f64,
     bounds: Bounds,
     bricks: BTreeMap<(usize, usize), Vec<u32>>,
+    dirty_cells: BTreeSet<usize>,
     revision: u64,
     removed_volume_mm3: f64,
 }
@@ -169,6 +189,7 @@ impl SparseDexelMillingEngine {
             cutting_length_mm: tool.cutting_length_mm,
             bounds,
             bricks: BTreeMap::new(),
+            dirty_cells: BTreeSet::new(),
             revision: 0,
             removed_volume_mm3: 0.0,
         })
@@ -240,6 +261,7 @@ impl SparseDexelMillingEngine {
                         .get_mut(&(brick_y, brick_x))
                         .expect("the sparse brick was just allocated")[local_index] =
                         requested_layers;
+                    self.dirty_cells.insert(row * self.columns + column);
                     dirty_bricks.insert((brick_y, brick_x), ());
                     updated_dexels += 1;
                     removed_volume_delta_mm3 += (self.depth_mm(requested_layers)
@@ -263,6 +285,37 @@ impl SparseDexelMillingEngine {
             removed_volume_delta_mm3: normalized_zero(removed_volume_delta_mm3),
             removed_volume_mm3: self.removed_volume_mm3,
         })
+    }
+
+    pub fn surface_snapshot(&self) -> MillingSurfaceSnapshot {
+        let top_z_mm = (0..self.rows)
+            .flat_map(|row| (0..self.columns).map(move |column| self.top_z_mm(column, row) as f32))
+            .collect();
+        MillingSurfaceSnapshot {
+            minimum_mm: self.bounds.minimum.clone(),
+            maximum_mm: self.bounds.maximum.clone(),
+            columns: self.columns,
+            rows: self.rows,
+            resolution_mm: self.resolution_mm,
+            top_z_mm,
+        }
+    }
+
+    pub fn drain_dirty_surface_patch(&mut self) -> MillingSurfacePatch {
+        let dirty_cells = std::mem::take(&mut self.dirty_cells);
+        let mut cell_indices = Vec::with_capacity(dirty_cells.len());
+        let mut top_z_mm = Vec::with_capacity(dirty_cells.len());
+        for cell_index in dirty_cells {
+            let row = cell_index / self.columns;
+            let column = cell_index % self.columns;
+            cell_indices.push(cell_index as u32);
+            top_z_mm.push(self.top_z_mm(column, row) as f32);
+        }
+        MillingSurfacePatch {
+            revision: self.revision,
+            cell_indices,
+            top_z_mm,
+        }
     }
 
     pub fn stock_hash_sha256(&self) -> Result<String, SimulationError> {
@@ -393,6 +446,17 @@ impl SparseDexelMillingEngine {
             brick_y,
             local_row * self.brick_size_dexels + local_column,
         )
+    }
+
+    fn layers_at(&self, column: usize, row: usize) -> u32 {
+        let (brick_x, brick_y, local_index) = self.brick_location(column, row);
+        self.bricks
+            .get(&(brick_y, brick_x))
+            .map_or(0, |brick| brick[local_index])
+    }
+
+    fn top_z_mm(&self, column: usize, row: usize) -> f64 {
+        self.bounds.maximum.z_mm - self.depth_mm(self.layers_at(column, row))
     }
 
     fn ensure_brick(&mut self, brick_x: usize, brick_y: usize) -> Result<(), SimulationError> {

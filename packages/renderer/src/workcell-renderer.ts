@@ -34,6 +34,11 @@ import {
   type MachineScene,
 } from "./machine-scene";
 import type {
+  RotationalStockSurfaceDescriptor,
+  RotationalStockSurfaceDiagnostics,
+  RotationalStockSurfacePatch,
+} from "./rotational-stock-surface";
+import type {
   StockSurfaceBufferDiagnostics,
   StockSurfaceDescriptor,
   StockSurfacePatch,
@@ -97,6 +102,7 @@ export interface WorkcellRendererDiagnostics {
   readonly camera: WorkcellCameraSnapshot;
   readonly collisionMarkerMm: readonly [number, number, number] | null;
   readonly stockSurface: StockSurfaceBufferDiagnostics | null;
+  readonly rotationalStockSurface: RotationalStockSurfaceDiagnostics | null;
 }
 
 const MINIMUM_FOCUS_DISTANCE_MM = 180;
@@ -529,6 +535,36 @@ export class WorkcellRenderer {
     return diagnostics;
   }
 
+  configureRotationalStockSurface(
+    descriptor: RotationalStockSurfaceDescriptor,
+  ): RotationalStockSurfaceDiagnostics {
+    if (!this.#machineScene) {
+      throw new Error(
+        "Initialize the workcell renderer before configuring rotational Stock.",
+      );
+    }
+    const diagnostics =
+      this.#machineScene.configureRotationalStockSurface(descriptor);
+    this.invalidate();
+    return diagnostics;
+  }
+
+  applyRotationalStockSurfacePatches(
+    patches: readonly RotationalStockSurfacePatch[],
+  ): RotationalStockSurfaceDiagnostics {
+    if (!this.#machineScene) {
+      throw new Error(
+        "Initialize the workcell renderer before updating rotational Stock.",
+      );
+    }
+    const diagnostics =
+      this.#machineScene.applyRotationalStockSurfacePatches(patches);
+    if (patches.length > 0) {
+      this.invalidate();
+    }
+    return diagnostics;
+  }
+
   setCollisionMarker(
     positionMm: readonly [number, number, number] | null,
   ): void {
@@ -693,6 +729,8 @@ export class WorkcellRenderer {
       },
       collisionMarkerMm: this.#collisionMarkerMm,
       stockSurface: this.#machineScene?.getStockSurfaceDiagnostics() ?? null,
+      rotationalStockSurface:
+        this.#machineScene?.getRotationalStockSurfaceDiagnostics() ?? null,
     };
   }
 

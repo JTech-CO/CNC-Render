@@ -12,6 +12,11 @@ export type {
   WorkcellRendererStatus,
 } from "./workcell-renderer";
 export type {
+  RotationalStockSurfaceDescriptor,
+  RotationalStockSurfaceDiagnostics,
+  RotationalStockSurfacePatch,
+} from "./rotational-stock-surface";
+export type {
   StockSurfaceBufferDiagnostics,
   StockSurfaceDescriptor,
   StockSurfacePatch,

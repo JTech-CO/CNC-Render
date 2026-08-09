@@ -5,6 +5,7 @@ const benchmarkFiles = new Map([
   ["renderer-smoke", "tests/bench/renderer-smoke.test.ts"],
   ["collision-fixtures", "tests/bench/collision-fixtures.test.ts"],
   ["milling-golden", "tests/bench/milling-golden.test.ts"],
+  ["coordinator", "tests/bench/coordinator.test.ts"],
 ]);
 
 const inputArguments = process.argv.slice(2);

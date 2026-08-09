@@ -11,13 +11,14 @@
   "scripts": {
     "dev": "vinext dev",
     "build": "node scripts/run-vinext-build.mjs",
+    "build:pages": "node scripts/run-github-pages-build.mjs",
     "start": "vinext start",
     "lint": "eslint . && depcruise --config dependency-cruiser.config.cjs apps packages crates && pnpm check:doc-terms && pnpm check:toolchain",
     "typecheck": "tsc --noEmit",
     "test": "pnpm test:unit && pnpm test:contracts && pnpm test:parity",
     "test:unit": "node scripts/run-vitest-suite.mjs unit",
     "test:contracts": "node scripts/run-vitest-suite.mjs contracts",
-    "test:parity": "node scripts/run-vitest-suite.mjs parity",
+    "test:parity": "pnpm wasm:build && node scripts/run-vitest-suite.mjs parity",
     "test:e2e": "node packages/e2e/run-playwright.mjs e2e",
     "test:visual": "node packages/e2e/run-playwright.mjs visual",
     "test:a11y": "node scripts/report-phase-gate.mjs test:a11y M9",
@@ -31,6 +32,7 @@
     "check:doc-terms": "node scripts/check-doc-terms.mjs",
     "check:forbidden-ui": "node scripts/check-forbidden-ui.mjs",
     "check:toolchain": "node scripts/check-toolchain.mjs",
+    "wasm:build": "node scripts/build-wasm.mjs",
     "verify": "pnpm lint && pnpm typecheck && pnpm cargo:check && pnpm test:unit && pnpm test:contracts && pnpm test:parity && pnpm check:forbidden-ui && pnpm build"
   },
   "dependencies": {

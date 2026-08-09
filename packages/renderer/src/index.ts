@@ -39,6 +39,15 @@ export type {
 } from "./projection";
 export { resourceDelta, resourcesAreStable } from "./resource-stability";
 export {
+  PartialRotationalStockSurface,
+  RotationalStockSurfaceInputError,
+} from "./rotational-stock-surface";
+export type {
+  RotationalStockSurfaceDescriptor,
+  RotationalStockSurfaceDiagnostics,
+  RotationalStockSurfacePatch,
+} from "./rotational-stock-surface";
+export {
   PartialStockSurface,
   StockSurfaceInputError,
 } from "./stock-surface";
