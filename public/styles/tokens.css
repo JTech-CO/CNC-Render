@@ -1,0 +1,48 @@
+/* Generated from design/tokens/cnc-render.tokens.json. Do not edit. */
+:root {
+  color-scheme: light;
+  --app-bg: #f4f6f8;
+  --surface-primary: #ffffff;
+  --surface-secondary: #f8fafc;
+  --surface-tertiary: #eef2f6;
+  --viewport-bg: #e9edf1;
+  --border-subtle: #e1e6ec;
+  --border-strong: #c5ced8;
+  --text-primary: #171a1f;
+  --text-secondary: #56606e;
+  --text-muted: #5e6978;
+  --text-disabled: #a7afba;
+  --primary-600: #2859c5;
+  --primary-700: #2049a5;
+  --primary-100: #e9f0ff;
+  --focus: #0b57d0;
+  --success-fg: #227447;
+  --success-bg: #eaf6ef;
+  --warning-fg: #9a5b00;
+  --warning-bg: #fff3df;
+  --danger-fg: #c13232;
+  --danger-bg: #fdecec;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --radius-control: 6px;
+  --radius-panel: 8px;
+  --radius-dialog: 10px;
+  --control-sm: 28px;
+  --control-md: 32px;
+  --control-lg: 36px;
+  --font-family-sans: Inter, Pretendard Variable, Pretendard, Noto Sans KR, Segoe UI, Arial, sans-serif;
+  --font-family-mono: JetBrains Mono, SFMono-Regular, Consolas, Liberation Mono, monospace;
+  --font-size-caption: 11px;
+  --font-size-label: 12px;
+  --font-size-body: 14px;
+  --font-size-code: 13px;
+  --line-height-body: 1.5;
+  --font-weight-regular: 400;
+  --font-weight-medium: 600;
+  --font-weight-bold: 750;
+}

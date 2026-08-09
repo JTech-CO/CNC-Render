@@ -33,6 +33,10 @@ function runNode(entryPath, argumentsList = [], environment = process.env) {
   }
 }
 
+runNode(
+  join(workspacePath, "scripts", "generate-pages-styles.mjs"),
+  ["--check"],
+);
 runNode(join(workspacePath, "scripts", "build-wasm.mjs"));
 
 const viteCliPath = fileURLToPath(
@@ -52,6 +56,8 @@ const pagesDirectory = join(workspacePath, "dist", "pages");
 const indexPath = join(pagesDirectory, "index.html");
 const wasmPath = join(pagesDirectory, "wasm", "cnc_render_wasm.wasm");
 const assetsDirectory = join(pagesDirectory, "assets");
+const tokenStylesPath = join(pagesDirectory, "styles", "tokens.css");
+const primitiveStylesPath = join(pagesDirectory, "styles", "primitives.css");
 
 if (!existsSync(indexPath)) {
   throw new Error("GitHub Pages build did not produce dist/pages/index.html.");
@@ -65,7 +71,27 @@ if (!existsSync(assetsDirectory)) {
   throw new Error("GitHub Pages build did not produce dist/pages/assets.");
 }
 
+const tokenStyles = readFileSync(tokenStylesPath, "utf8");
+const primitiveStyles = readFileSync(primitiveStylesPath, "utf8");
+if (!/--app-bg:\s*#f4f6f8/u.test(tokenStyles)) {
+  throw new Error("GitHub Pages CSS does not include the generated design tokens.");
+}
+if (
+  !primitiveStyles.includes(".ui-button") ||
+  !primitiveStyles.includes(".ui-dialog")
+) {
+  throw new Error("GitHub Pages CSS does not include the shared UI primitives.");
+}
+
 const indexHtml = readFileSync(indexPath, "utf8");
+for (const stylesheet of [
+  "styles/tokens.css",
+  "styles/primitives.css",
+]) {
+  if (!indexHtml.includes(basePath + "/" + stylesheet)) {
+    throw new Error("GitHub Pages does not reference " + stylesheet + ".");
+  }
+}
 if (!indexHtml.includes(basePath + "/assets/")) {
   throw new Error(
     "GitHub Pages build does not reference assets below " +

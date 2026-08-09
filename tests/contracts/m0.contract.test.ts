@@ -54,7 +54,7 @@ describe("M0 repository contract", () => {
 
     expect(manifest).toMatchObject({
       name: "cnc-render",
-      version: "0.0.0",
+      version: "0.9.0",
       private: true,
       type: "module",
       packageManager: "pnpm@11.5.3",
@@ -73,6 +73,7 @@ describe("M0 repository contract", () => {
       "test:contracts",
       "test:parity",
       "test:e2e",
+      "test:pages",
       "test:visual",
       "test:a11y",
       "cargo:check",
@@ -82,6 +83,8 @@ describe("M0 repository contract", () => {
       "bench",
       "check:bundle",
       "check:forbidden-ui",
+      "check:pages-styles",
+      "check:versions",
       "verify",
     ];
 
@@ -99,7 +102,7 @@ describe("M0 repository contract", () => {
       "cargo:test": "node scripts/run-cargo.mjs test --workspace --locked",
       "generate:contracts": "node scripts/generate-contract-artifacts.mjs",
       verify:
-        "pnpm check:tokens && pnpm lint && pnpm typecheck && pnpm cargo:check && pnpm test:unit && pnpm test:contracts && pnpm test:parity && pnpm check:forbidden-ui && pnpm build",
+        "pnpm check:tokens && pnpm check:pages-styles && pnpm check:versions && pnpm lint && pnpm typecheck && pnpm cargo:check && pnpm test:unit && pnpm test:contracts && pnpm test:parity && pnpm check:forbidden-ui && pnpm build",
     });
     expect(manifest.scripts?.lint).toContain(
       "depcruise --config dependency-cruiser.config.cjs",
@@ -220,6 +223,19 @@ describe("M0 repository contract", () => {
       expect(canonicalWhitepaper).not.toMatch(/\bdark\s+mode\b/iu);
       expect(canonicalWhitepaper).not.toMatch(/다크\s*모드/u);
     }
+  });
+
+  it("keeps the public README user-facing and version-aligned", async () => {
+    const [manifest, readme] = await Promise.all([
+      readJson<PackageManifest>("package.json"),
+      readFile(resolve(repositoryRoot, "README.md"), "utf8"),
+    ]);
+
+    expect(readme).toContain("https://jtech-co.github.io/CNC-Render/");
+    expect(readme).toContain(`v${manifest.version} Preview`);
+    expect(readme).not.toMatch(/\bM\d+\b/u);
+    expect(readme).not.toContain("PROGRESS.md");
+    expect(readme).not.toContain("Definition of Done");
   });
 
   it("runs the canonical terminology checker as an executable contract", () => {

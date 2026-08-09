@@ -1,3 +1,6 @@
+export const PRODUCT_VERSION = "0.9.0" as const;
+export const ENGINE_VERSION = PRODUCT_VERSION;
+
 export const SCHEMA_VERSION = 1 as const;
 export const WORKER_PROTOCOL_VERSION = 1 as const;
 

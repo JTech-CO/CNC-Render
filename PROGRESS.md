@@ -1,11 +1,55 @@
 # CNC Render Progress
 
-- Current phase: M9 — 디자인 시스템·Workspace UI·접근성
-- Status: complete — M9 Definition of Done 전체 통과
-- Last completed: 토큰·프리미티브 → Workspace 명령·탐색 → Worker/WASM 점진 절삭·공구 이동 → 반응형·접근성·UI 예산
-- Next task: M10 튜토리얼·샌드박스 MVP(E2) 수직 완성
+- Current phase: M9 공개 릴리스 안정화
+- Status: 구현·검증 완료 — 공개 반영 상태는 최신 GitHub Pages 배포를 기준으로 확인
+- Last completed: Pages 스타일·클릭·Worker/WASM 배포 경로 복구, 제품 버전 0.9.0 통일, 공개 문서 정리
+- Next task: M10 튜토리얼·샌드박스 MVP(E2)
 - Open questions: 없음
-- Known regressions: 없음
+- Known regressions: Pages 스타일 회귀는 이 안정화 변경에서 수정됨; 공개 가용성은 최신 성공 배포를 따름
+
+## M9 공개 릴리스 안정화 (2026-08-09)
+
+### 원인과 수정
+
+- GitHub Pages용 `apps/pages-demo/main.tsx`는 Vinext의 `app/layout.tsx`를
+  통과하지 않아 `tokens.css`와 `primitives.css`가 공개 번들에서 누락됐다.
+- Pages HTML이 두 생성 CSS를 명시적으로 로드하고, 권위 원본과
+  `public/styles/` 복사본의 byte drift를 `check:pages-styles`로 차단한다.
+- Pages build가 CSS·앱 chunk·전용 Worker·WASM 산출물을 모두 검증하고,
+  CI가 실제 `/CNC-Render/` base path의 Chromium E2E를 실행한다.
+- E2E는 2048×1009에서 계산된 토큰·버튼 크기·가로 overflow를 확인하고
+  도움말, 코드·학습·장면 클릭과 Worker/WASM 절삭 완료·Stock revision을 검증한다.
+- 제품·엔진 버전을 `0.9.0`으로 통일했다. 8개 JavaScript manifest, 5개
+  Rust crate, Cargo lock, UI, Worker handshake, WASM core와 저장 엔진이
+  공용 버전을 사용하며 schema/protocol version `1`은 독립 계약으로 유지한다.
+- README는 실행 링크, 현재 기능, 사용법과 실제 제한만 남긴 사용자 문서로
+  교체했다. 공개 UI의 M9/M10/M11 계획 표기도 제품 상태 문구로 교체했다.
+- `main`만 장기·배포 브랜치로 두고 `codex/<scope>`를 PR 병합 뒤 삭제하는
+  규칙을 `CONTRIBUTING.md`와 ADR 0012에 기록했다.
+
+### 검증
+
+| Gate | Result |
+|---|---|
+| `git diff --check` | 통과 |
+| `pnpm check:versions` | 통과 — 제품·엔진·8 JS manifests·5 Rust crates 0.9.0 일치 |
+| `pnpm test:contracts --filter m0` | 통과 — 1 file, 6 tests; README 공개 문서 계약 포함 |
+| `pnpm verify` | 통과 — unit 135, contract 50, parity 63, 92 modules/204 dependencies 위반 0, Cargo locked check, production build |
+| `pnpm test:pages` | 통과 — 실제 Pages base path, Chromium 1 test, 5.6 s |
+| 2048×1009 시각 확인 | 통과 — 패널·버튼·3D 작업실 정상 비율, 가로 overflow 없음 |
+
+Pages build는 156 modules를 만들었고 production WASM은 793,536 bytes,
+SHA-256은 `d788f5b38bc27cd0429f5500e63ad6523fc1b9dce07574c2983a78b444bd9fec`다.
+
+### 남은 위험
+
+- 로컬 검증 시점에는 안정화 변경이 아직 공개 배포되지 않았다. 공개 URL은
+  해당 변경의 병합과 Pages 배포가 끝날 때까지 이전 bundle을 제공한다.
+- 로컬 검증 시점에는 이미 병합된 원격 작업 브랜치 7개가 남아 있어
+  승인된 릴리스 작업에서 `main`을 제외하고 정리해야 한다.
+- Pages CSS는 정적 엔트리 때문에 생성 복사본을 사용한다. CI의
+  `check:pages-styles`를 우회하면 다시 drift할 수 있으므로 필수 gate로 유지한다.
+
 
 ## M9 validation run
 

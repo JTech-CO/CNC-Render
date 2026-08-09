@@ -1,6 +1,7 @@
 import {
   CoordinatorCommandSchema,
   CoordinatorEventSchema,
+  PRODUCT_VERSION,
   type CoordinatorCommand,
   type CoordinatorCoreSummary,
   type CoordinatorEvent,
@@ -592,7 +593,7 @@ export class SimulationCoordinator {
       runId: null,
       sequence: 0,
       payload: {
-        clientVersion: "0.1.0",
+        clientVersion: PRODUCT_VERSION,
         supportedProtocolVersions: [1],
         transferModes: ["transferable", "copy"],
       },

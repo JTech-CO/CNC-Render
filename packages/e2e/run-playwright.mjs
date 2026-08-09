@@ -13,6 +13,7 @@ const suiteFiles = {
     "tests/viewport-soak.spec.ts",
     "tests/workspace-ui.spec.ts",
   ],
+  pages: ["tests/pages-deployment.spec.ts"],
   a11y: ["tests/accessibility.spec.ts"],
   visual: ["tests/machine-scene.visual.spec.ts"],
 };
@@ -20,7 +21,7 @@ const selectedSuiteFiles = suiteFiles[suiteName];
 
 if (!selectedSuiteFiles) {
   console.error(
-    `[playwright-suite] Unknown suite "${suiteName ?? ""}". Expected e2e, a11y, or visual.`,
+    `[playwright-suite] Unknown suite "${suiteName ?? ""}". Expected e2e, pages, a11y, or visual.`,
   );
   process.exit(2);
 }
@@ -29,7 +30,12 @@ const playwrightCli = fileURLToPath(
   new URL("./node_modules/@playwright/test/cli.js", import.meta.url),
 );
 const configPath = fileURLToPath(
-  new URL("./playwright.config.ts", import.meta.url),
+  new URL(
+    suiteName === "pages"
+      ? "./pages.playwright.config.ts"
+      : "./playwright.config.ts",
+    import.meta.url,
+  ),
 );
 const result = spawnSync(
   process.execPath,
