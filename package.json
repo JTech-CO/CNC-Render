@@ -11,6 +11,7 @@
   "scripts": {
     "dev": "vinext dev",
     "build": "node scripts/run-vinext-build.mjs",
+    "build:pages": "node scripts/run-github-pages-build.mjs",
     "start": "vinext start",
     "lint": "eslint . && depcruise --config dependency-cruiser.config.cjs apps packages crates && pnpm check:doc-terms && pnpm check:toolchain",
     "typecheck": "tsc --noEmit",

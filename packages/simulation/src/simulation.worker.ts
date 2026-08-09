@@ -21,7 +21,8 @@ interface WorkerScope {
 }
 
 const scope = globalThis as unknown as WorkerScope;
-const CORE_URL = new URL("/wasm/cnc_render_wasm.wasm", scope.location.origin);
+const ASSET_BASE_URL = new URL(import.meta.env.BASE_URL, scope.location.origin);
+const CORE_URL = new URL("wasm/cnc_render_wasm.wasm", ASSET_BASE_URL);
 const BASE_DISPLAY_STEP_MS = 20;
 
 let runtimePromise: Promise<CncRenderWasmRuntime> | null = null;

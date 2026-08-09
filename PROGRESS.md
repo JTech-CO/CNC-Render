@@ -3,10 +3,37 @@
 - Current phase: M8 — 저장·체크포인트·프로젝트 마이그레이션
 - Status: complete — M8 Definition of Done 전체 통과
 - Last completed: IndexedDB metadata → OPFS immutable generation → 전체 WASM Stock checkpoint → `.cncrender` export/import·migration·corruption 방어
-- Next task: M8 변경 검토·commit·PR 정리 후 M9 사용자 인터페이스·접근성 착수
+- Next task: GitHub Pages 복구 commit·PR·CI·merge와 Pages workflow 전환·공개 smoke 후 M9 착수
 - Open questions: 없음
-- Known regressions: 없음
+- Known regressions: 복구 변경이 main에 배포되기 전까지 공개 Pages URL이 README를 표시한다.
 
+## GitHub Pages 배포 복구 (2026-08-09)
+
+- 상태: 로컬 구현·검증 완료, 아직 공개 배포 전
+- 원인: 저장소 Pages가 build_type legacy, main:/ 소스로 설정되어 Jekyll이
+  애플리케이션 대신 루트 README.md를 진입 문서로 렌더링했다.
+- 구현:
+  - 일반 Vinext/Sites 빌드와 분리된 apps/pages-demo 순수 Vite 정적 엔트리
+  - /CNC-Render/ base URL을 갖는 앱 JS·CSS·Worker·WASM·OG 자산
+  - 전체 CI 통과 후 actions/upload-pages-artifact와 actions/deploy-pages로만
+    main을 배포하는 Pages job
+  - Worker가 Vite BASE_URL을 사용해 프로젝트 하위 경로의 WASM을 로드하는 계약
+- 검증:
+  - Node 24 런타임에서 Pages build 통과 — 151 modules, 정적 index.html,
+    simulation Worker, 793,271-byte WASM, SHA-256
+    75aea4d133cceedd1514dd74c493989e991ce515556bcac658ba9e868fdb3be8
+  - 기존 Vinext/Sites production build 통과
+  - TypeScript, 변경 파일 ESLint, dependency-cruiser 통과 —
+    80 modules/178 dependencies, 위반 0
+  - simulation-coordinator unit 2 tests 통과
+  - /CNC-Render/ 로컬 HTTP smoke 통과 — index, app JS, Worker, WASM,
+    OG image 모두 200; WASM MIME application/wasm
+- 남은 위험·활성화:
+  - 로컬에서 저장소 고정 Node 24.18.0을 찾지 못해 번들 Node 24.14.0으로 build를
+    검증했다. GitHub CI는 고정 Node 24.18.0에서 동일 build를 다시 검증해야 한다.
+  - 수정 branch를 main에 병합하고 Pages 설정을 legacy에서 workflow로 전환하기
+    전까지 공개 URL은 기존 README를 계속 표시한다.
+  - 공개 배포 후 실제 URL에서 앱 JS·Worker·WASM 200 응답과 첫 렌더를 다시 확인한다.
 ## M8 validation run
 
 2026-08-09에 고정 도구 체인 Node `24.18.0`, pnpm `11.5.3`, Rust
