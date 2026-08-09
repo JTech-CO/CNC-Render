@@ -3,13 +3,13 @@
 - Current phase: M8 — 저장·체크포인트·프로젝트 마이그레이션
 - Status: complete — M8 Definition of Done 전체 통과
 - Last completed: IndexedDB metadata → OPFS immutable generation → 전체 WASM Stock checkpoint → `.cncrender` export/import·migration·corruption 방어
-- Next task: GitHub Pages 복구 commit·PR·CI·merge와 Pages workflow 전환·공개 smoke 후 M9 착수
+- Next task: M9 사용자 인터페이스·접근성 착수
 - Open questions: 없음
-- Known regressions: 복구 변경이 main에 배포되기 전까지 공개 Pages URL이 README를 표시한다.
+- Known regressions: 없음
 
 ## GitHub Pages 배포 복구 (2026-08-09)
 
-- 상태: 로컬 구현·검증 완료, 아직 공개 배포 전
+- 상태: 공개 배포·검증 완료 — https://jtech-co.github.io/CNC-Render/
 - 원인: 저장소 Pages가 build_type legacy, main:/ 소스로 설정되어 Jekyll이
   애플리케이션 대신 루트 README.md를 진입 문서로 렌더링했다.
 - 구현:
@@ -28,12 +28,19 @@
   - simulation-coordinator unit 2 tests 통과
   - /CNC-Render/ 로컬 HTTP smoke 통과 — index, app JS, Worker, WASM,
     OG image 모두 200; WASM MIME application/wasm
-- 남은 위험·활성화:
-  - 로컬에서 저장소 고정 Node 24.18.0을 찾지 못해 번들 Node 24.14.0으로 build를
-    검증했다. GitHub CI는 고정 Node 24.18.0에서 동일 build를 다시 검증해야 한다.
-  - 수정 branch를 main에 병합하고 Pages 설정을 legacy에서 workflow로 전환하기
-    전까지 공개 URL은 기존 README를 계속 표시한다.
-  - 공개 배포 후 실제 URL에서 앱 JS·Worker·WASM 200 응답과 첫 렌더를 다시 확인한다.
+- 공개 배포 검증:
+  - PR #7 merge commit c6ec688, Pages build_type workflow 전환 완료
+  - main CI run 31295252832에서 고정 Node 24.18.0 전체 verify, Pages build,
+    artifact upload, deploy-pages 통과
+  - 공개 HTTP smoke 통과 — index, app JS, simulation Worker, 793,527-byte WASM,
+    OG image 모두 200; WASM MIME application/wasm
+  - Chromium 첫 렌더 통과 — 앱 셸·command bar·canvas 1개 확인,
+    page error와 console error 0
+- 남은 위험:
+  - GitHub Actions가 Node 20 기반 일부 공식 action을 Node 24로 강제 실행했다는
+    deprecation 경고를 표시했다. 배포에는 영향이 없었으며 후속 major action
+    릴리스가 나오면 갱신한다.
+
 ## M8 validation run
 
 2026-08-09에 고정 도구 체인 Node `24.18.0`, pnpm `11.5.3`, Rust
