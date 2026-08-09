@@ -565,6 +565,22 @@ export class WorkcellRenderer {
     return diagnostics;
   }
 
+  setToolPositionMm(
+    positionMm: readonly [number, number, number],
+  ): void {
+    if (
+      !Number.isFinite(positionMm[0]) ||
+      !Number.isFinite(positionMm[1]) ||
+      !Number.isFinite(positionMm[2])
+    ) {
+      throw new RangeError(
+        "Tool coordinates must contain finite millimetre values.",
+      );
+    }
+    this.#machineScene?.setToolPositionMm(positionMm);
+    this.invalidate();
+  }
+
   setCollisionMarker(
     positionMm: readonly [number, number, number] | null,
   ): void {

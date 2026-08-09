@@ -99,7 +99,7 @@ describe("M0 repository contract", () => {
       "cargo:test": "node scripts/run-cargo.mjs test --workspace --locked",
       "generate:contracts": "node scripts/generate-contract-artifacts.mjs",
       verify:
-        "pnpm lint && pnpm typecheck && pnpm cargo:check && pnpm test:unit && pnpm test:contracts && pnpm test:parity && pnpm check:forbidden-ui && pnpm build",
+        "pnpm check:tokens && pnpm lint && pnpm typecheck && pnpm cargo:check && pnpm test:unit && pnpm test:contracts && pnpm test:parity && pnpm check:forbidden-ui && pnpm build",
     });
     expect(manifest.scripts?.lint).toContain(
       "depcruise --config dependency-cruiser.config.cjs",

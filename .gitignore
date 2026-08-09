@@ -30,6 +30,7 @@ node_modules/
 /work/
 /.turbo/
 /.cache/
+/storybook-static/
 
 # Test output
 /coverage/

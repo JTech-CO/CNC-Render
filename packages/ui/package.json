@@ -3,11 +3,19 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "sideEffects": false,
+  "sideEffects": [
+    "./src/*.css",
+    "./src/generated/*.css"
+  ],
   "exports": {
     ".": {
       "types": "./src/index.ts",
       "import": "./src/index.ts"
-    }
+    },
+    "./tokens.css": "./src/generated/tokens.css",
+    "./primitives.css": "./src/primitives.css"
+  },
+  "peerDependencies": {
+    "react": "^19.2.0"
   }
 }

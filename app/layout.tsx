@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
+import "../packages/ui/src/generated/tokens.css";
+import "../packages/ui/src/primitives.css";
 import "./globals.css";
 
 const title = "CNC Render | 3D 작업실";

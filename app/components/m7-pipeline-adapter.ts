@@ -21,6 +21,11 @@ export interface M7PipelineBrowserState extends CoordinatorSnapshot {
   readonly maximumLongTaskMs: number;
 }
 
+export interface M7PipelineUiObserver {
+  readonly onGeneralSummary?: (summary: CoordinatorCoreSummary) => void;
+  readonly onAxisSummary?: (summary: CoordinatorCoreSummary) => void;
+}
+
 export interface M7PipelineHarness {
   startPipelineFixture(
     fixture: M7PipelineFixture,
@@ -128,6 +133,7 @@ function waitForNextRenderedFrame(
 export function attachM7Pipeline(
   renderer: WorkcellRenderer,
   viewport: HTMLElement,
+  observer: M7PipelineUiObserver = {},
 ): { readonly harness: M7PipelineHarness; dispose(): void } {
   const coordinator = new SimulationCoordinator();
   let fixture: M7PipelineFixture | null = null;
@@ -137,6 +143,7 @@ export function attachM7Pipeline(
   let longTasksOver50Ms = 0;
   let maximumLongTaskMs = 0;
 
+  let observingLongTasks = false;
   const longTaskObserver =
     typeof PerformanceObserver !== "undefined" &&
     PerformanceObserver.supportedEntryTypes.includes("longtask")
@@ -149,7 +156,6 @@ export function attachM7Pipeline(
           }
         })
       : null;
-  longTaskObserver?.observe({ entryTypes: ["longtask"] });
 
   const unsubscribeRender = coordinator.onRender((update, summary) => {
     const before = renderer.getDiagnostics().telemetry.framesRendered;
@@ -188,6 +194,7 @@ export function attachM7Pipeline(
     viewport.dataset.pipelineGeneralSamples = String(
       coordinator.getSnapshot().metrics.generalUiSamples,
     );
+    observer.onGeneralSummary?.(summary);
   });
 
   const unsubscribeAxis = coordinator.onAxisSummary((summary) => {
@@ -199,6 +206,12 @@ export function attachM7Pipeline(
     viewport.dataset.pipelineAxisSamples = String(
       coordinator.getSnapshot().metrics.axisUiSamples,
     );
+    renderer.setToolPositionMm([
+      summary.toolPositionMm.xMm,
+      summary.toolPositionMm.yMm,
+      summary.toolPositionMm.zMm,
+    ]);
+    observer.onAxisSummary?.(summary);
   });
 
   async function start(
@@ -209,6 +222,11 @@ export function attachM7Pipeline(
     } = {},
   ): Promise<CoordinatorCoreSummary> {
     fixture = selectedFixture;
+    if (longTaskObserver && !observingLongTasks) {
+      longTaskObserver.takeRecords();
+      longTaskObserver.observe({ entryTypes: ["longtask"] });
+      observingLongTasks = true;
+    }
     baselineRenderFrame =
       renderer.getDiagnostics().telemetry.framesRendered;
     renderedOnFrame = null;

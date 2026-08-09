@@ -1,5 +1,6 @@
 "use client";
 
+import type { CoordinatorCoreSummary } from "@cnc-render/contracts";
 import {
   CAMERA_PRESETS,
   SCENE_LAYERS,
@@ -21,13 +22,28 @@ import {
   type LatheRadiusFieldEngine,
   type M5MillingDemoOperation,
   type M6TurningDemoOperation,
+  type M7PipelineFixture,
   type MillingMaterialRemovalDiagnostics,
   type SparseDexelMillingEngine,
   type TurningMaterialRemovalDiagnostics,
 } from "@cnc-render/simulation";
-import { useEffect, useRef } from "react";
-import { attachM7Pipeline } from "./m7-pipeline-adapter";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from "react";
+import {
+  attachM7Pipeline,
+  type M7PipelineHarness,
+} from "./m7-pipeline-adapter";
 import { attachM8Persistence } from "./m8-persistence-adapter";
+import {
+  WORKSPACE_COMMAND_EVENT,
+  WORKSPACE_STATUS_EVENT,
+  type WorkspaceCommand,
+  type WorkspaceStatus,
+} from "./workspace-events";
 
 interface CncRenderM3Harness {
   getDiagnostics(): WorkcellRendererDiagnostics;
@@ -147,8 +163,136 @@ function workspaceIcon(kind: "scene" | "code" | "learn" | "report") {
     </svg>
   );
 }
+type WorkspaceArea = "scene" | "code" | "learn" | "results";
+type DockTab = "gcode" | "diagnostics";
+
+const WORKSPACE_PLAYBACK_SPEED = 1;
+
+function pipelineState(
+  summary: CoordinatorCoreSummary,
+): WorkspaceStatus["state"] {
+  if (summary.stopped) {
+    return "stopped";
+  }
+  if (summary.completed) {
+    return "completed";
+  }
+  return summary.phase === "initialized" ? "starting" : "running";
+}
+
+function dispatchWorkspaceStatus(status: WorkspaceStatus): void {
+  window.dispatchEvent(
+    new CustomEvent<WorkspaceStatus>(WORKSPACE_STATUS_EVENT, {
+      detail: status,
+    }),
+  );
+}
+
+function setPipelineField(
+  root: HTMLElement,
+  name: string,
+  value: string,
+): void {
+  root
+    .querySelectorAll<HTMLElement>(`[data-pipeline-field="${name}"]`)
+    .forEach((element) => {
+      element.textContent = value;
+    });
+}
+
+function updatePipelineSummary(
+  root: HTMLElement,
+  summary: CoordinatorCoreSummary,
+): void {
+  const state = pipelineState(summary);
+  const stateLabel =
+    state === "completed"
+      ? "완료"
+      : state === "stopped"
+        ? "충돌 정지"
+        : state === "starting"
+          ? "준비 중"
+          : "절삭 중";
+
+  root.dataset.pipelineUiState = state;
+  root.dataset.pipelineUiStep = String(summary.currentStep);
+  root.dataset.pipelineUiTotalSteps = String(summary.totalSteps);
+  setPipelineField(root, "state", stateLabel);
+  setPipelineField(
+    root,
+    "step",
+    `${summary.currentStep.toLocaleString("ko-KR")} / ${summary.totalSteps.toLocaleString("ko-KR")}`,
+  );
+  setPipelineField(
+    root,
+    "time",
+    `${formattedMetric(summary.logicalTimeS, 3)} s`,
+  );
+  setPipelineField(
+    root,
+    "removed",
+    `${formattedMetric(summary.removedVolumeMm3, 2)} mm³`,
+  );
+  setPipelineField(
+    root,
+    "revision",
+    `${summary.stockRevision.toLocaleString("ko-KR")} rev`,
+  );
+  setPipelineField(
+    root,
+    "hash",
+    (summary.finalSemanticHashSha256 ?? summary.stateSemanticHashSha256).slice(
+      0,
+      12,
+    ),
+  );
+  root
+    .querySelectorAll<HTMLProgressElement>("[data-pipeline-progress]")
+    .forEach((progress) => {
+      progress.max = Math.max(1, summary.totalSteps);
+      progress.value = Math.min(summary.currentStep, progress.max);
+      progress.setAttribute(
+        "aria-valuetext",
+        `${summary.currentStep} / ${summary.totalSteps} 단계`,
+      );
+    });
+  dispatchWorkspaceStatus({
+    state,
+    fixture:
+      summary.fixtureId.includes("turning")
+        ? "turning"
+        : summary.fixtureId.includes("collision")
+          ? "collision-stop"
+          : "milling",
+  });
+}
+
+function updateAxisSummary(
+  root: HTMLElement,
+  summary: CoordinatorCoreSummary,
+): void {
+  setPipelineField(
+    root,
+    "axis",
+    `X ${formattedMetric(summary.toolPositionMm.xMm, 2)} mm · Y ${formattedMetric(
+      summary.toolPositionMm.yMm,
+      2,
+    )} mm · Z ${formattedMetric(summary.toolPositionMm.zMm, 2)} mm`,
+  );
+}
 
 export function MachineWorkspace() {
+  const [activeArea, setActiveArea] = useState<WorkspaceArea>("scene");
+  const [dockTab, setDockTab] = useState<DockTab>("gcode");
+  const workspaceRef = useRef<HTMLDivElement>(null);
+  const fixtureSelectRef = useRef<HTMLSelectElement>(null);
+  const pipelineHarnessRef = useRef<M7PipelineHarness | null>(null);
+  const persistenceHarnessRef = useRef<
+    ReturnType<typeof attachM8Persistence>["harness"] | null
+  >(null);
+  const playToggleRef = useRef<() => Promise<void>>(async () => undefined);
+  const stopPipelineRef = useRef<() => Promise<void>>(async () => undefined);
+  const saveWorkspaceRef = useRef<() => Promise<void>>(async () => undefined);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<WorkcellRenderer | null>(null);
@@ -189,9 +333,35 @@ export function MachineWorkspace() {
   });
 
   useEffect(() => {
+    const handleWorkspaceCommand = (event: Event) => {
+      const command = (event as CustomEvent<WorkspaceCommand>).detail;
+      const operation =
+        command.type === "play-toggle"
+          ? playToggleRef.current
+          : command.type === "stop"
+            ? stopPipelineRef.current
+            : saveWorkspaceRef.current;
+      void operation().catch(() => {
+        dispatchWorkspaceStatus({
+          state: "error",
+          fixture: null,
+        });
+      });
+    };
+
+    window.addEventListener(WORKSPACE_COMMAND_EVENT, handleWorkspaceCommand);
+    return () =>
+      window.removeEventListener(
+        WORKSPACE_COMMAND_EVENT,
+        handleWorkspaceCommand,
+      );
+  }, []);
+
+  useEffect(() => {
     const canvas = canvasRef.current;
     const viewport = viewportRef.current;
-    if (!canvas || !viewport) {
+    const workspace = workspaceRef.current;
+    if (!canvas || !viewport || !workspace) {
       return;
     }
 
@@ -577,7 +747,53 @@ export function MachineWorkspace() {
           runTurningFixture,
           getTurningState: () => lastTurningRunRef.current,
         };
-        pipelineBinding = attachM7Pipeline(renderer, viewport);
+        pipelineBinding = attachM7Pipeline(renderer, viewport, {
+          onGeneralSummary: (summary) =>
+            updatePipelineSummary(workspace, summary),
+          onAxisSummary: (summary) => updateAxisSummary(workspace, summary),
+        });
+        const pipeline = pipelineBinding.harness;
+        pipelineHarnessRef.current = pipeline;
+
+        const selectedFixture = (): M7PipelineFixture => {
+          const value = fixtureSelectRef.current?.value;
+          return value === "turning" || value === "collision-stop"
+            ? value
+            : "milling";
+        };
+
+        playToggleRef.current = async () => {
+          const snapshot = pipeline.getPipelineState();
+          const fixture = selectedFixture();
+          if (
+            (snapshot.status === "running" || snapshot.status === "starting") &&
+            snapshot.fixture !== null
+          ) {
+            await pipeline.pausePipeline();
+            dispatchWorkspaceStatus({ state: "paused", fixture });
+            return;
+          }
+          if (snapshot.status === "paused") {
+            pipeline.resumePipeline(WORKSPACE_PLAYBACK_SPEED);
+            dispatchWorkspaceStatus({ state: "running", fixture });
+            return;
+          }
+
+          dispatchWorkspaceStatus({ state: "starting", fixture });
+          const terminal = await pipeline.runPipelineFixture(fixture, {
+            executionMode: "realtime",
+            playbackSpeed: WORKSPACE_PLAYBACK_SPEED,
+          });
+          updatePipelineSummary(workspace, terminal);
+        };
+
+        stopPipelineRef.current = async () => {
+          await pipeline.cancelPipeline();
+          dispatchWorkspaceStatus({
+            state: "cancelled",
+            fixture: selectedFixture(),
+          });
+        };
         window.__CNC_RENDER_M7__ = pipelineBinding.harness;
         viewport.dataset.pipelineState = "idle";
         viewport.dataset.pipelineWorker = "dedicated";
@@ -588,6 +804,22 @@ export function MachineWorkspace() {
           );
           window.__CNC_RENDER_M8__ = persistenceBinding.harness;
           viewport.dataset.persistenceState = "ready";
+          persistenceHarnessRef.current = persistenceBinding.harness;
+          saveWorkspaceRef.current = async () => {
+            const fixture = selectedFixture();
+            await persistenceBinding!.harness.saveFixture(
+              fixture === "turning" ? "turning" : "milling",
+            );
+            const summary = pipeline.getPipelineState().summary;
+            if (summary) {
+              updatePipelineSummary(workspace, summary);
+            }
+            dispatchWorkspaceStatus({
+              state: summary ? pipelineState(summary) : "idle",
+              fixture,
+              saved: true,
+            });
+          };
         } catch (error) {
           const diagnostic = error as {
             readonly diagnosticCode?: unknown;
@@ -598,6 +830,7 @@ export function MachineWorkspace() {
               ? diagnostic.diagnosticCode
               : "storage.persistence.unavailable";
         }
+        dispatchWorkspaceStatus({ state: "idle", fixture: "milling" });
       })
       .catch((error: unknown) => {
         if (disposed) {
@@ -645,23 +878,106 @@ export function MachineWorkspace() {
   const setView = (view: CameraPresetId) => {
     rendererRef.current?.setCameraPreset(view);
   };
+  const selectWorkspaceArea = (area: WorkspaceArea) => {
+    setActiveArea(area);
+    if (area === "code") {
+      setDockTab("gcode");
+    } else if (area === "results") {
+      setDockTab("diagnostics");
+    }
+    window.requestAnimationFrame(() => {
+      const root = workspaceRef.current;
+      const summary = pipelineHarnessRef.current?.getPipelineState().summary;
+      if (root && summary) {
+        updatePipelineSummary(root, summary);
+        updateAxisSummary(root, summary);
+      }
+    });
+  };
 
+  const handleDockTabKeyDown = (
+    event: ReactKeyboardEvent<HTMLButtonElement>,
+  ) => {
+    if (
+      event.key !== "ArrowLeft" &&
+      event.key !== "ArrowRight" &&
+      event.key !== "Home" &&
+      event.key !== "End"
+    ) {
+      return;
+    }
+    const tablist = event.currentTarget.closest('[role="tablist"]');
+    const tabs = tablist
+      ? Array.from(
+          tablist.querySelectorAll<HTMLButtonElement>(
+            '[role="tab"]:not(:disabled)',
+          ),
+        )
+      : [];
+    if (tabs.length === 0) {
+      return;
+    }
+    const currentIndex = Math.max(0, tabs.indexOf(event.currentTarget));
+    const nextIndex =
+      event.key === "Home"
+        ? 0
+        : event.key === "End"
+          ? tabs.length - 1
+          : event.key === "ArrowRight"
+            ? (currentIndex + 1) % tabs.length
+            : (currentIndex - 1 + tabs.length) % tabs.length;
+    const nextTab = tabs[nextIndex];
+    if (!nextTab) {
+      return;
+    }
+    event.preventDefault();
+    nextTab.focus();
+    nextTab.click();
+  };
   return (
-    <div className="workspace-grid">
+    <div
+      className="workspace-grid"
+      data-active-area={activeArea}
+      ref={workspaceRef}
+    >
       <nav className="activity-rail" aria-label="작업 영역">
-        <button className="activity-button is-active" type="button">
+        <button
+          aria-current={activeArea === "scene" ? "page" : undefined}
+          className={`activity-button ${activeArea === "scene" ? "is-active" : ""}`}
+          data-testid="workspace-area-scene"
+          onClick={() => selectWorkspaceArea("scene")}
+          type="button"
+        >
           {workspaceIcon("scene")}
           <span>장면</span>
         </button>
-        <button className="activity-button" type="button">
+        <button
+          aria-current={activeArea === "code" ? "page" : undefined}
+          className={`activity-button ${activeArea === "code" ? "is-active" : ""}`}
+          data-testid="workspace-area-code"
+          onClick={() => selectWorkspaceArea("code")}
+          type="button"
+        >
           {workspaceIcon("code")}
           <span>코드</span>
         </button>
-        <button className="activity-button" type="button">
+        <button
+          aria-current={activeArea === "learn" ? "page" : undefined}
+          className={`activity-button ${activeArea === "learn" ? "is-active" : ""}`}
+          data-testid="workspace-area-learn"
+          onClick={() => selectWorkspaceArea("learn")}
+          type="button"
+        >
           {workspaceIcon("learn")}
           <span>학습</span>
         </button>
-        <button className="activity-button" type="button">
+        <button
+          aria-current={activeArea === "results" ? "page" : undefined}
+          className={`activity-button ${activeArea === "results" ? "is-active" : ""}`}
+          data-testid="workspace-area-results"
+          onClick={() => selectWorkspaceArea("results")}
+          type="button"
+        >
           {workspaceIcon("report")}
           <span>결과</span>
         </button>
@@ -676,12 +992,9 @@ export function MachineWorkspace() {
           <span className="panel-count">6 layers</span>
         </div>
 
-        <div className="scene-tree" role="tree" aria-label="렌더 장면 레이어">
+        <div className="scene-tree" aria-label="렌더 장면 레이어">
           <div
             className="tree-root"
-            role="treeitem"
-            aria-expanded="true"
-            aria-selected="false"
           >
             <span className="tree-disclosure" aria-hidden="true">
               ▾
@@ -689,7 +1002,7 @@ export function MachineWorkspace() {
             <span className="tree-root-mark" aria-hidden="true" />
             <strong>VMC-3X-EDU</strong>
           </div>
-          <div className="tree-children" role="group">
+          <div className="tree-children">
             {SCENE_LAYERS.map((layer) => (
               <label
                 className="layer-row"
@@ -726,6 +1039,98 @@ export function MachineWorkspace() {
           <p>렌더 경계는 1 scene unit = 1 mm를 사용합니다.</p>
         </div>
       </aside>
+      {activeArea !== "scene" ? (
+        <aside className="context-panel" aria-labelledby="context-heading">
+          <div className="panel-heading">
+            <div>
+              <p>CONTEXT RAIL</p>
+              <h2 id="context-heading">
+                {activeArea === "code"
+                  ? "코드"
+                  : activeArea === "learn"
+                    ? "학습"
+                    : "결과"}
+              </h2>
+            </div>
+            <span className="panel-count">M9</span>
+          </div>
+
+          {activeArea === "code" ? (
+            <div className="context-content">
+              <p className="context-kicker">CURRENT PROGRAM</p>
+              <h3>대표 밀링 Fixture</h3>
+              <ol className="context-code" aria-label="현재 G-code">
+                <li><code>G21 G90</code></li>
+                <li><code>G0 X-10 Y-5 Z8</code></li>
+                <li><code>G1 Z4 F6000</code></li>
+                <li><code>G1 X10 Y5</code></li>
+                <li><code>M30</code></li>
+              </ol>
+              <p className="context-note">
+                이 영역은 M9에서 탐색과 실행 문맥을 제공합니다. Monaco 편집,
+                줄 진단, 브레이크포인트는 M11에서 연결됩니다.
+              </p>
+            </div>
+          ) : activeArea === "learn" ? (
+            <div className="context-content">
+              <p className="context-kicker">GUIDED PREVIEW</p>
+              <h3>소재 절삭 확인</h3>
+              <ol className="learning-steps">
+                <li><strong>1</strong><span>밀링 대표 공정을 선택합니다.</span></li>
+                <li><strong>2</strong><span>실행 후 공구와 소재 변화를 관찰합니다.</span></li>
+                <li><strong>3</strong><span>결과 영역에서 제거 체적을 확인합니다.</span></li>
+              </ol>
+              <button
+                className="context-primary"
+                onClick={() => {
+                  if (fixtureSelectRef.current) {
+                    fixtureSelectRef.current.value = "milling";
+                  }
+                  void playToggleRef.current();
+                }}
+                type="button"
+              >
+                기본 절삭 실행
+              </button>
+              <p className="context-note">
+                단계 검증·힌트·채점과 밀링/선삭/드릴링 정식 튜토리얼은 M10
+                범위입니다.
+              </p>
+            </div>
+          ) : (
+            <div className="context-content" aria-live="polite">
+              <p className="context-kicker">RUN SUMMARY · E2</p>
+              <h3 data-pipeline-field="state">아직 실행하지 않음</h3>
+              <dl className="result-list">
+                <div>
+                  <dt>진행 단계</dt>
+                  <dd data-pipeline-field="step">0 / 0</dd>
+                </div>
+                <div>
+                  <dt>논리 시간</dt>
+                  <dd data-pipeline-field="time">0.000 s</dd>
+                </div>
+                <div>
+                  <dt>제거 체적</dt>
+                  <dd data-pipeline-field="removed">0.00 mm³</dd>
+                </div>
+                <div>
+                  <dt>소재 revision</dt>
+                  <dd data-pipeline-field="revision">0 rev</dd>
+                </div>
+                <div>
+                  <dt>결과 hash</dt>
+                  <dd data-pipeline-field="hash">—</dd>
+                </div>
+              </dl>
+              <p className="context-note">
+                목표 형상 비교·측정·Heatmap·리포트 내보내기는 M11에서
+                제공됩니다.
+              </p>
+            </div>
+          )}
+        </aside>
+      ) : null}
 
       <section className="viewport-shell" aria-labelledby="viewport-heading">
         <header className="viewport-toolbar">
@@ -868,6 +1273,74 @@ export function MachineWorkspace() {
             소재 범위에 포커스
           </button>
         </section>
+        <section
+          className="inspector-section simulation-section"
+          aria-labelledby="simulation-heading"
+        >
+          <div className="section-label">
+            <h3 id="simulation-heading">Worker/WASM 절삭</h3>
+            <span data-pipeline-field="state">준비</span>
+          </div>
+          <label className="fixture-select">
+            <span>대표 공정</span>
+            <select
+              data-testid="pipeline-fixture"
+              defaultValue="milling"
+              ref={fixtureSelectRef}
+            >
+              <option value="milling">3축 밀링</option>
+              <option value="turning">외경 선삭</option>
+              <option value="collision-stop">충돌 정지</option>
+            </select>
+          </label>
+          <progress
+            aria-label="시뮬레이션 진행"
+            data-pipeline-progress
+            max={1}
+            value={0}
+          />
+          <div className="simulation-controls">
+            <button
+              className="simulation-primary"
+              data-pipeline-action="play"
+              data-testid="pipeline-play"
+              onClick={() => void playToggleRef.current()}
+              type="button"
+            >
+              실행 / 일시정지
+            </button>
+            <button
+              className="secondary-control"
+              data-testid="pipeline-stop"
+              onClick={() => void stopPipelineRef.current()}
+              type="button"
+            >
+              정지
+            </button>
+          </div>
+          <dl className="simulation-readout" aria-live="polite">
+            <div>
+              <dt>단계</dt>
+              <dd data-pipeline-field="step">0 / 0</dd>
+            </div>
+            <div>
+              <dt>시간</dt>
+              <dd data-pipeline-field="time">0.000 s</dd>
+            </div>
+            <div>
+              <dt>공구 위치</dt>
+              <dd data-pipeline-field="axis">X 0.00 mm · Y 0.00 mm · Z 0.00 mm</dd>
+            </div>
+            <div>
+              <dt>제거 체적</dt>
+              <dd data-pipeline-field="removed">0.00 mm³</dd>
+            </div>
+          </dl>
+          <p className="inspector-explanation">
+            전용 Worker가 Rust/WASM 코어를 실행하고 Stock 패치와 공구 위치를
+            React 프레임 갱신 없이 렌더러에 전달합니다.
+          </p>
+        </section>
 
         <section
           className="inspector-section"
@@ -933,15 +1406,39 @@ export function MachineWorkspace() {
         <header className="dock-tabs">
           <h2 id="dock-heading">Program preview</h2>
           <div role="tablist" aria-label="하단 패널">
-            <button aria-selected="true" role="tab" type="button">
+            <button
+              aria-controls="dock-gcode-panel"
+              aria-selected={dockTab === "gcode"}
+              id="dock-gcode-tab"
+              onClick={() => setDockTab("gcode")}
+              onKeyDown={handleDockTabKeyDown}
+              role="tab"
+              tabIndex={dockTab === "gcode" ? 0 : -1}
+              type="button"
+            >
               G-code
             </button>
-            <button aria-selected="false" role="tab" type="button">
+            <button
+              aria-controls="dock-diagnostics-panel"
+              aria-selected={dockTab === "diagnostics"}
+              id="dock-diagnostics-tab"
+              onClick={() => setDockTab("diagnostics")}
+              onKeyDown={handleDockTabKeyDown}
+              role="tab"
+              tabIndex={dockTab === "diagnostics" ? 0 : -1}
+              type="button"
+            >
               Diagnostics <span ref={diagnosticsCountRef}>0</span>
             </button>
           </div>
         </header>
-        <div className="program-preview">
+        <div
+          aria-labelledby="dock-gcode-tab"
+          className="program-preview"
+          hidden={dockTab !== "gcode"}
+          id="dock-gcode-panel"
+          role="tabpanel"
+        >
           <ol aria-label="교육용 G-code 미리보기" ref={programLinesRef}>
             <li data-source-line="1">
               <code>G21 G17 G90</code>
@@ -965,6 +1462,27 @@ export function MachineWorkspace() {
             <strong>M4-collision-stop</strong>
             <span>Execution</span>
             <strong>결정론적 E2 검증</strong>
+          </div>
+        </div>
+        <div
+          aria-labelledby="dock-diagnostics-tab"
+          className="diagnostics-preview"
+          hidden={dockTab !== "diagnostics"}
+          id="dock-diagnostics-panel"
+          role="tabpanel"
+        >
+          <div className="diagnostic-empty">
+            <strong data-pipeline-field="state">진단 대기</strong>
+            <p>
+              실행 상태 <span data-pipeline-field="step">0 / 0</span> ·
+              제거 체적 <span data-pipeline-field="removed">0.00 mm³</span>
+            </p>
+            <p data-pipeline-field="axis">
+              X 0.00 mm · Y 0.00 mm · Z 0.00 mm
+            </p>
+          </div>
+          <div className="diagnostic-link-note">
+            충돌 발생 시 아이콘·문구·원본 줄·3D 위치가 함께 표시됩니다.
           </div>
         </div>
       </section>

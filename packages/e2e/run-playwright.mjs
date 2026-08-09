@@ -11,14 +11,16 @@ const suiteFiles = {
     "tests/persistence.spec.ts",
     "tests/viewport.spec.ts",
     "tests/viewport-soak.spec.ts",
+    "tests/workspace-ui.spec.ts",
   ],
+  a11y: ["tests/accessibility.spec.ts"],
   visual: ["tests/machine-scene.visual.spec.ts"],
 };
 const selectedSuiteFiles = suiteFiles[suiteName];
 
 if (!selectedSuiteFiles) {
   console.error(
-    `[playwright-suite] Unknown suite "${suiteName ?? ""}". Expected e2e or visual.`,
+    `[playwright-suite] Unknown suite "${suiteName ?? ""}". Expected e2e, a11y, or visual.`,
   );
   process.exit(2);
 }
