@@ -1052,7 +1052,7 @@ export function MachineWorkspace() {
                     : "결과"}
               </h2>
             </div>
-            <span className="panel-count">M9</span>
+            <span className="panel-count">E2</span>
           </div>
 
           {activeArea === "code" ? (
@@ -1067,8 +1067,8 @@ export function MachineWorkspace() {
                 <li><code>M30</code></li>
               </ol>
               <p className="context-note">
-                이 영역은 M9에서 탐색과 실행 문맥을 제공합니다. Monaco 편집,
-                줄 진단, 브레이크포인트는 M11에서 연결됩니다.
+                현재 코드는 실행 문맥을 확인하는 읽기 전용 미리보기입니다. 편집,
+                줄 진단, 브레이크포인트는 아직 제공되지 않습니다.
               </p>
             </div>
           ) : activeArea === "learn" ? (
@@ -1093,8 +1093,8 @@ export function MachineWorkspace() {
                 기본 절삭 실행
               </button>
               <p className="context-note">
-                단계 검증·힌트·채점과 밀링/선삭/드릴링 정식 튜토리얼은 M10
-                범위입니다.
+                현재 학습 영역은 대표 절삭 안내만 제공합니다. 단계 검증·힌트·
+                채점과 정식 튜토리얼은 아직 제공되지 않습니다.
               </p>
             </div>
           ) : (
@@ -1124,8 +1124,8 @@ export function MachineWorkspace() {
                 </div>
               </dl>
               <p className="context-note">
-                목표 형상 비교·측정·Heatmap·리포트 내보내기는 M11에서
-                제공됩니다.
+                목표 형상 비교·측정·Heatmap·리포트 내보내기는 아직 제공되지
+                않습니다.
               </p>
             </div>
           )}
@@ -1459,7 +1459,7 @@ export function MachineWorkspace() {
           </ol>
           <div className="dock-summary">
             <span>Fixture</span>
-            <strong>M4-collision-stop</strong>
+            <strong>collision-stop</strong>
             <span>Execution</span>
             <strong>결정론적 E2 검증</strong>
           </div>

@@ -80,8 +80,11 @@ jobs:
         run: node scripts/check-doc-terms.mjs
 
 
-      - name: Build GitHub Pages demo
-        run: pnpm build:pages
+      - name: Install Chromium for Pages smoke
+        run: pnpm --filter @cnc-render/e2e exec playwright install --with-deps chromium
+
+      - name: Build and test GitHub Pages demo
+        run: pnpm test:pages
 
       - name: Upload GitHub Pages artifact
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'

@@ -1,6 +1,6 @@
 {
   "name": "cnc-render",
-  "version": "0.0.0",
+  "version": "0.9.0",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@11.5.3",
@@ -11,6 +11,8 @@
   "scripts": {
     "generate:tokens": "node scripts/generate-design-tokens.mjs",
     "check:tokens": "node scripts/generate-design-tokens.mjs --check",
+    "generate:pages-styles": "node scripts/generate-pages-styles.mjs",
+    "check:pages-styles": "node scripts/generate-pages-styles.mjs --check",
     "storybook": "storybook dev -p 6006",
     "storybook:build": "storybook build --output-dir storybook-static",
     "dev": "vinext dev",
@@ -24,6 +26,7 @@
     "test:contracts": "node scripts/run-vitest-suite.mjs contracts",
     "test:parity": "pnpm wasm:build && node scripts/run-vitest-suite.mjs parity",
     "test:e2e": "node packages/e2e/run-playwright.mjs e2e",
+    "test:pages": "node packages/e2e/run-playwright.mjs pages",
     "test:visual": "node packages/e2e/run-playwright.mjs visual",
     "test:a11y": "node packages/e2e/run-playwright.mjs a11y",
     "cargo:check": "node scripts/run-cargo.mjs check --workspace --all-targets --locked",
@@ -36,8 +39,9 @@
     "check:doc-terms": "node scripts/check-doc-terms.mjs",
     "check:forbidden-ui": "node scripts/check-forbidden-ui.mjs",
     "check:toolchain": "node scripts/check-toolchain.mjs",
+    "check:versions": "node scripts/check-versions.mjs",
     "wasm:build": "node scripts/build-wasm.mjs",
-    "verify": "pnpm check:tokens && pnpm lint && pnpm typecheck && pnpm cargo:check && pnpm test:unit && pnpm test:contracts && pnpm test:parity && pnpm check:forbidden-ui && pnpm build"
+    "verify": "pnpm check:tokens && pnpm check:pages-styles && pnpm check:versions && pnpm lint && pnpm typecheck && pnpm cargo:check && pnpm test:unit && pnpm test:contracts && pnpm test:parity && pnpm check:forbidden-ui && pnpm build"
   },
   "dependencies": {
     "@cnc-render/web": "workspace:*",

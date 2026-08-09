@@ -1,6 +1,7 @@
 import {
   CoordinatorCommandSchema,
   CoordinatorEventSchema,
+  PRODUCT_VERSION,
   type CoordinatorBinarySlice,
   type CoordinatorCommand,
   type CoordinatorCoreSummary,
@@ -209,7 +210,7 @@ async function handleCommand(command: CoordinatorCommand): Promise<void> {
           runId: null,
           sequence: 0,
           payload: {
-            coreVersion: "0.1.0",
+            coreVersion: PRODUCT_VERSION,
             selectedProtocolVersion: 1,
             transferMode: "transferable",
             wasm: true,

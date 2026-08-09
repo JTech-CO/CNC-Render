@@ -1,173 +1,62 @@
 # CNC Render
 
-CNC Render는 웹에서 CNC 가공을 시뮬레이션하고 단계적으로 학습하기 위한
-프로젝트입니다. 현재 저장소는 **M2 — G-code 파서·모달 상태·Toolpath IR
-생성**까지 구현했습니다. M2는 Rust 코어에서 G-code를 검증하고 canonical
-motion과 M1 `ToolpathIR`로 내리지만, 아직 재료 제거·충돌 검증·완성된 3D
-작업실과 연결하지 않습니다.
+CNC Render는 브라우저에서 CNC 가공을 살펴보고 대표 공정을 학습할 수 있는
+오픈 소스 시뮬레이터입니다.
 
-## 구현 범위
+[웹에서 CNC Render 실행](https://jtech-co.github.io/CNC-Render/)
 
-| 마일스톤·경계 | 현재 책임 |
-|---|---|
-| M1 `@cnc-render/contracts` | Zod 도메인·단위·Worker wire 계약과 JSON Schema |
-| M1 `cnc-render-contracts` | 동일 wire 모델의 Rust serde·semantic validator |
-| M2 `cnc-render-gcode-core` | lexer → block parser → modal state → semantic validator → canonical motion → Toolpath IR |
-| `@cnc-render/ui` | React UI 셸과 접근 가능한 입력의 경계 |
-| `@cnc-render/simulation` | Worker·Rust/WASM 계산 코어가 따를 조립 경계 |
-| `@cnc-render/renderer` | 계산 결과를 읽기 전용으로 표현할 렌더링 경계 |
-| `@cnc-render/storage` | 버전이 있는 프로젝트·체크포인트 저장 경계 |
+현재 공개 버전은 **v0.9.0 Preview**이며 결과 정확도는 **E2 교육용 근사**입니다.
+산업용 CAM 검증 도구나 실제 CNC 장비 제어기를 대신하지 않습니다.
 
-M1은 `ProjectSchema`, `MachineDefinition`, `ToolAssembly`, `Stock`,
-`Operation`, `ToolpathIR`, `SimulationEvent`와 Worker protocol version
-`1`을 TypeScript와 Rust 양쪽에 고정합니다.
+## 주요 기능
 
-M2의 실행 방언은 `common-v1`입니다. G0~G3, G17~G21, G43/G49,
-G54~G59, G80~G83, G90/G91, G94~G99와 지원 M-code를 canonical mm 기반
-motion·program control event·source line map으로 변환합니다. 44쌍의 독립
-Golden Fixture가 종점, 길이, segment, 진단과 결정론적 ID를 검증합니다.
-fatal 오류는 부분 Toolpath를 노출하지 않고 fail-closed 처리합니다.
+- WebGPU 기반 3D 작업실과 기능이 명시된 WebGL 2 폴백
+- G-code 해석부터 운동학, 충돌 검사, 재료 제거, 렌더링까지 이어지는
+  전용 Worker/Rust/WASM 실행 경로
+- 3축 밀링과 외경 선삭 대표 공정의 공구 이동 및 점진적 소재 제거
+- 실행·일시정지·계속·정지와 충돌 정지 상태 확인
+- 장면·코드·학습·결과 작업 영역과 G-code·진단 도크
+- 브라우저 로컬 프로젝트 저장
+- 키보드 탐색, 도움말 대화상자, 200% 확대를 고려한 라이트모드 UI
 
-정확한 지원·미지원 범위와 자원 상한은
-[G-code 지원 매트릭스](docs/gcode-support-matrix.md), 파서 단계·수치·진단
-정책은 [ADR 0004](docs/architecture-decisions/0004-gcode-parser.md)를
-기준으로 합니다.
+## 사용 방법
 
-## 시작하기
+1. 위 실행 링크를 데스크톱 브라우저에서 엽니다.
+2. 오른쪽 검사기에서 **3축 밀링** 또는 **외경 선삭**을 선택합니다.
+3. 상단의 **실행**을 누르고 공구 위치와 소재 형상 변화를 확인합니다.
+4. **코드**, **학습**, **결과** 영역에서 현재 프로그램, 안내, 실행 요약을
+   확인합니다.
+5. 카메라는 드래그로 회전·이동하고 휠로 확대하거나 축소할 수 있습니다.
 
-Node.js와 Rust 버전은 저장소의 버전 고정 파일을 따릅니다. 패키지 관리자는
-정확히 **pnpm 11.5.3**을 사용하고, 작업 전 `pnpm --version`으로 확인합니다.
+WebGPU를 사용할 수 없으면 WebGL 2로 전환됩니다. 최신 데스크톱 Chrome 또는
+Edge 사용을 권장합니다.
+
+## 현재 제한
+
+- 코드 영역은 읽기 전용입니다. G-code 편집, 가져오기, 줄 진단과
+  브레이크포인트는 아직 제공하지 않습니다.
+- 학습 영역은 대표 절삭 안내 미리보기입니다. 단계별 채점·힌트·정식
+  튜토리얼은 아직 제공하지 않습니다.
+- 목표 형상 비교, 정밀 측정, Heatmap과 리포트 내보내기는 아직 제공하지
+  않습니다.
+- 시뮬레이션은 결정론적 교육용 근사이며 실제 기계의 제어기, 공구 처짐,
+  열 변형과 모든 CAM 방언을 재현하지 않습니다.
+- WebGL 2는 동일한 실행 계약을 사용하지만 WebGPU보다 표면 해상도와 GPU 갱신
+  범위가 제한됩니다.
+
+지원되는 G-code와 명시적으로 거부되는 기능은
+[G-code 지원 매트릭스](docs/gcode-support-matrix.md)에서 확인할 수 있습니다.
+
+## 로컬 개발
+
+Node.js **24.18.0**, pnpm **11.5.3**, Rust **1.97.1**을 사용합니다.
 
 ```bash
-pnpm --version
 pnpm install --frozen-lockfile
-pnpm verify
 pnpm dev
-```
-
-첫 명령의 출력이 `11.5.3`이 아니면 설치된 pnpm을 11.5.3으로 맞춘 뒤
-진행합니다. `pnpm dev`는 현재 CNC Render foundation 페이지를 실행합니다.
-이 페이지의 VMC 도식은 CSS로 만든 정적 개념 표현이며 시뮬레이션 결과가
-아닙니다.
-
-## 표준 검증
-
-전체 로컬 검증은 다음 명령으로 실행합니다.
-
-```bash
 pnpm verify
-pnpm cargo:test
+pnpm test:pages
 ```
 
-M2의 독립 완료 게이트는 다음과 같습니다.
-
-```bash
-pnpm test:unit --filter gcode
-pnpm test:contracts --filter toolpath-ir
-pnpm test:parity --filter gcode
-pnpm cargo:check
-pnpm fuzz:gcode -- --time=60
-```
-
-Rust formatting과 warnings-as-errors 검증은 다음 명령으로 실행합니다.
-
-```bash
-cargo fmt --all -- --check
-cargo clippy --workspace --all-targets --locked -- -D warnings
-```
-
-JSON Schema와 공용 semantic hash fixture를 의도적으로 갱신할 때만
-`pnpm generate:contracts`를 실행합니다. 일반 계약 테스트는 체크인 산출물과
-생성 결과가 byte 단위로 같은지 확인합니다.
-
-후속 릴리스 게이트에서는 다음 독립 검증도 사용합니다.
-
-```bash
-pnpm test:e2e
-pnpm test:visual
-pnpm test:a11y
-pnpm bench
-pnpm check:bundle
-pnpm check:forbidden-ui
-```
-
-테스트를 삭제·완화하거나 성능 기준을 임의로 낮춰 마일스톤을 통과시키지
-않습니다.
-
-## 저장소 구조
-
-```text
-app/                              루트 제품 셸과 Cloudflare Worker adapter
-apps/web/                         웹 애플리케이션 조립 경계
-packages/contracts/               TypeScript 도메인·Worker 계약과 JSON Schema
-packages/ui/                      도메인 중립 UI
-packages/simulation/              렌더링·저장과 분리된 시뮬레이션 경계
-packages/renderer/                3D 표현 adapter 경계
-packages/storage/                 프로젝트 영속화 경계
-crates/cnc-render-contracts/      Rust 계약·검증·semantic hash
-crates/gcode-core/                Rust G-code parser·canonical motion·CLI·fuzz
-tests/fixtures/gcode/             M2 support matrix와 44쌍 Golden Fixture
-design/tokens/                    라이트모드 디자인 토큰 단일 출처
-docs/                             용어집·지원 매트릭스·아키텍처 결정 기록
-tests/                            단위·계약·parity 검증
-```
-
-책임이 생기기 전 빈 디렉터리를 선제적으로 만들지 않습니다.
-
-## 핵심 불변식
-
-- UI는 라이트모드 전용입니다. 다크 토큰, 테마 토글과 시스템 테마 자동 반영을
-  추가하지 않습니다.
-- React는 UI 셸만 담당합니다. 시뮬레이션 프레임마다 전체 UI 상태를 갱신하지
-  않습니다.
-- 복셀, 덱셀, SDF와 대형 `TypedArray`는 Worker, WASM 또는 GPU 메모리에
-  두며 UI Store에 저장하지 않습니다.
-- 모든 영속 물리량은 이름에 `Mm`, `Rad`, `Rpm`, `MmPerMin`,
-  `MmPerRev`, `MmPerTooth`처럼 단위를 포함합니다.
-- 표시 단위와 반올림은 canonical 저장·계산 값과 분리합니다.
-- 영속 object는 `schemaVersion`, Worker envelope는 `protocolVersion`을
-  명시하며 알 수 없는 필드는 거부합니다.
-- G-code parser, Toolpath IR, 운동학, 충돌, 재료 제거와 렌더링의 모듈 경계를
-  유지합니다.
-- Rapier를 절삭 재료 제거 엔진으로 사용하지 않습니다.
-- 같은 입력·버전·설정·시드의 결과는 결정론적으로 재현되어야 합니다.
-- CNC Render 결과에는 E1/E2/S1/S2 정확도 등급과 근사 한계를 노출합니다.
-- 제품은 산업용 검증 도구 또는 실제 CNC 장비 제어기로 표현하지 않습니다.
-
-## 프로젝트 형식과 계약
-
-프로젝트 교환 형식은 ZIP 기반 `.cncrender`이며 미디어 타입은
-`application/vnd.cnc-render.project+zip`입니다. 현재 프로젝트 schema와
-Worker protocol version은 모두 `1`입니다. 가져온 프로젝트와 G-code는
-신뢰할 수 없는 데이터로 보고 구조·수치·참조·자원 상한을 검증합니다.
-
-- [Project JSON Schema](packages/contracts/schemas/project.schema.json)
-- [Worker JSON Schema](packages/contracts/schemas/worker.schema.json)
-- [프로젝트 컨테이너 ADR](docs/architecture-decisions/0002-project-container-format.md)
-- [M1 도메인·Worker 계약 ADR](docs/architecture-decisions/0003-domain-contracts.md)
-- [M2 G-code 파서 ADR](docs/architecture-decisions/0004-gcode-parser.md)
-- [M2 G-code 지원 매트릭스](docs/gcode-support-matrix.md)
-
-## 현재 한계
-
-- G41/G42, G84~G89, macro·variable, 식, 서브프로그램, 다회전 arc와
-  5축 lowering은 명시적으로 진단하며 실행하지 않습니다.
-- G95+G96은 M1 scalar feed 계약에 맞춰 segment 끝점 X를 지름으로 사용하는
-  결정론적 E1/E2 근사입니다. 연속 RPM 변화·기계 clamp·가감속은 포함하지
-  않습니다.
-- Rust 파서 코어는 아직 Worker/WASM 및 UI와 통합하지 않았습니다.
-- 충돌, 운동학, 재료 제거와 렌더링은 후속 마일스톤 범위입니다.
-
-## 문서
-
-- [CNC 표준 용어집](docs/terminology.md)
-- [저장소 경계 ADR](docs/architecture-decisions/0001-repository-boundaries.md)
-- [기술 백서](docs/technical-whitepaper.md)
-- [디자인 백서](docs/design-whitepaper.md)
-- [QA 작업 하네스](docs/qa-harness.md)
-
-## 다음 마일스톤
-
-M3는 **렌더러·3D 작업실 셸**입니다. capability detection, WebGPU renderer,
-명시적 WebGL 2 fallback, scene graph, machine·stock·tool layer, camera,
-semantic overlay와 render-loop telemetry를 하네스 기준으로 구현합니다.
+브랜치, 버전, 검증과 Pull Request 규칙은
+[CONTRIBUTING.md](CONTRIBUTING.md)를 참고하세요.

@@ -1,5 +1,6 @@
 "use client";
 
+import { PRODUCT_VERSION } from "@cnc-render/contracts";
 import { Button, Dialog } from "@cnc-render/ui";
 import { useEffect, useState } from "react";
 import { MachineWorkspaceLoader } from "./machine-workspace-loader";
@@ -102,7 +103,9 @@ function WorkspaceControls({ onHelp }: WorkspaceControlsProps) {
         <Button onClick={() => dispatchWorkspaceCommand({ type: "save" })}>
           저장
         </Button>
-        <span className="milestone-label">M9 · WORKSPACE &amp; A11Y</span>
+        <span className="milestone-label">
+          v{PRODUCT_VERSION} · E2 PREVIEW
+        </span>
         <Button data-testid="open-help" onClick={onHelp}>
           도움말
         </Button>
@@ -141,8 +144,8 @@ export function WorkspaceShell() {
         <section className="help-section">
           <h3>작업 영역</h3>
           <p>
-            장면은 3D 설정, 코드는 현재 G-code, 학습은 다음 단계 안내,
-            결과는 실행 요약을 표시합니다. 고급 편집기는 M11에서 제공됩니다.
+            장면은 3D 설정, 코드는 현재 G-code, 학습은 실행 단계 안내,
+            결과는 실행 요약을 표시합니다. 고급 편집 기능은 아직 제공되지 않습니다.
           </p>
         </section>
         <section className="help-section">
