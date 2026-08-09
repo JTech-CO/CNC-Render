@@ -14,8 +14,12 @@ import type {
   WorkcellRendererStatus,
 } from "@cnc-render/renderer/workcell";
 import {
+  createM5MillingDemoSession,
   runM4CollisionStopDemo,
   type CollisionEvent,
+  type M5MillingDemoOperation,
+  type MillingMaterialRemovalDiagnostics,
+  type SparseDexelMillingEngine,
 } from "@cnc-render/simulation";
 import { useEffect, useRef } from "react";
 
@@ -43,10 +47,30 @@ interface CncRenderM4Harness extends CncRenderM3Harness {
   };
 }
 
+interface M5MillingBrowserRun {
+  readonly operation: M5MillingDemoOperation;
+  readonly stockHashSha256: string;
+  readonly removedVolumeMm3: number;
+  readonly engineDiagnostics: MillingMaterialRemovalDiagnostics;
+  readonly rendererDiagnostics: NonNullable<
+    WorkcellRendererDiagnostics["stockSurface"]
+  >;
+  readonly baselineRenderFrame: number;
+  readonly renderedOnFrame: number | null;
+}
+
+interface CncRenderM5Harness extends CncRenderM4Harness {
+  runMillingFixture(
+    operation: M5MillingDemoOperation,
+  ): Promise<M5MillingBrowserRun>;
+  getMillingState(): M5MillingBrowserRun | null;
+}
+
 declare global {
   interface Window {
     __CNC_RENDER_M3__?: CncRenderM3Harness;
     __CNC_RENDER_M4__?: CncRenderM4Harness;
+    __CNC_RENDER_M5__?: CncRenderM5Harness;
   }
 }
 
@@ -123,6 +147,9 @@ export function MachineWorkspace() {
   const lastCollisionRef = useRef<CollisionEvent | null>(null);
   const collisionStateRef = useRef<CollisionSimulationState>("idle");
   const collisionStopFrameRef = useRef<number | null>(null);
+  const millingEngineRef = useRef<SparseDexelMillingEngine | null>(null);
+  const pendingMillingRunRef = useRef<M5MillingBrowserRun | null>(null);
+  const lastMillingRunRef = useRef<M5MillingBrowserRun | null>(null);
   const runCollisionFixtureRef = useRef<() => CollisionEvent>(() => {
     throw new Error("M4 collision fixture is not ready.");
   });
@@ -262,6 +289,25 @@ export function MachineWorkspace() {
           ?.querySelector(`[data-source-line="${collision.sourceLine}"]`)
           ?.classList.add("is-collision");
       }
+
+      const millingRun = pendingMillingRunRef.current;
+      if (millingRun) {
+        pendingMillingRunRef.current = null;
+        const renderedRun = {
+          ...millingRun,
+          renderedOnFrame: telemetry.framesRendered,
+        };
+        lastMillingRunRef.current = renderedRun;
+        viewport.dataset.millingState = "rendered";
+        viewport.dataset.millingOperation = millingRun.operation;
+        viewport.dataset.millingRenderedFrame = String(
+          telemetry.framesRendered,
+        );
+        viewport.dataset.millingStockHash = millingRun.stockHashSha256;
+        viewport.dataset.stockPartialUpdates = String(
+          millingRun.rendererDiagnostics.partialBufferUpdates,
+        );
+      }
     };
 
     void import("@cnc-render/renderer/workcell")
@@ -304,6 +350,7 @@ export function MachineWorkspace() {
         updateStatus(status);
         resize();
         viewport.dataset.ready = "true";
+        viewport.dataset.millingState = "idle";
 
         const runCollisionFixture = () => {
           const result = runM4CollisionStopDemo();
@@ -362,6 +409,44 @@ export function MachineWorkspace() {
           renderer.setCollisionMarker(null);
         };
 
+        const runMillingFixture = async (
+          operation: M5MillingDemoOperation,
+        ): Promise<M5MillingBrowserRun> => {
+          const baselineRenderFrame =
+            renderer.getDiagnostics().telemetry.framesRendered;
+          viewport.dataset.millingState = "updating";
+          viewport.dataset.millingOperation = operation;
+          delete viewport.dataset.millingRenderedFrame;
+          delete viewport.dataset.millingStockHash;
+          delete viewport.dataset.stockPartialUpdates;
+
+          const session = createM5MillingDemoSession(operation);
+          millingEngineRef.current = session.engine;
+          renderer.configureStockSurface(
+            session.engine.createFullSurfaceSnapshot(),
+          );
+          for (const sweep of session.sweeps) {
+            session.engine.applySweep(sweep);
+          }
+          const stockHashSha256 =
+            await session.engine.stockHashSha256();
+          const rendererDiagnostics = renderer.applyStockSurfacePatches(
+            session.engine.drainDirtySurfacePatches(),
+          );
+          const run: M5MillingBrowserRun = {
+            operation,
+            stockHashSha256,
+            removedVolumeMm3: session.engine.removedVolumeMm3,
+            engineDiagnostics: session.engine.getDiagnostics(),
+            rendererDiagnostics,
+            baselineRenderFrame,
+            renderedOnFrame: null,
+          };
+          pendingMillingRunRef.current = run;
+          lastMillingRunRef.current = run;
+          return run;
+        };
+
         const baseHarness: CncRenderM3Harness = {
           getDiagnostics: () => renderer.getDiagnostics(),
           getReactCommitCount: () => commitCountRef.current,
@@ -378,8 +463,7 @@ export function MachineWorkspace() {
         };
         runCollisionFixtureRef.current = runCollisionFixture;
         resetCollisionFixtureRef.current = resetCollisionFixture;
-        window.__CNC_RENDER_M3__ = baseHarness;
-        window.__CNC_RENDER_M4__ = {
+        const collisionHarness: CncRenderM4Harness = {
           ...baseHarness,
           runCollisionFixture,
           resetCollisionFixture,
@@ -388,6 +472,13 @@ export function MachineWorkspace() {
             event: lastCollisionRef.current,
             stoppedOnRenderFrame: collisionStopFrameRef.current,
           }),
+        };
+        window.__CNC_RENDER_M3__ = baseHarness;
+        window.__CNC_RENDER_M4__ = collisionHarness;
+        window.__CNC_RENDER_M5__ = {
+          ...collisionHarness,
+          runMillingFixture,
+          getMillingState: () => lastMillingRunRef.current,
         };
       })
       .catch((error: unknown) => {
@@ -412,12 +503,16 @@ export function MachineWorkspace() {
       }
       rendererRef.current?.dispose();
       rendererRef.current = null;
+      millingEngineRef.current = null;
+      pendingMillingRunRef.current = null;
+      lastMillingRunRef.current = null;
       runCollisionFixtureRef.current = () => {
         throw new Error("M4 collision fixture is not ready.");
       };
       resetCollisionFixtureRef.current = () => undefined;
       delete window.__CNC_RENDER_M3__;
       delete window.__CNC_RENDER_M4__;
+      delete window.__CNC_RENDER_M5__;
     };
   }, []);
 

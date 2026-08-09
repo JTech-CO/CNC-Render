@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 const benchmarkFiles = new Map([
   ["renderer-smoke", "tests/bench/renderer-smoke.test.ts"],
   ["collision-fixtures", "tests/bench/collision-fixtures.test.ts"],
+  ["milling-golden", "tests/bench/milling-golden.test.ts"],
 ]);
 
 const inputArguments = process.argv.slice(2);

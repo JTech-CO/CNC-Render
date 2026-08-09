@@ -1,0 +1,124 @@
+{
+  "fixtureVersion": 1,
+  "units": "mm",
+  "seed": 1597463007,
+  "brickSizeDexels": 16,
+  "stock": {
+    "sizeMm": {
+      "xMm": 80,
+      "yMm": 60,
+      "zMm": 20
+    },
+    "positionMm": {
+      "xMm": 0,
+      "yMm": 0,
+      "zMm": 0
+    },
+    "baseResolutionMm": 0.5
+  },
+  "presetRelativeVolumeErrorLimits": {
+    "preview": 0.05,
+    "balanced": 0.02,
+    "precision": 0.01
+  },
+  "fixtures": [
+    {
+      "id": "face",
+      "operation": "face-milling",
+      "tool": {
+        "diameterMm": 10,
+        "cuttingLengthMm": 20
+      },
+      "analyticModel": "rectangular area multiplied by cut depth",
+      "expectedRemovedVolumeMm3": 9600,
+      "measurement": {
+        "kind": "depth",
+        "pointMm": {
+          "xMm": 0,
+          "yMm": 0,
+          "zMm": 8
+        },
+        "expectedMm": 2
+      },
+      "sweeps": [
+        { "startMm": { "xMm": -40, "yMm": -30, "zMm": 8 }, "endMm": { "xMm": 40, "yMm": -30, "zMm": 8 } },
+        { "startMm": { "xMm": 40, "yMm": -20, "zMm": 8 }, "endMm": { "xMm": -40, "yMm": -20, "zMm": 8 } },
+        { "startMm": { "xMm": -40, "yMm": -10, "zMm": 8 }, "endMm": { "xMm": 40, "yMm": -10, "zMm": 8 } },
+        { "startMm": { "xMm": 40, "yMm": 0, "zMm": 8 }, "endMm": { "xMm": -40, "yMm": 0, "zMm": 8 } },
+        { "startMm": { "xMm": -40, "yMm": 10, "zMm": 8 }, "endMm": { "xMm": 40, "yMm": 10, "zMm": 8 } },
+        { "startMm": { "xMm": 40, "yMm": 20, "zMm": 8 }, "endMm": { "xMm": -40, "yMm": 20, "zMm": 8 } },
+        { "startMm": { "xMm": -40, "yMm": 30, "zMm": 8 }, "endMm": { "xMm": 40, "yMm": 30, "zMm": 8 } }
+      ]
+    },
+    {
+      "id": "slot",
+      "operation": "slot",
+      "tool": {
+        "diameterMm": 10,
+        "cuttingLengthMm": 20
+      },
+      "analyticModel": "stadium area (2 r L + pi r^2) multiplied by cut depth",
+      "expectedRemovedVolumeMm3": 2314.1592653589793,
+      "measurement": {
+        "kind": "depth",
+        "pointMm": {
+          "xMm": 0,
+          "yMm": 0,
+          "zMm": 6
+        },
+        "expectedMm": 4
+      },
+      "sweeps": [
+        { "startMm": { "xMm": -25, "yMm": 0, "zMm": 6 }, "endMm": { "xMm": 25, "yMm": 0, "zMm": 6 } }
+      ]
+    },
+    {
+      "id": "pocket",
+      "operation": "pocket",
+      "tool": {
+        "diameterMm": 20,
+        "cuttingLengthMm": 20
+      },
+      "analyticModel": "stadium pocket area (2 r L + pi r^2) multiplied by cut depth",
+      "expectedRemovedVolumeMm3": 5484.955592153876,
+      "measurement": {
+        "kind": "depth",
+        "pointMm": {
+          "xMm": 0,
+          "yMm": 0,
+          "zMm": 4
+        },
+        "expectedMm": 6
+      },
+      "sweeps": [
+        { "startMm": { "xMm": -15, "yMm": 0, "zMm": 4 }, "endMm": { "xMm": 15, "yMm": 0, "zMm": 4 } }
+      ]
+    },
+    {
+      "id": "outer-contour",
+      "operation": "outer-contour",
+      "tool": {
+        "diameterMm": 10,
+        "cuttingLengthMm": 20
+      },
+      "analyticModel": "closed rectangle boundary buffer multiplied by cut depth",
+      "expectedRemovedVolumeMm3": 6292.699081698724,
+      "measurement": {
+        "kind": "wall-thickness",
+        "axis": "x",
+        "pointMm": {
+          "xMm": 0,
+          "yMm": 0,
+          "zMm": 7
+        },
+        "expectedMm": 30
+      },
+      "sweeps": [
+        { "startMm": { "xMm": -20, "yMm": -12, "zMm": 5 }, "endMm": { "xMm": 20, "yMm": -12, "zMm": 5 } },
+        { "startMm": { "xMm": 20, "yMm": -12, "zMm": 5 }, "endMm": { "xMm": 20, "yMm": 12, "zMm": 5 } },
+        { "startMm": { "xMm": 20, "yMm": 12, "zMm": 5 }, "endMm": { "xMm": -20, "yMm": 12, "zMm": 5 } },
+        { "startMm": { "xMm": -20, "yMm": 12, "zMm": 5 }, "endMm": { "xMm": -20, "yMm": -12, "zMm": 5 } }
+      ]
+    }
+  ]
+}

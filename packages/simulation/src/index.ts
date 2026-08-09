@@ -6,3 +6,5 @@ export type SimulationPackageName = typeof SIMULATION_PACKAGE_NAME;
 export * from "./collision";
 export * from "./collision-demo";
 export * from "./kinematics";
+export * from "./material-removal-demo";
+export * from "./material-removal-milling";

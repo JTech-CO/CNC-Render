@@ -5,6 +5,7 @@ const suiteName = process.argv[2];
 const suiteFiles = {
   e2e: [
     "tests/collision-stop.spec.ts",
+    "tests/material-removal-milling.spec.ts",
     "tests/viewport.spec.ts",
     "tests/viewport-soak.spec.ts",
   ],
