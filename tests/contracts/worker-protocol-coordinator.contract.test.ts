@@ -25,6 +25,35 @@ function startCommand() {
 }
 
 describe("M7 coordinator Worker protocol", () => {
+  test("aligns the educational milling run with the VMC Stock coordinate space", () => {
+    const run = createM7PipelineFixture("milling", RUN_ID);
+    expect(run.process.processType).toBe("milling");
+    if (run.process.processType !== "milling") {
+      throw new Error("Expected the milling process contract.");
+    }
+
+    const stockTopMm =
+      run.process.stock.positionMm.zMm + run.process.stock.sizeMm.zMm / 2;
+    expect(run.process.stock).toEqual({
+      sizeMm: { xMm: 360, yMm: 200, zMm: 88 },
+      positionMm: { xMm: 0, yMm: 0, zMm: 298 },
+      baseResolutionMm: 8,
+    });
+    expect(stockTopMm).toBe(342);
+    expect(run.initialPositionMm).toEqual({
+      xMm: -170,
+      yMm: -80,
+      zMm: 370,
+    });
+    expect(run.initialPositionMm.zMm).toBeGreaterThan(stockTopMm);
+    expect(run.source).toContain("G1 Z338 F1200");
+    expect(run.source).toContain("G0 Z370");
+    expect(run.process.tool).toEqual({
+      diameterMm: 20,
+      cuttingLengthMm: 44,
+    });
+  });
+
   test("accepts a strict G-code run command from 0.1x through 100x", () => {
     for (const playbackSpeed of [0.1, 1, 10, 100]) {
       const command = startCommand();

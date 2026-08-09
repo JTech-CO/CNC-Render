@@ -153,7 +153,7 @@ function cylinder(
   return mesh;
 }
 
-function addStockOutline(stock: Mesh, stockLayer: Group): void {
+function addStockOutline(stock: Mesh): void {
   const outline = new LineSegments(
     new EdgesGeometry(stock.geometry),
     new LineBasicMaterial({
@@ -162,10 +162,10 @@ function addStockOutline(stock: Mesh, stockLayer: Group): void {
       opacity: 0.78,
     }),
   );
-  outline.position.copy(stock.position);
+  outline.name = "education-stock-outline";
   outline.renderOrder = 5;
   tagObject(outline, "stock", false);
-  stockLayer.add(outline);
+  stock.add(outline);
 }
 
 function makeLayerGroups(): Map<SceneLayerId, Group> {
@@ -289,7 +289,7 @@ function addStock(
     material,
   );
   stock.name = "education-stock";
-  addStockOutline(stock, layer);
+  addStockOutline(stock);
   selectableObjects.push(stock);
   return stock;
 }

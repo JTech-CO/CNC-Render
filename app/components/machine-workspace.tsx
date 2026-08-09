@@ -166,7 +166,7 @@ function workspaceIcon(kind: "scene" | "code" | "learn" | "report") {
 type WorkspaceArea = "scene" | "code" | "learn" | "results";
 type DockTab = "gcode" | "diagnostics";
 
-const WORKSPACE_PLAYBACK_SPEED = 1;
+const WORKSPACE_PLAYBACK_SPEED = 0.1;
 
 function pipelineState(
   summary: CoordinatorCoreSummary,
@@ -1061,9 +1061,12 @@ export function MachineWorkspace() {
               <h3>대표 밀링 Fixture</h3>
               <ol className="context-code" aria-label="현재 G-code">
                 <li><code>G21 G90</code></li>
-                <li><code>G0 X-10 Y-5 Z8</code></li>
-                <li><code>G1 Z4 F6000</code></li>
-                <li><code>G1 X10 Y5</code></li>
+                <li><code>G0 X-170 Y-80 Z370</code></li>
+                <li><code>G1 Z338 F1200</code></li>
+                <li><code>G1 X170 F2400</code></li>
+                <li><code>G1 Y-40</code></li>
+                <li><code>... 40 mm pitch milling passes ...</code></li>
+                <li><code>G0 Z370</code></li>
                 <li><code>M30</code></li>
               </ol>
               <p className="context-note">
