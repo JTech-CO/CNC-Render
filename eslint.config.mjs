@@ -13,6 +13,7 @@ export default defineConfig([
     "dist/**",
     "node_modules/**",
     "out/**",
+    "storybook-static/**",
     "target/**",
     "next-env.d.ts",
     "crates/**/pkg/**",

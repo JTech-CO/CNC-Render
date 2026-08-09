@@ -9,6 +9,10 @@
     "pnpm": "11.5.3"
   },
   "scripts": {
+    "generate:tokens": "node scripts/generate-design-tokens.mjs",
+    "check:tokens": "node scripts/generate-design-tokens.mjs --check",
+    "storybook": "storybook dev -p 6006",
+    "storybook:build": "storybook build --output-dir storybook-static",
     "dev": "vinext dev",
     "build": "node scripts/run-vinext-build.mjs",
     "build:pages": "node scripts/run-github-pages-build.mjs",
@@ -21,19 +25,19 @@
     "test:parity": "pnpm wasm:build && node scripts/run-vitest-suite.mjs parity",
     "test:e2e": "node packages/e2e/run-playwright.mjs e2e",
     "test:visual": "node packages/e2e/run-playwright.mjs visual",
-    "test:a11y": "node scripts/report-phase-gate.mjs test:a11y M9",
+    "test:a11y": "node packages/e2e/run-playwright.mjs a11y",
     "cargo:check": "node scripts/run-cargo.mjs check --workspace --all-targets --locked",
     "cargo:test": "node scripts/run-cargo.mjs test --workspace --locked",
     "fuzz:gcode": "node scripts/fuzz-gcode.mjs",
     "generate:contracts": "node scripts/generate-contract-artifacts.mjs",
     "bench": "node scripts/run-renderer-bench.mjs",
-    "check:bundle": "node scripts/report-phase-gate.mjs check:bundle M9",
+    "check:bundle": "node scripts/check-ui-bundle.mjs",
     "check:boundaries": "depcruise --config dependency-cruiser.config.cjs apps packages crates",
     "check:doc-terms": "node scripts/check-doc-terms.mjs",
     "check:forbidden-ui": "node scripts/check-forbidden-ui.mjs",
     "check:toolchain": "node scripts/check-toolchain.mjs",
     "wasm:build": "node scripts/build-wasm.mjs",
-    "verify": "pnpm lint && pnpm typecheck && pnpm cargo:check && pnpm test:unit && pnpm test:contracts && pnpm test:parity && pnpm check:forbidden-ui && pnpm build"
+    "verify": "pnpm check:tokens && pnpm lint && pnpm typecheck && pnpm cargo:check && pnpm test:unit && pnpm test:contracts && pnpm test:parity && pnpm check:forbidden-ui && pnpm build"
   },
   "dependencies": {
     "@cnc-render/web": "workspace:*",
@@ -43,6 +47,8 @@
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "1.37.1",
+    "@storybook/addon-a11y": "10.5.7",
+    "@storybook/react-vite": "10.5.7",
     "@types/node": "22.19.19",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
@@ -52,6 +58,7 @@
     "eslint": "9.39.4",
     "eslint-config-next": "16.2.6",
     "react-server-dom-webpack": "19.2.6",
+    "storybook": "10.5.7",
     "typescript": "5.9.3",
     "vinext": "0.0.50",
     "vite": "8.0.13",

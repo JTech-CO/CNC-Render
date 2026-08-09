@@ -38,7 +38,7 @@ const server = spawn(
     "--hostname",
     "127.0.0.1",
     "--port",
-    "4174",
+    "43174",
   ],
   {
     cwd: workspaceDirectory,
@@ -104,12 +104,12 @@ function proxyToVinext(request, response) {
     {
       headers: {
         ...request.headers,
-        host: "127.0.0.1:4174",
+        host: "127.0.0.1:43174",
       },
       hostname: "127.0.0.1",
       method: request.method,
       path: request.url,
-      port: 4174,
+      port: 43174,
     },
     (proxyResponse) => {
       response.writeHead(
@@ -140,8 +140,8 @@ const gateway = createServer((request, response) => {
   proxyToVinext(request, response);
 });
 
-gateway.listen(4173, "127.0.0.1", () => {
-  console.log("[e2e-server] listening on http://127.0.0.1:4173");
+gateway.listen(43173, "127.0.0.1", () => {
+  console.log("[e2e-server] listening on http://127.0.0.1:43173");
 });
 
 function stopServer() {

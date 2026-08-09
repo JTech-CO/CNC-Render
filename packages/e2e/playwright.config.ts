@@ -4,7 +4,7 @@ import { dirname, resolve } from "node:path";
 
 const packageDirectory = dirname(fileURLToPath(import.meta.url));
 const workspaceDirectory = resolve(packageDirectory, "../..");
-const baseURL = "http://127.0.0.1:4173";
+const baseURL = "http://127.0.0.1:43173";
 const softwareRenderingArguments = [
   "--use-angle=swiftshader",
   "--enable-unsafe-swiftshader",
@@ -42,7 +42,7 @@ export default defineConfig({
     command: "node packages/e2e/start-test-server.mjs",
     cwd: workspaceDirectory,
     url: baseURL,
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: false,
     timeout: 120_000,
   },
   projects: [

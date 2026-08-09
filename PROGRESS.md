@@ -1,11 +1,70 @@
 # CNC Render Progress
 
-- Current phase: M8 — 저장·체크포인트·프로젝트 마이그레이션
-- Status: complete — M8 Definition of Done 전체 통과
-- Last completed: IndexedDB metadata → OPFS immutable generation → 전체 WASM Stock checkpoint → `.cncrender` export/import·migration·corruption 방어
-- Next task: M9 사용자 인터페이스·접근성 착수
+- Current phase: M9 — 디자인 시스템·Workspace UI·접근성
+- Status: complete — M9 Definition of Done 전체 통과
+- Last completed: 토큰·프리미티브 → Workspace 명령·탐색 → Worker/WASM 점진 절삭·공구 이동 → 반응형·접근성·UI 예산
+- Next task: M10 튜토리얼·샌드박스 MVP(E2) 수직 완성
 - Open questions: 없음
 - Known regressions: 없음
+
+## M9 validation run
+
+2026-08-09에 고정 도구 체인 Node `24.18.0`, pnpm `11.5.3`, Rust
+`1.97.1`, Playwright `1.55.0`과 `wasm32-unknown-unknown` target으로
+실행했다. production WASM은 793,271 bytes이며 SHA-256은
+`75aea4d133cceedd1514dd74c493989e991ce515556bcac658ba9e868fdb3be8`이다.
+
+| Gate | Result |
+|---|---|
+| `pnpm check:tokens` | 통과 — 단일 JSON source와 생성 CSS/TypeScript 44 tokens 일치 |
+| `pnpm storybook:build` | 통과 — Button·Dialog·Tabs·UnitInput·ParameterRow·DataTable catalog |
+| `pnpm test:a11y` | 통과 — WebGPU·WebGL 2 axe Critical/Serious 0, 2 passed; visual 중복 1건 의도적 skip |
+| `pnpm test:visual` | 통과 — WebGPU·WebGL 2·visual 3 projects, M9 기준 canvas 923×883 px |
+| `pnpm test:e2e -- --grep="M9 workspace UI"` | 통과 — WebGPU·WebGL 2에서 8 passed, visual 중복 4건 의도적 skip |
+| `pnpm bench --filter ui-budget` | 통과 — 10/20Hz 상한·대표 UI 처리 평균 4ms·DOM source 예산 3 tests |
+| `pnpm check:bundle` | 통과 — CSS gzip 6,207/81,920 B, WOFF2 0/409,600 B, JS gzip report 436,361 B |
+| `pnpm verify` | 통과 — unit 135, contract 49, parity 63, 89 modules/193 dependencies 경계 위반 0, Cargo check, forbidden UI, production build |
+| `pnpm test:e2e` | 통과 — 전체 57 passed; 장시간 soak 3건과 M7·M8·M9 visual 중복 12건 의도적 skip |
+
+## Delivered M9 design system, workspace, and accessibility
+
+- 토큰·프리미티브
+  - `design/tokens/cnc-render.tokens.json`에서 light-only 색상·간격·타이포그래피·반경을
+    CSS custom properties와 TypeScript 상수로 생성하고 drift를 계약으로 차단
+  - 공용 Button, native Dialog, Tabs, UnitInput, ParameterRow, DataTable과
+    Storybook 상태 catalog 제공
+  - 본문·핵심 수치 12px 이상, tabular figures·단위 표기, 시스템 dark 설정에서도
+    `color-scheme: light`와 동일 팔레트 유지
+- 실제 Workspace 상호작용
+  - Global Command Bar의 실행·일시정지·계속·정지·저장과 native 도움말 modal 연결
+  - 장면·코드·학습·결과 Activity 영역과 G-code·Diagnostics Bottom Dock을 클릭·키보드
+    Arrow/Home/End로 탐색 가능
+  - Worker/WASM full/patch를 Stock buffer에 직접 적용하고 최대 20Hz 축 요약으로
+    holder/cutter를 이동해 소재 제거와 공구 움직임을 점진적으로 표시
+  - 실행 상태를 별도 command UI subtree로 격리해 M7 실행 중 MachineWorkspace React
+    commit 0회 불변식 유지
+- 반응형·접근성·성능
+  - 9개 목표 해상도, 1440×900 콘텐츠의 3D 영역 60% 이상, 720px 미만 패널 접기,
+    가로 overflow 없음과 200% 확대 핵심 기능 보존을 Playwright로 검증
+  - 도움말 focus return, native control 의미 구조, 텍스트·아이콘·진단·G-code 줄·3D marker를
+    함께 쓰는 충돌 표현과 forced-colors 대응
+  - 보이는 DOM 2,000개, HUD 10~20Hz, CSS·font 번들, 금지 효과를 자동 gate로 고정
+  - M7 Long Task 관측은 첫 대표 공정 실행 직전 시작해 이후 실행에 누적하며 초기
+    UI/WebGL 준비 비용과 실제 시뮬레이션 비용을 분리
+
+## M9 limitations and remaining risks
+
+- M9 학습 영역은 안내와 대표 절삭 실행 preview다. 준비→설정→실행→측정→판정,
+  결정론적 scoring, 힌트와 밀링·선삭·드릴링 정식 lesson은 M10 범위다.
+- 코드 영역은 현재 G-code 탐색용 read-only preview다. Monaco lazy load, 편집,
+  줄 진단·현재 줄·breakpoint, 측정·목표 비교·heatmap·report export는 M11 범위다.
+- 상단 수동 저장은 실제 M8 persistence에 연결됐다. M8 autosave controller는
+  계약 검증됐지만 M9에는 durable project model을 바꾸는 editor가 없으므로 실제 edit
+  event 연결은 M10 sandbox 또는 M11 G-code editor의 첫 durable mutation과 함께 한다.
+- WebGL 2는 WebGPU와 같은 명령·Worker/WASM 결과 계약을 사용하지만 표면 preview는
+  기존 CPU/WASM mesh와 1K surface 한계를 상태 문구로 계속 노출한다.
+- Storybook의 axe·docs bundle은 개발 catalog 전용이며 production 초기 JS에 포함되지
+  않는다. production은 system font stack을 사용해 초기 WOFF2 전송량이 0 B다.
 
 ## GitHub Pages 배포 복구 (2026-08-09)
 
@@ -109,8 +168,9 @@
   100 MiB 근접 파일과 장시간 다중 checkpoint의 memory plateau는 별도 soak가 필요하다.
 - migration registry는 현재 대표 v0→v1 fixture만 제공한다. 이후 schema version마다 원본
   보존 golden fixture와 순차 migration을 추가해야 한다.
-- autosave controller의 실제 편집 event 연결은 편집 가능한 workspace를 만드는 M9에서
-  수행해야 한다.
+- autosave controller의 실제 편집 event 연결은 read-only M9 preview가 아니라 durable
+  project mutation을 도입하는 M10 sandbox 또는 M11 G-code editor에서 수행한다. M9의
+  상단 수동 저장은 실제 persistence 경로에 연결됐다.
 - cloud persistence는 사용자 동의·계정·권한·충돌 병합 정책이 정의될 때까지 의도적으로
   비활성이다. 현재 결과는 E2 교육용 근사 검증이며 산업용 CAM 검증과 동일하지 않다.
 

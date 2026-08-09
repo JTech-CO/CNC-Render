@@ -26,6 +26,10 @@
         "$type": "color",
         "$value": "#eef2f6"
       },
+      "viewport-bg": {
+        "$type": "color",
+        "$value": "#e9edf1"
+      },
       "border-subtle": {
         "$type": "color",
         "$value": "#e1e6ec"
@@ -44,7 +48,7 @@
       },
       "text-muted": {
         "$type": "color",
-        "$value": "#7a8492"
+        "$value": "#5e6978"
       },
       "text-disabled": {
         "$type": "color",
@@ -147,6 +151,48 @@
       "control-lg": {
         "$type": "dimension",
         "$value": "36px"
+      }
+    },
+    "typography": {
+      "font-family-sans": {
+        "$type": "fontFamily",
+        "$value": "Inter, Pretendard Variable, Pretendard, Noto Sans KR, Segoe UI, Arial, sans-serif"
+      },
+      "font-family-mono": {
+        "$type": "fontFamily",
+        "$value": "JetBrains Mono, SFMono-Regular, Consolas, Liberation Mono, monospace"
+      },
+      "font-size-caption": {
+        "$type": "dimension",
+        "$value": "11px"
+      },
+      "font-size-label": {
+        "$type": "dimension",
+        "$value": "12px"
+      },
+      "font-size-body": {
+        "$type": "dimension",
+        "$value": "14px"
+      },
+      "font-size-code": {
+        "$type": "dimension",
+        "$value": "13px"
+      },
+      "line-height-body": {
+        "$type": "number",
+        "$value": 1.5
+      },
+      "font-weight-regular": {
+        "$type": "number",
+        "$value": 400
+      },
+      "font-weight-medium": {
+        "$type": "number",
+        "$value": 600
+      },
+      "font-weight-bold": {
+        "$type": "number",
+        "$value": 750
       }
     }
   }

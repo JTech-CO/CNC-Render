@@ -39,6 +39,8 @@ import {
   type StockSurfacePatch,
 } from "./stock-surface";
 
+const TOOL_TIP_HOME_MM = 340;
+
 const MACHINE_COLOR = 0xaeb8c3;
 const MACHINE_DARK_COLOR = 0x55616f;
 const TABLE_COLOR = 0x667482;
@@ -73,6 +75,9 @@ export interface MachineScene {
   getRotationalStockSurfaceDiagnostics(): RotationalStockSurfaceDiagnostics | null;
   getStockSurfaceDiagnostics(): StockSurfaceBufferDiagnostics | null;
   finishStockSurfaceUpload(): void;
+  setToolPositionMm(
+    positionMm: readonly [number, number, number],
+  ): void;
   setCollisionMarker(
     positionMm: readonly [number, number, number] | null,
   ): void;
@@ -607,6 +612,15 @@ export function createMachineScene(): MachineScene {
       if (stockLayer.visible && rotationalStockSurface?.mesh.visible) {
         rotationalStockSurface.finishUpload();
       }
+    },
+    setToolPositionMm(positionMm) {
+      const translationMm: readonly [number, number, number] = [
+        positionMm[0],
+        positionMm[1],
+        positionMm[2] - TOOL_TIP_HOME_MM,
+      ];
+      positionFromDomain(layerGroups.get("holder")!, translationMm);
+      positionFromDomain(layerGroups.get("cutter")!, translationMm);
     },
     setCollisionMarker(positionMm) {
       if (positionMm === null) {

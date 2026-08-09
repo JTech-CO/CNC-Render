@@ -25,3 +25,25 @@ describe("M4 collision renderer marker", () => {
     }
   });
 });
+
+describe("M9 simulation tool motion bridge", () => {
+  it("moves holder and cutter layers from the documented 340 mm tool-tip home", () => {
+    const machineScene = createMachineScene();
+    try {
+      const holder = machineScene.layerGroups.get("holder");
+      const cutter = machineScene.layerGroups.get("cutter");
+      expect(holder?.position.toArray()).toEqual([0, 0, 0]);
+      expect(cutter?.position.toArray()).toEqual([0, 0, 0]);
+
+      machineScene.setToolPositionMm([12, -5, 340]);
+      expect(holder?.position.toArray()).toEqual([12, 0, 5]);
+      expect(cutter?.position.toArray()).toEqual([12, 0, 5]);
+
+      machineScene.setToolPositionMm([-8, 4, 300]);
+      expect(holder?.position.toArray()).toEqual([-8, -40, -4]);
+      expect(cutter?.position.toArray()).toEqual([-8, -40, -4]);
+    } finally {
+      machineScene.dispose();
+    }
+  });
+});
