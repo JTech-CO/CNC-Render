@@ -10,6 +10,26 @@ const VERTICES_PER_CELL = 36;
 const COMPONENTS_PER_VERTEX = 3;
 const FLOATS_PER_CELL = VERTICES_PER_CELL * COMPONENTS_PER_VERTEX;
 const NUMERIC_EPSILON = 1e-5;
+const CELL_FACE_NORMALS = (() => {
+  const normals = new Float32Array(FLOATS_PER_CELL);
+  const faceNormals = [
+    [0, -1, 0],
+    [0, 1, 0],
+    [0, 0, 1],
+    [0, 0, -1],
+    [-1, 0, 0],
+    [1, 0, 0],
+  ] as const;
+  for (const [faceIndex, normal] of faceNormals.entries()) {
+    for (let vertexIndex = 0; vertexIndex < 6; vertexIndex += 1) {
+      normals.set(
+        normal,
+        (faceIndex * 6 + vertexIndex) * COMPONENTS_PER_VERTEX,
+      );
+    }
+  }
+  return normals;
+})();
 
 export interface StockSurfacePointMm {
   readonly xMm: number;
@@ -102,16 +122,16 @@ export class PartialStockSurface {
     this.#positions = new Float32Array(
       descriptor.columns * descriptor.rows * FLOATS_PER_CELL,
     );
+    const normals = new Float32Array(this.#positions.length);
     for (let cellIndex = 0; cellIndex < this.#topZMm.length; cellIndex += 1) {
       this.#writeCell(cellIndex, this.#topZMm[cellIndex]);
+      normals.set(CELL_FACE_NORMALS, cellIndex * FLOATS_PER_CELL);
     }
 
     this.geometry = new BufferGeometry();
     this.#positionAttribute = new BufferAttribute(this.#positions, 3);
     this.geometry.setAttribute("position", this.#positionAttribute);
-    this.geometry.computeVertexNormals();
-    this.geometry.computeBoundingBox();
-    this.geometry.computeBoundingSphere();
+    this.geometry.setAttribute("normal", new BufferAttribute(normals, 3));
     this.#ownedMaterial =
       material === undefined
         ? new MeshStandardMaterial({ color: 0xfdfdfb, roughness: 0.7 })
@@ -120,6 +140,9 @@ export class PartialStockSurface {
     this.mesh.name = "m5-partial-stock-surface";
     this.mesh.castShadow = true;
     this.mesh.receiveShadow = true;
+    // Dexel cells stay axis-aligned as their top heights change. Fixed face
+    // normals avoid a synchronous full-geometry normal and bounds pass in the
+    // Worker message handler; raycasting can compute bounds lazily if needed.
     this.mesh.frustumCulled = false;
     this.#uploadedBytes = this.#positions.byteLength;
   }

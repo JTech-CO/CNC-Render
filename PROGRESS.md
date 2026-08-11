@@ -1,11 +1,11 @@
-# CNC Render Progress
+﻿# CNC Render Progress
 
 - Current phase: M9 공개 릴리스 안정화
-- Status: 구현·검증 완료 — 공개 반영 상태는 최신 GitHub Pages 배포를 기준으로 확인
-- Last completed: Pages 스타일·클릭·Worker/WASM 배포 경로 복구, 제품 버전 0.9.0 통일, 공개 문서 정리
+- Status: 3축 밀링 재생 결함 로컬 수정·전체 검증 완료 — 커밋·공개 반영 대기
+- Last completed: VMC 좌표 정렬, 3초대 다중 패스 재생, 동적 Stock 절삭면 표시와 정적 outline 전환
 - Next task: M10 튜토리얼·샌드박스 MVP(E2)
 - Open questions: 없음
-- Known regressions: Pages 스타일 회귀는 이 안정화 변경에서 수정됨; 공개 가용성은 최신 성공 배포를 따름
+- Known regressions: 로컬 검증 범위에서 없음; 공개 URL은 수정 브랜치가 병합·배포될 때까지 이전 밀링 동작을 제공함
 
 ## M9 공개 릴리스 안정화 (2026-08-09)
 
@@ -50,6 +50,46 @@ SHA-256은 `d788f5b38bc27cd0429f5500e63ad6523fc1b9dce07574c2983a78b444bd9fec`다
 - Pages CSS는 정적 엔트리 때문에 생성 복사본을 사용한다. CI의
   `check:pages-styles`를 우회하면 다시 drift할 수 있으므로 필수 gate로 유지한다.
 
+## 3축 밀링 재생·절삭 표시 결함 수정 (2026-08-10)
+
+### 원인과 수정
+
+- 공개판 대표 밀링 fixture는 `40 × 30 × 10 mm`, 중심 `Z = 0 mm`와
+  공구 경로 `Z = 8 → 4 mm`를 사용했지만, VMC 장면의 소재는
+  `360 × 200 × 88 mm`, 중심 `Z = 298 mm`(상면 `Z = 342 mm`)였다.
+  Worker 좌표가 renderer 장면에 직접 적용되어 공구가 소재를 가공하는 대신
+  테이블 방향으로 관통해 보였다.
+- 기존 5단계 재생은 공개판에서 약 `0.879 s` 만에 끝나고 절삭 frame이 사실상
+  한 번만 관측됐다. 대표 공정을 안전 높이 `Z = 370 mm`, 절삭 높이
+  `Z = 338 mm`, 40 mm 간격의 5개 왕복 패스로 교체하고 표시 속도를
+  `0.1×`로 조정했다.
+- 수정된 대표 공정은 12단계, Stock revision 10회, 약 `3.03 s` 동안 실행되며
+  제거 체적과 dirty Stock patch가 단계별로 증가한다. 마지막 공구 위치는
+  `X = 170 mm, Y = 80 mm, Z = 370 mm`로 안전 복귀한다.
+- 동적 Stock이 시작되면 교육용 정적 소재와 outline을 함께 숨기도록 scene
+  계층을 고쳤다. 부분 Stock patch 생성 비용은 축 정렬 면의 고정 normal을
+  직접 기록해 불필요한 전체 normal·bounds 재계산을 제거했다.
+
+### 검증
+
+| Gate | Result |
+|---|---|
+| `pnpm test:unit` | 통과 — 18 files, 136 tests; Stock normal·정적 outline 전환 포함 |
+| `pnpm test:contracts` | 통과 — 13 files, 51 tests; VMC fixture 좌표·공구·복귀 계약 포함 |
+| `pnpm test:parity` | 통과 — 8 files, 63 tests; production WASM 793,536 bytes |
+| 결정론 반복 E2E | 통과 — WebGPU·WebGL 2, 6/6 passed |
+| 전체 `pnpm test:e2e` | 통과 — 57 passed, 조건부 visual 15 skipped, 실패 0 |
+| TypeScript·ESLint·dependency-cruiser | 통과 — 92 modules, 204 dependencies, 위반 0 |
+| 문서 용어·툴체인·금지 UI·Cargo check | 통과 |
+| production build·Pages build | 통과 — `/CNC-Render/` Worker·WASM 경로 검증 |
+| Pages base-path E2E | 통과 — GitHub Pages Chromium 1/1, styled UI·Worker·WASM 실행 |
+
+### 남은 위험
+
+- 현재 교육용 재생은 G-code 구간 끝점 단위로 공구 위치와 Stock patch를 표시한다.
+  서보 주기 보간이나 실제 이송 시간 재현은 아니며 E2 등급 preview다.
+- 수정은 로컬 `codex/fix-milling-playback` 브랜치에만 있다. 공개 URL은 커밋,
+  PR 병합과 Pages 재배포가 완료되기 전까지 이전 fixture를 계속 제공한다.
 
 ## M9 validation run
 

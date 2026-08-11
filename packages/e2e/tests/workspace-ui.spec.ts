@@ -216,6 +216,46 @@ test.describe("M9 workspace UI", () => {
     const commandPlay = page.getByRole("button", { name: "실행", exact: true });
     await expect(commandPlay).toBeEnabled();
     await commandPlay.click();
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const state = window.__CNC_RENDER_M7__?.getPipelineState();
+          const summary = state?.summary;
+          return (
+            state?.status === "running" &&
+            (summary?.stockRevision ?? 0) > 0 &&
+            (summary?.currentStep ?? 0) < (summary?.totalSteps ?? 0)
+          );
+        }),
+      )
+      .toBe(true);
+    const progressiveFrame = await page.evaluate(() => {
+      const state = window.__CNC_RENDER_M7__?.getPipelineState();
+      return {
+        status: state?.status,
+        currentStep: state?.summary?.currentStep,
+        totalSteps: state?.summary?.totalSteps,
+        stockRevision: state?.summary?.stockRevision,
+        removedVolumeMm3: state?.summary?.removedVolumeMm3,
+        toolPositionMm: state?.summary?.toolPositionMm,
+        stockSurface: window.__CNC_RENDER_M3__?.getDiagnostics().stockSurface,
+      };
+    });
+    expect(progressiveFrame.status).toBe("running");
+    expect(progressiveFrame.currentStep).toBeGreaterThan(0);
+    expect(progressiveFrame.currentStep).toBeLessThan(
+      progressiveFrame.totalSteps ?? 0,
+    );
+    expect(progressiveFrame.stockRevision).toBeGreaterThan(0);
+    expect(progressiveFrame.removedVolumeMm3).toBeGreaterThan(0);
+    expect(progressiveFrame.toolPositionMm?.zMm).toBeGreaterThanOrEqual(338);
+    expect(progressiveFrame.stockSurface).toMatchObject({
+      cells: 1_125,
+      fullBufferUploads: 1,
+    });
+    expect(
+      progressiveFrame.stockSurface?.partialBufferUpdates,
+    ).toBeGreaterThan(0);
     await expect(viewport).toHaveAttribute("data-pipeline-state", /progress|completed/u);
     await expect
       .poll(() =>
@@ -224,6 +264,10 @@ test.describe("M9 workspace UI", () => {
       .toBe("completed");
 
     expect(Number(await viewport.getAttribute("data-pipeline-stock-revision"))).toBeGreaterThan(0);
+    await expect(viewport).toHaveAttribute(
+      "data-pipeline-axis-position",
+      "170,80,370",
+    );
     expect(Number(await viewport.getAttribute("data-render-frames"))).toBeGreaterThan(
       baselineFrames,
     );

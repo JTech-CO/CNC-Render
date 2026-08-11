@@ -22,6 +22,18 @@ describe("M5 material-removal-milling renderer boundary", () => {
       engine.createFullSurfaceSnapshot(),
     );
     const initial = surface.getDiagnostics();
+    const normalAttribute = surface.geometry.getAttribute("normal");
+    expect(normalAttribute.count).toBe(initial.cells * 36);
+    expect(
+      [0, 6, 12, 18, 24, 30].map((vertexIndex) => [
+        normalAttribute.getX(vertexIndex),
+        normalAttribute.getY(vertexIndex),
+        normalAttribute.getZ(vertexIndex),
+      ]),
+    ).toEqual([
+      [0, -1, 0], [0, 1, 0], [0, 0, 1],
+      [0, 0, -1], [-1, 0, 0], [1, 0, 0],
+    ]);
 
     const sweep = engine.applySweep(slot.sweeps[0]);
     const patches = engine.drainDirtySurfacePatches();
@@ -56,6 +68,7 @@ describe("M5 material-removal-milling renderer boundary", () => {
     surface.finishUpload();
     expect(surface.getDiagnostics().activeUpdateRanges).toBe(0);
     expect(surface.geometry).toBe(surface.mesh.geometry);
+    expect(surface.geometry.getAttribute("normal")).toBe(normalAttribute);
     surface.dispose();
   });
 
