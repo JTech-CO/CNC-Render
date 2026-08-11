@@ -203,6 +203,7 @@ function setPipelineField(
 function updatePipelineSummary(
   root: HTMLElement,
   summary: CoordinatorCoreSummary,
+  playbackElapsedS: number,
 ): void {
   const state = pipelineState(summary);
   const stateLabel =
@@ -225,7 +226,12 @@ function updatePipelineSummary(
   );
   setPipelineField(
     root,
-    "time",
+    "playback-time",
+    `${formattedMetric(playbackElapsedS, 3)} s`,
+  );
+  setPipelineField(
+    root,
+    "logical-time",
     `${formattedMetric(summary.logicalTimeS, 3)} s`,
   );
   setPipelineField(
@@ -748,8 +754,8 @@ export function MachineWorkspace() {
           getTurningState: () => lastTurningRunRef.current,
         };
         pipelineBinding = attachM7Pipeline(renderer, viewport, {
-          onGeneralSummary: (summary) =>
-            updatePipelineSummary(workspace, summary),
+          onGeneralSummary: (summary, playbackElapsedS) =>
+            updatePipelineSummary(workspace, summary, playbackElapsedS),
           onAxisSummary: (summary) => updateAxisSummary(workspace, summary),
         });
         const pipeline = pipelineBinding.harness;
@@ -784,7 +790,11 @@ export function MachineWorkspace() {
             executionMode: "realtime",
             playbackSpeed: WORKSPACE_PLAYBACK_SPEED,
           });
-          updatePipelineSummary(workspace, terminal);
+          updatePipelineSummary(
+            workspace,
+            terminal,
+            pipeline.getPipelineState().playbackElapsedS,
+          );
         };
 
         stopPipelineRef.current = async () => {
@@ -810,9 +820,14 @@ export function MachineWorkspace() {
             await persistenceBinding!.harness.saveFixture(
               fixture === "turning" ? "turning" : "milling",
             );
-            const summary = pipeline.getPipelineState().summary;
+            const pipelineSnapshot = pipeline.getPipelineState();
+            const summary = pipelineSnapshot.summary;
             if (summary) {
-              updatePipelineSummary(workspace, summary);
+              updatePipelineSummary(
+                workspace,
+                summary,
+                pipelineSnapshot.playbackElapsedS,
+              );
             }
             dispatchWorkspaceStatus({
               state: summary ? pipelineState(summary) : "idle",
@@ -887,9 +902,10 @@ export function MachineWorkspace() {
     }
     window.requestAnimationFrame(() => {
       const root = workspaceRef.current;
-      const summary = pipelineHarnessRef.current?.getPipelineState().summary;
-      if (root && summary) {
-        updatePipelineSummary(root, summary);
+      const pipelineSnapshot = pipelineHarnessRef.current?.getPipelineState();
+      const summary = pipelineSnapshot?.summary;
+      if (root && pipelineSnapshot && summary) {
+        updatePipelineSummary(root, summary, pipelineSnapshot.playbackElapsedS);
         updateAxisSummary(root, summary);
       }
     });
@@ -1110,8 +1126,12 @@ export function MachineWorkspace() {
                   <dd data-pipeline-field="step">0 / 0</dd>
                 </div>
                 <div>
-                  <dt>논리 시간</dt>
-                  <dd data-pipeline-field="time">0.000 s</dd>
+                  <dt>재생 경과</dt>
+                  <dd data-pipeline-field="playback-time">0.000 s</dd>
+                </div>
+                <div>
+                  <dt>가공 추정</dt>
+                  <dd data-pipeline-field="logical-time">0.000 s</dd>
                 </div>
                 <div>
                   <dt>제거 체적</dt>
@@ -1327,8 +1347,12 @@ export function MachineWorkspace() {
               <dd data-pipeline-field="step">0 / 0</dd>
             </div>
             <div>
-              <dt>시간</dt>
-              <dd data-pipeline-field="time">0.000 s</dd>
+              <dt>재생 경과</dt>
+              <dd data-pipeline-field="playback-time">0.000 s</dd>
+            </div>
+            <div>
+              <dt>가공 추정</dt>
+              <dd data-pipeline-field="logical-time">0.000 s</dd>
             </div>
             <div>
               <dt>공구 위치</dt>

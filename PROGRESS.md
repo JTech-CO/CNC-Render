@@ -1,11 +1,11 @@
 ﻿# CNC Render Progress
 
 - Current phase: M9 공개 릴리스 안정화
-- Status: 3축 밀링 재생 결함 로컬 수정·전체 검증 완료 — 커밋·공개 반영 대기
-- Last completed: VMC 좌표 정렬, 3초대 다중 패스 재생, 동적 Stock 절삭면 표시와 정적 outline 전환
+- Status: 재생 경과·가공 추정 시간 분리 구현·범위 검증 완료 — 전체 E2E WebGL 2 성능 게이트 안정성 확인 필요
+- Last completed: 실제 브라우저 재생 경과와 결정론적 G-code 가공 추정 시간을 별도 단위 필드로 표시
 - Next task: M10 튜토리얼·샌드박스 MVP(E2)
 - Open questions: 없음
-- Known regressions: 로컬 검증 범위에서 없음; 공개 URL은 수정 브랜치가 병합·배포될 때까지 이전 밀링 동작을 제공함
+- Known regressions: 기능 회귀는 확인되지 않았으나 전체 E2E 연속 실행의 WebGL 2 장기 작업 성능 게이트가 간헐 실패함; 공개 URL은 현재 변경이 병합·배포될 때까지 기존 시간 표기를 제공함
 
 ## M9 공개 릴리스 안정화 (2026-08-09)
 
@@ -50,6 +50,44 @@ SHA-256은 `d788f5b38bc27cd0429f5500e63ad6523fc1b9dce07574c2983a78b444bd9fec`다
 - Pages CSS는 정적 엔트리 때문에 생성 복사본을 사용한다. CI의
   `check:pages-styles`를 우회하면 다시 drift할 수 있으므로 필수 gate로 유지한다.
 
+## 재생 경과·가공 추정 시간 표시 분리 (2026-08-11)
+
+### 원인과 수정
+
+- 화면의 `52.260 s`는 재생이 실제로 소비한 시간이 아니라 G-code 이송 거리와
+  feed rate로 계산한 결정론적 논리 가공 시간이었다. ADR 0009에 따라 재생 속도는
+  화면 지연만 바꾸며 이 논리 시간을 바꾸지 않지만, UI가 이를 단순히 `시간`으로
+  표시해 약 3초의 재생 경과와 같은 값처럼 오해하게 했다.
+- 브라우저 adapter가 실행 시작부터 완료·충돌 정지·사용자 정지까지의 벽시계
+  경과를 `performance.now()`로 별도 계측한다. 이 값은 UI·browser harness 전용이며
+  Worker 메시지, WASM 결과, 저장 schema와 semantic hash에는 포함하지 않는다.
+- Inspector와 결과 영역을 `재생 경과`와 `가공 추정`으로 분리했다. 전자는 실제
+  표시 재생 시간을, 후자는 기존 `logicalTimeS`를 초 단위로 보여 준다.
+
+### 검증
+
+| Gate | Result |
+|---|---|
+| `git diff --check` | 통과 |
+| TypeScript·변경 파일 ESLint | 통과 |
+| `pnpm test:unit` | 통과 — 18 files, 136 tests |
+| `pnpm test:contracts` | 통과 — 13 files, 51 tests |
+| `pnpm test:parity` | 통과 — 8 files, 63 tests |
+| 시간 분리·점진 절삭 E2E | 통과 — WebGPU·WebGL 2, 4/4 passed; 재생 경과 1.5–10 s, 가공 추정 50 s 초과 |
+| `pnpm verify` | 통과 — 정책·버전·의존성·Cargo check·250 tests·production build |
+| `pnpm build:pages`·`pnpm test:pages` | 통과 — `/CNC-Render/` 정적 경로, Chromium 1/1 |
+| 전체 `pnpm test:e2e` | 미통과 — 두 연속 실행 모두 56 passed, 15 skipped, WebGL 2 장기 작업 성능 gate 1건 실패; 동일 테스트 단독 재실행 1/1 통과 |
+
+### 남은 위험
+
+- `재생 경과`는 브라우저 부하와 일시정지 시간을 포함하는 표시 telemetry다. 저장,
+  결과 비교, 채점에는 결정론적인 `가공 추정(logicalTimeS)`만 사용해야 한다.
+- 전체 E2E 연속 실행에서는 WebGL 2 프로젝트의 기존 성능 gate가 각각
+  `maximumMainHandlerMs = 213.3 ms`, `longTasksOver50Ms = 2`로 간헐 실패했다.
+  단독 실행은 통과했지만 전체 gate가 안정적으로 통과하기 전에는 이 작업을
+  완전 완료로 기록하지 않는다. 성능 기준은 변경하거나 완화하지 않았다.
+- 공개 URL은 이 브랜치가 커밋·병합·재배포되기 전까지 기존 `시간` 표기를 제공한다.
+
 ## 3축 밀링 재생·절삭 표시 결함 수정 (2026-08-10)
 
 ### 원인과 수정
@@ -88,8 +126,7 @@ SHA-256은 `d788f5b38bc27cd0429f5500e63ad6523fc1b9dce07574c2983a78b444bd9fec`다
 
 - 현재 교육용 재생은 G-code 구간 끝점 단위로 공구 위치와 Stock patch를 표시한다.
   서보 주기 보간이나 실제 이송 시간 재현은 아니며 E2 등급 preview다.
-- 수정은 로컬 `codex/fix-milling-playback` 브랜치에만 있다. 공개 URL은 커밋,
-  PR 병합과 Pages 재배포가 완료되기 전까지 이전 fixture를 계속 제공한다.
+- 수정은 PR #11로 `main`에 병합되었으며 GitHub Pages에 재배포됐다.
 
 ## M9 validation run
 

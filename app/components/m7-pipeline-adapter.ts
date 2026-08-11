@@ -17,12 +17,16 @@ export interface M7PipelineBrowserState extends CoordinatorSnapshot {
   readonly fixture: M7PipelineFixture | null;
   readonly baselineRenderFrame: number | null;
   readonly renderedOnFrame: number | null;
+  readonly playbackElapsedS: number;
   readonly longTasksOver50Ms: number;
   readonly maximumLongTaskMs: number;
 }
 
 export interface M7PipelineUiObserver {
-  readonly onGeneralSummary?: (summary: CoordinatorCoreSummary) => void;
+  readonly onGeneralSummary?: (
+    summary: CoordinatorCoreSummary,
+    playbackElapsedS: number,
+  ) => void;
   readonly onAxisSummary?: (summary: CoordinatorCoreSummary) => void;
 }
 
@@ -140,8 +144,20 @@ export function attachM7Pipeline(
   let baselineRenderFrame: number | null = null;
   let renderedOnFrame: number | null = null;
   let pendingRender: Promise<number> | null = null;
+  let playbackStartedAtMs: number | null = null;
+  let playbackEndedAtMs: number | null = null;
   let longTasksOver50Ms = 0;
   let maximumLongTaskMs = 0;
+
+  const playbackElapsedS = (): number => {
+    if (playbackStartedAtMs === null) {
+      return 0;
+    }
+    return Math.max(
+      0,
+      ((playbackEndedAtMs ?? performance.now()) - playbackStartedAtMs) / 1_000,
+    );
+  };
 
   let observingLongTasks = false;
   const longTaskObserver =
@@ -177,6 +193,14 @@ export function attachM7Pipeline(
   });
 
   const unsubscribeGeneral = coordinator.onGeneralSummary((summary) => {
+    if (
+      (summary.completed || summary.stopped) &&
+      playbackStartedAtMs !== null &&
+      playbackEndedAtMs === null
+    ) {
+      playbackEndedAtMs = performance.now();
+    }
+    const elapsedS = playbackElapsedS();
     viewport.dataset.pipelineState = summary.stopped
       ? "stopped"
       : summary.completed
@@ -185,6 +209,7 @@ export function attachM7Pipeline(
     viewport.dataset.pipelineRunId = summary.runId;
     viewport.dataset.pipelineFixture = summary.fixtureId;
     viewport.dataset.pipelineLogicalTimeS = String(summary.logicalTimeS);
+    viewport.dataset.pipelinePlaybackElapsedS = String(elapsedS);
     viewport.dataset.pipelineStockRevision = String(summary.stockRevision);
     viewport.dataset.pipelineStateHash = summary.stateSemanticHashSha256;
     viewport.dataset.pipelineFinalHash =
@@ -194,7 +219,7 @@ export function attachM7Pipeline(
     viewport.dataset.pipelineGeneralSamples = String(
       coordinator.getSnapshot().metrics.generalUiSamples,
     );
-    observer.onGeneralSummary?.(summary);
+    observer.onGeneralSummary?.(summary, elapsedS);
   });
 
   const unsubscribeAxis = coordinator.onAxisSummary((summary) => {
@@ -231,9 +256,12 @@ export function attachM7Pipeline(
       renderer.getDiagnostics().telemetry.framesRendered;
     renderedOnFrame = null;
     pendingRender = null;
+    playbackStartedAtMs = performance.now();
+    playbackEndedAtMs = null;
     renderer.setCollisionMarker(null);
     viewport.dataset.pipelineState = "starting";
     viewport.dataset.pipelineFixture = selectedFixture;
+    viewport.dataset.pipelinePlaybackElapsedS = "0";
     delete viewport.dataset.pipelineRenderedFrame;
     delete viewport.dataset.pipelineFinalHash;
     const runId = crypto.randomUUID();
@@ -258,7 +286,13 @@ export function attachM7Pipeline(
     pausePipeline: () => coordinator.pause(),
     resumePipeline: (playbackSpeed = 1) =>
       coordinator.resume(playbackSpeed),
-    cancelPipeline: () => coordinator.cancel(),
+    cancelPipeline: async () => {
+      await coordinator.cancel();
+      if (playbackStartedAtMs !== null && playbackEndedAtMs === null) {
+        playbackEndedAtMs = performance.now();
+      }
+      viewport.dataset.pipelinePlaybackElapsedS = String(playbackElapsedS());
+    },
     capturePipelineCheckpoint: () => coordinator.checkpoint(),
     async renderPipelineCheckpoint(checkpoint) {
       const before = renderer.getDiagnostics().telemetry.framesRendered;
@@ -280,6 +314,7 @@ export function attachM7Pipeline(
       fixture,
       baselineRenderFrame,
       renderedOnFrame,
+      playbackElapsedS: playbackElapsedS(),
       longTasksOver50Ms,
       maximumLongTaskMs,
     }),
