@@ -268,6 +268,22 @@ test.describe("M9 workspace UI", () => {
       "data-pipeline-axis-position",
       "170,80,370",
     );
+    const completedTiming = await page.evaluate(() => {
+      const state = window.__CNC_RENDER_M7__?.getPipelineState();
+      return {
+        playbackElapsedS: state?.playbackElapsedS,
+        logicalTimeS: state?.summary?.logicalTimeS,
+      };
+    });
+    expect(completedTiming.playbackElapsedS).toBeGreaterThan(1.5);
+    expect(completedTiming.playbackElapsedS).toBeLessThan(10);
+    expect(completedTiming.logicalTimeS).toBeGreaterThan(50);
+    expect(completedTiming.playbackElapsedS).toBeLessThan(
+      (completedTiming.logicalTimeS ?? 0) / 5,
+    );
+    await expect(
+      page.locator('[data-pipeline-field="playback-time"]').first(),
+    ).not.toHaveText("52.260 s");
     expect(Number(await viewport.getAttribute("data-render-frames"))).toBeGreaterThan(
       baselineFrames,
     );
@@ -277,6 +293,8 @@ test.describe("M9 workspace UI", () => {
 
     await page.getByTestId("workspace-area-results").click();
     await expect(page.locator(".context-panel")).toContainText("완료");
+    await expect(page.locator(".context-panel")).toContainText("재생 경과");
+    await expect(page.locator(".context-panel")).toContainText("가공 추정");
     await expect(page.locator(".context-panel")).toContainText("mm³");
   });
 });

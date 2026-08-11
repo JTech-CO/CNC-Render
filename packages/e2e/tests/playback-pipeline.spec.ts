@@ -46,6 +46,13 @@ test.describe("M7 Worker/WASM playback pipeline", () => {
     expect(realtime.state.renderedOnFrame).toBeGreaterThan(
       realtime.state.baselineRenderFrame ?? 0,
     );
+    expect(realtime.state.playbackElapsedS).toBeGreaterThanOrEqual(0);
+    expect(Number.isFinite(realtime.state.playbackElapsedS)).toBe(true);
+    expect(
+      Number(
+        await viewport.getAttribute("data-pipeline-playback-elapsed-s"),
+      ),
+    ).toBeCloseTo(realtime.state.playbackElapsedS, 3);
 
     const fastForward = await page.evaluate(async () => {
       const harness = window.__CNC_RENDER_M7__;
