@@ -79,7 +79,10 @@ describe("M7 simulation coordinator lifecycle", () => {
     expect(metrics.axisUiSamples).toBeGreaterThanOrEqual(
       metrics.generalUiSamples,
     );
+    expect(metrics.maximumMainHandlerMs).toBeGreaterThan(0);
     expect(metrics.maximumMainHandlerMs).toBeLessThan(50);
+    coordinator.beginMainThreadPerformanceWindow();
+    expect(coordinator.getSnapshot().metrics.maximumMainHandlerMs).toBe(0);
     coordinator.dispose();
   });
 });

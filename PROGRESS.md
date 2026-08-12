@@ -1,11 +1,11 @@
 ﻿# CNC Render Progress
 
-- Current phase: M9 공개 릴리스 안정화
-- Status: 재생 경과·가공 추정 시간 분리 구현·범위 검증 완료 — 전체 E2E WebGL 2 성능 게이트 안정성 확인 필요
-- Last completed: 실제 브라우저 재생 경과와 결정론적 G-code 가공 추정 시간을 별도 단위 필드로 표시
-- Next task: M10 튜토리얼·샌드박스 MVP(E2)
+- Current phase: M10 튜토리얼·샌드박스 MVP(E2) 착수 준비
+- Status: 시간 표시 PR #12 배포 및 WebGL 2 전체 E2E 성능 gate 안정화 완료
+- Last completed: WebGL 2 결정론 성능 시나리오 10회와 전체 E2E 순서를 50 ms 기준 변경 없이 통과
+- Next task: M10 Lesson·Step·allowed action·success/failure rule 계약과 첫 대표 실습 fixture 구현
 - Open questions: 없음
-- Known regressions: 기능 회귀는 확인되지 않았으나 전체 E2E 연속 실행의 WebGL 2 장기 작업 성능 게이트가 간헐 실패함; 공개 URL은 현재 변경이 병합·배포될 때까지 기존 시간 표기를 제공함
+- Known regressions: 없음
 
 ## M9 공개 릴리스 안정화 (2026-08-09)
 
@@ -86,7 +86,45 @@ SHA-256은 `d788f5b38bc27cd0429f5500e63ad6523fc1b9dce07574c2983a78b444bd9fec`다
   `maximumMainHandlerMs = 213.3 ms`, `longTasksOver50Ms = 2`로 간헐 실패했다.
   단독 실행은 통과했지만 전체 gate가 안정적으로 통과하기 전에는 이 작업을
   완전 완료로 기록하지 않는다. 성능 기준은 변경하거나 완화하지 않았다.
-- 공개 URL은 이 브랜치가 커밋·병합·재배포되기 전까지 기존 `시간` 표기를 제공한다.
+- PR #12는 CI run `31475757460` 통과 후 `main`에 병합됐고, main run
+  `31476057436`의 Pages smoke와 배포가 merge SHA `3bf41dd4b11ae032f9f834e55588afb8b999c9d9`로 완료됐다.
+
+## WebGL 2 전체 E2E 성능 게이트 안정화 (2026-08-12, 완료)
+
+### 원인과 수정
+
+- `SimulationCoordinator.maximumMainHandlerMs`가 첫 대표 재생 전 Worker handshake와
+  초기화 처리 시간까지 누적해 실제 재생 성능 gate를 오염시켰다. 첫 대표 재생에서
+  handler 계측 창을 명시적으로 시작하되 50 ms 기준은 변경하지 않았다.
+- Long Task observer가 첫 재생 이후 계속 열린 채 테스트 assertion과 재생 사이 유휴
+  작업까지 누적했다. 각 재생의 시작·종료 시각을 별도 창으로 기록하고 entry 시작
+  시각이 실제 재생 창 안에 있을 때만 집계하며, `takeRecords()`로 지연 전달도 비운다.
+- E2E는 재생 창 밖에서 의도적으로 60 ms 작업 두 개를 만들고 누적치가 변하지 않는지
+  검증한다. 이 검사는 기준 완화가 아니라 gate가 대표 재생 비용만 측정하는지 확인한다.
+- 렌더 업데이트를 별도 프레임 큐로 옮기거나 Worker 처리를 microtask로 미루는 실험은
+  현재 머신의 Long Task 수를 줄이지 못해 최종 변경에서 제외했다. 렌더·파서·UI 샘플링
+  순서와 결정론 계약은 기존 경로를 유지한다.
+
+### 검증
+
+| Gate | Result |
+|---|---|
+| `git diff --check` | 통과 |
+| TypeScript·변경 파일 ESLint | 통과 |
+| `pnpm test:unit --filter simulation-coordinator` | 통과 — 1 file, 2 tests |
+| 고정 Node 24.18.0 `pnpm verify` | 통과 — unit 136, contract 51, parity 63, dependency 위반 0, Cargo check, production build |
+| WebGL 2 결정론 성능 시나리오 10회 | 통과 — 10/10, 1.0 min; 50 ms handler·Long Task 기준 유지 |
+| WebGL 2 전체 프로젝트 | 통과 — 23 passed, 조건부 1 skipped, 43.5 s |
+| 전체 `pnpm test:e2e` 순서 | 통과 — WebGPU·WebGL 2 57 passed, 조건부 visual 15 skipped, 1.9 min |
+| 외부 Vite 우선순위 복원 | 통과 — 각 검증 종료 후 `Idle`에서 원래 `Normal`로 복원 |
+
+### 남은 위험
+
+- Playwright는 SwiftShader software renderer를 사용하므로 실제 GPU 기기별 frame-time은
+  별도 benchmark 범위다. 이 gate는 Worker handler와 Long Task 회귀를 검출한다.
+- 동일 머신의 별도 고CPU 작업과 동시에 실행하면 scheduler 경합이 실제 Long Task를
+  만들 수 있다. 완료 검증은 승인된 외부 Vite 우선순위 조정 조건에서 수행했고, 테스트
+  임계값·retry·fixture 복잡도는 변경하지 않았다.
 
 ## 3축 밀링 재생·절삭 표시 결함 수정 (2026-08-10)
 

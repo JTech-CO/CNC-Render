@@ -550,6 +550,10 @@ export class SimulationCoordinator {
     });
   }
 
+  beginMainThreadPerformanceWindow(): void {
+    this.#metrics.maximumMainHandlerMs = 0;
+  }
+
   getSnapshot(): CoordinatorSnapshot {
     return {
       status: this.#status,

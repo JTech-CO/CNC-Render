@@ -30,6 +30,11 @@ export interface M7PipelineUiObserver {
   readonly onAxisSummary?: (summary: CoordinatorCoreSummary) => void;
 }
 
+interface PlaybackPerformanceWindow {
+  readonly startedAtMs: number;
+  endedAtMs: number | null;
+}
+
 export interface M7PipelineHarness {
   startPipelineFixture(
     fixture: M7PipelineFixture,
@@ -148,6 +153,42 @@ export function attachM7Pipeline(
   let playbackEndedAtMs: number | null = null;
   let longTasksOver50Ms = 0;
   let maximumLongTaskMs = 0;
+  let performanceMeasurementStarted = false;
+  let activePerformanceWindow: PlaybackPerformanceWindow | null = null;
+  const playbackPerformanceWindows: PlaybackPerformanceWindow[] = [];
+  let longTaskObserver: PerformanceObserver | null = null;
+
+  const recordPlaybackLongTasks = (
+    entries: readonly PerformanceEntry[],
+  ): void => {
+    for (const entry of entries) {
+      const belongsToPlayback = playbackPerformanceWindows.some(
+        ({ startedAtMs, endedAtMs }) =>
+          entry.startTime >= startedAtMs &&
+          (endedAtMs === null || entry.startTime <= endedAtMs),
+      );
+      if (!belongsToPlayback) {
+        continue;
+      }
+      maximumLongTaskMs = Math.max(maximumLongTaskMs, entry.duration);
+      if (entry.duration > 50) {
+        longTasksOver50Ms += 1;
+      }
+    }
+  };
+
+  const endPerformanceWindow = (endedAtMs = performance.now()): void => {
+    if (activePerformanceWindow && activePerformanceWindow.endedAtMs === null) {
+      activePerformanceWindow.endedAtMs = endedAtMs;
+    }
+    activePerformanceWindow = null;
+  };
+
+  const flushLongTaskRecords = (): void => {
+    if (longTaskObserver) {
+      recordPlaybackLongTasks(longTaskObserver.takeRecords());
+    }
+  };
 
   const playbackElapsedS = (): number => {
     if (playbackStartedAtMs === null) {
@@ -159,17 +200,11 @@ export function attachM7Pipeline(
     );
   };
 
-  let observingLongTasks = false;
-  const longTaskObserver =
+  longTaskObserver =
     typeof PerformanceObserver !== "undefined" &&
     PerformanceObserver.supportedEntryTypes.includes("longtask")
       ? new PerformanceObserver((list) => {
-          for (const entry of list.getEntries()) {
-            maximumLongTaskMs = Math.max(maximumLongTaskMs, entry.duration);
-            if (entry.duration > 50) {
-              longTasksOver50Ms += 1;
-            }
-          }
+          recordPlaybackLongTasks(list.getEntries());
         })
       : null;
 
@@ -199,6 +234,7 @@ export function attachM7Pipeline(
       playbackEndedAtMs === null
     ) {
       playbackEndedAtMs = performance.now();
+      endPerformanceWindow(playbackEndedAtMs);
     }
     const elapsedS = playbackElapsedS();
     viewport.dataset.pipelineState = summary.stopped
@@ -247,17 +283,27 @@ export function attachM7Pipeline(
     } = {},
   ): Promise<CoordinatorCoreSummary> {
     fixture = selectedFixture;
-    if (longTaskObserver && !observingLongTasks) {
-      longTaskObserver.takeRecords();
-      longTaskObserver.observe({ entryTypes: ["longtask"] });
-      observingLongTasks = true;
+    if (!performanceMeasurementStarted) {
+      coordinator.beginMainThreadPerformanceWindow();
+      longTaskObserver?.takeRecords();
+      longTaskObserver?.observe({ entryTypes: ["longtask"] });
+      performanceMeasurementStarted = true;
     }
+    flushLongTaskRecords();
     baselineRenderFrame =
       renderer.getDiagnostics().telemetry.framesRendered;
     renderedOnFrame = null;
     pendingRender = null;
     playbackStartedAtMs = performance.now();
     playbackEndedAtMs = null;
+    activePerformanceWindow = {
+      startedAtMs: playbackStartedAtMs,
+      endedAtMs: null,
+    };
+    playbackPerformanceWindows.push(activePerformanceWindow);
+    if (playbackPerformanceWindows.length > 4) {
+      playbackPerformanceWindows.shift();
+    }
     renderer.setCollisionMarker(null);
     viewport.dataset.pipelineState = "starting";
     viewport.dataset.pipelineFixture = selectedFixture;
@@ -291,6 +337,8 @@ export function attachM7Pipeline(
       if (playbackStartedAtMs !== null && playbackEndedAtMs === null) {
         playbackEndedAtMs = performance.now();
       }
+      endPerformanceWindow(playbackEndedAtMs ?? performance.now());
+      flushLongTaskRecords();
       viewport.dataset.pipelinePlaybackElapsedS = String(playbackElapsedS());
     },
     capturePipelineCheckpoint: () => coordinator.checkpoint(),
@@ -309,15 +357,18 @@ export function attachM7Pipeline(
       return frame;
     },
     restartPipelineWorker: () => coordinator.restartWorker(),
-    getPipelineState: () => ({
-      ...coordinator.getSnapshot(),
-      fixture,
-      baselineRenderFrame,
-      renderedOnFrame,
-      playbackElapsedS: playbackElapsedS(),
-      longTasksOver50Ms,
-      maximumLongTaskMs,
-    }),
+    getPipelineState: () => {
+      flushLongTaskRecords();
+      return {
+        ...coordinator.getSnapshot(),
+        fixture,
+        baselineRenderFrame,
+        renderedOnFrame,
+        playbackElapsedS: playbackElapsedS(),
+        longTasksOver50Ms,
+        maximumLongTaskMs,
+      };
+    },
   };
 
   return {
@@ -326,6 +377,8 @@ export function attachM7Pipeline(
       unsubscribeRender();
       unsubscribeGeneral();
       unsubscribeAxis();
+      endPerformanceWindow();
+      flushLongTaskRecords();
       longTaskObserver?.disconnect();
       coordinator.dispose();
     },
