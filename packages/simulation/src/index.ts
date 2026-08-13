@@ -13,4 +13,5 @@ export * from "./material-removal-milling";
 export * from "./milling-target-measurement";
 export * from "./material-removal-turning-demo";
 export * from "./material-removal-turning";
+export * from "./turning-target-measurement";
 export * from "./wasm-runtime";

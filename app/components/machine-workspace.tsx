@@ -2,8 +2,11 @@
 
 import type { CoordinatorCoreSummary } from "@cnc-render/contracts";
 import {
+  DrillingLessonController,
   FaceMillingLessonController,
+  OdTurningLessonController,
   type FaceMillingLessonSnapshot,
+  type TurningProfileLessonSnapshot,
 } from "@cnc-render/web/foundation";
 import {
   CAMERA_PRESETS,
@@ -21,8 +24,11 @@ import type {
 import {
   createM5MillingDemoSession,
   createM6TurningDemoSession,
+  createM7DrillingTarget,
   createM7FaceMillingTarget,
+  createM7OdTurningTarget,
   measureMillingStockAgainstTarget,
+  measureTurningStockAgainstTarget,
   runM4CollisionStopDemo,
   type CollisionEvent,
   type LatheRadiusFieldEngine,
@@ -36,7 +42,9 @@ import {
   type SparseDexelMillingEngine,
   type TurningMaterialRemovalDiagnostics,
 } from "@cnc-render/simulation";
+import drillingLessonDocument from "../../content/lessons/ko/drilling.lesson.json";
 import faceMillingLessonDocument from "../../content/lessons/ko/face-milling.lesson.json";
+import odTurningLessonDocument from "../../content/lessons/ko/od-turning.lesson.json";
 import {
   useCallback,
   useEffect,
@@ -118,8 +126,17 @@ interface CncRenderM6Harness extends CncRenderM5Harness {
   getTurningState(): M6TurningBrowserRun | null;
 }
 
+type M10LessonId = "face-milling" | "od-turning" | "drilling";
+type M10LessonController =
+  | DrillingLessonController
+  | FaceMillingLessonController
+  | OdTurningLessonController;
+type M10LessonSnapshot =
+  | FaceMillingLessonSnapshot
+  | TurningProfileLessonSnapshot;
+
 interface CncRenderM10Harness {
-  getLessonState(): FaceMillingLessonSnapshot;
+  getLessonState(): M10LessonSnapshot;
 }
 
 declare global {
@@ -281,11 +298,13 @@ function updatePipelineSummary(
   dispatchWorkspaceStatus({
     state,
     fixture:
-      summary.fixtureId.includes("turning")
-        ? "turning"
-        : summary.fixtureId.includes("collision")
-          ? "collision-stop"
-          : "milling",
+      summary.fixtureId.includes("drilling")
+        ? "drilling"
+        : summary.fixtureId.includes("turning")
+          ? "turning"
+          : summary.fixtureId.includes("collision")
+            ? "collision-stop"
+            : "milling",
   });
 }
 
@@ -307,12 +326,20 @@ export function MachineWorkspace() {
   const [faceMillingLessonController] = useState(
     () => new FaceMillingLessonController(faceMillingLessonDocument),
   );
+  const [odTurningLessonController] = useState(
+    () => new OdTurningLessonController(odTurningLessonDocument),
+  );
+  const [drillingLessonController] = useState(
+    () => new DrillingLessonController(drillingLessonDocument),
+  );
   const [activeArea, setActiveArea] = useState<WorkspaceArea>("scene");
   const [dockTab, setDockTab] = useState<DockTab>("gcode");
   const [selectedPipelineFixture, setSelectedPipelineFixture] =
     useState<M7PipelineFixture>("milling");
-  const [faceMillingLesson, setFaceMillingLesson] =
-    useState<FaceMillingLessonSnapshot>(() =>
+  const [activeLessonId, setActiveLessonId] =
+    useState<M10LessonId>("face-milling");
+  const [activeLesson, setActiveLesson] =
+    useState<M10LessonSnapshot>(() =>
       faceMillingLessonController.getSnapshot(),
     );
   const [lessonPipelineReady, setLessonPipelineReady] = useState(false);
@@ -321,6 +348,10 @@ export function MachineWorkspace() {
     null,
   );
   const activeAreaRef = useRef<WorkspaceArea>("scene");
+  const activeLessonIdRef = useRef<M10LessonId>("face-milling");
+  const activeLessonControllerRef = useRef<M10LessonController>(
+    faceMillingLessonController,
+  );
   const workspaceRef = useRef<HTMLDivElement>(null);
   const fixtureSelectRef = useRef<HTMLSelectElement>(null);
   const stockPresetSelectRef = useRef<HTMLSelectElement>(null);
@@ -331,8 +362,8 @@ export function MachineWorkspace() {
   >(null);
   const playToggleRef = useRef<() => Promise<void>>(async () => undefined);
   const publishLessonSnapshot = useCallback(() => {
-    setFaceMillingLesson(faceMillingLessonController.getSnapshot());
-  }, [faceMillingLessonController]);
+    setActiveLesson(activeLessonControllerRef.current.getSnapshot());
+  }, []);
   const stopPipelineRef = useRef<() => Promise<void>>(async () => undefined);
   const saveWorkspaceRef = useRef<() => Promise<void>>(async () => undefined);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -799,9 +830,13 @@ export function MachineWorkspace() {
 
         const selectedFixture = (): M7PipelineFixture => {
           const value = fixtureSelectRef.current?.value;
-          return value === "turning" || value === "collision-stop"
-            ? value
-            : "milling";
+          return (
+            value === "turning" ||
+            value === "drilling" ||
+            value === "collision-stop"
+              ? value
+              : "milling"
+          );
         };
         const selectedMillingConfiguration = (): M7MillingConfiguration => {
           const stockPreset: M7MillingStockPreset =
@@ -835,7 +870,7 @@ export function MachineWorkspace() {
           let millingConfiguration = selectedMillingConfiguration();
           const lesson =
             activeAreaRef.current === "learn"
-              ? faceMillingLessonController
+              ? activeLessonControllerRef.current
               : null;
           let lessonRun = false;
           if (lesson) {
@@ -844,23 +879,28 @@ export function MachineWorkspace() {
             if (transition.decision.outcome === "guided-warning") {
               return;
             }
-            lessonRun = lesson.getSnapshot().running;
+            const lessonSnapshot = lesson.getSnapshot();
+            lessonRun = lessonSnapshot.running;
             if (!lessonRun) {
               return;
             }
-            fixture = "milling";
-            millingConfiguration = lesson.getSnapshot().configuration;
-            setSelectedPipelineFixture("milling");
+            if ("configuration" in lessonSnapshot) {
+              fixture = "milling";
+              millingConfiguration = lessonSnapshot.configuration;
+              if (stockPresetSelectRef.current) {
+                stockPresetSelectRef.current.value =
+                  millingConfiguration.stockPreset;
+              }
+              if (cutDirectionSelectRef.current) {
+                cutDirectionSelectRef.current.value =
+                  millingConfiguration.cutDirection;
+              }
+            } else {
+              fixture = lessonSnapshot.fixture;
+            }
+            setSelectedPipelineFixture(fixture);
             if (fixtureSelectRef.current) {
-              fixtureSelectRef.current.value = "milling";
-            }
-            if (stockPresetSelectRef.current) {
-              stockPresetSelectRef.current.value =
-                millingConfiguration.stockPreset;
-            }
-            if (cutDirectionSelectRef.current) {
-              cutDirectionSelectRef.current.value =
-                millingConfiguration.cutDirection;
+              fixtureSelectRef.current.value = fixture;
             }
           }
 
@@ -893,8 +933,9 @@ export function MachineWorkspace() {
 
         stopPipelineRef.current = async () => {
           await pipeline.cancelPipeline();
-          if (faceMillingLessonController.getSnapshot().running) {
-            faceMillingLessonController.abortExecution();
+          const lesson = activeLessonControllerRef.current;
+          if (lesson.getSnapshot().running) {
+            lesson.abortExecution();
             publishLessonSnapshot();
           }
           dispatchWorkspaceStatus({
@@ -904,7 +945,8 @@ export function MachineWorkspace() {
         };
         window.__CNC_RENDER_M7__ = pipelineBinding.harness;
         window.__CNC_RENDER_M10__ = {
-          getLessonState: () => faceMillingLessonController.getSnapshot(),
+          getLessonState: () =>
+            activeLessonControllerRef.current.getSnapshot(),
         };
         setLessonPipelineReady(true);
         publishLessonSnapshot();
@@ -921,7 +963,7 @@ export function MachineWorkspace() {
           saveWorkspaceRef.current = async () => {
             const fixture = selectedFixture();
             await persistenceBinding!.harness.saveFixture(
-              fixture === "turning" ? "turning" : "milling",
+              fixture === "collision-stop" ? "milling" : fixture,
               selectedMillingConfiguration(),
             );
             const pipelineSnapshot = pipeline.getPipelineState();
@@ -993,7 +1035,12 @@ export function MachineWorkspace() {
       delete window.__CNC_RENDER_M8__;
       delete window.__CNC_RENDER_M10__;
     };
-  }, [faceMillingLessonController, publishLessonSnapshot]);
+  }, [
+    drillingLessonController,
+    faceMillingLessonController,
+    odTurningLessonController,
+    publishLessonSnapshot,
+  ]);
 
   const setView = (view: CameraPresetId) => {
     rendererRef.current?.setCameraPreset(view);
@@ -1057,45 +1104,65 @@ export function MachineWorkspace() {
     nextTab.click();
   };
 
-  const selectLessonMillingDefaults = () => {
-    const configuration = faceMillingLessonController.getSnapshot().configuration;
-    setSelectedPipelineFixture("milling");
+  const selectLessonDefaults = (
+    snapshot = activeLessonControllerRef.current.getSnapshot(),
+  ) => {
+    const fixture: Extract<M7PipelineFixture, "drilling" | "milling" | "turning"> =
+      "configuration" in snapshot ? "milling" : snapshot.fixture;
+    setSelectedPipelineFixture(fixture);
     if (fixtureSelectRef.current) {
-      fixtureSelectRef.current.value = "milling";
+      fixtureSelectRef.current.value = fixture;
     }
-    if (stockPresetSelectRef.current) {
-      stockPresetSelectRef.current.value = configuration.stockPreset;
-    }
-    if (cutDirectionSelectRef.current) {
-      cutDirectionSelectRef.current.value = configuration.cutDirection;
+    if ("configuration" in snapshot) {
+      if (stockPresetSelectRef.current) {
+        stockPresetSelectRef.current.value = snapshot.configuration.stockPreset;
+      }
+      if (cutDirectionSelectRef.current) {
+        cutDirectionSelectRef.current.value = snapshot.configuration.cutDirection;
+      }
     }
   };
 
+  const switchLesson = (lessonId: M10LessonId) => {
+    const controller =
+      lessonId === "od-turning"
+        ? odTurningLessonController
+        : lessonId === "drilling"
+          ? drillingLessonController
+          : faceMillingLessonController;
+    activeLessonIdRef.current = lessonId;
+    activeLessonControllerRef.current = controller;
+    setActiveLessonId(lessonId);
+    setActiveLesson(controller.getSnapshot());
+    setLessonActionError(null);
+    selectLessonDefaults(controller.getSnapshot());
+  };
+
   const restoreLessonStep = () => {
-    faceMillingLessonController.restoreStepCheckpoint();
+    activeLessonControllerRef.current.restoreStepCheckpoint();
     setLessonActionError(null);
     publishLessonSnapshot();
   };
 
   const handleLessonPrimaryAction = async () => {
-    const lesson = faceMillingLessonController;
+    const lesson = activeLessonControllerRef.current;
     const before = lesson.getSnapshot();
     setLessonActionError(null);
     setLessonActionPending(true);
     try {
       if (before.controller.status === "completed") {
         lesson.reset();
-        selectLessonMillingDefaults();
+        selectLessonDefaults(lesson.getSnapshot());
         return;
       }
 
       switch (before.controller.currentStep.phase) {
         case "prepare":
-          selectLessonMillingDefaults();
+          selectLessonDefaults(before);
           lesson.prepare();
           break;
         case "setup":
-          selectLessonMillingDefaults();
+          selectLessonDefaults(before);
           lesson.setup();
           break;
         case "execute":
@@ -1110,15 +1177,32 @@ export function MachineWorkspace() {
           }
           const checkpoint =
             await pipelineHarnessRef.current.capturePipelineCheckpoint();
-          if (checkpoint.render.renderType !== "milling-full") {
-            throw new Error("평면 밀링 Stock checkpoint가 필요합니다.");
+          if ("configuration" in before) {
+            if (checkpoint.render.renderType !== "milling-full") {
+              throw new Error("평면 밀링 Stock checkpoint가 필요합니다.");
+            }
+            const target = createM7FaceMillingTarget(before.configuration);
+            faceMillingLessonController.recordMeasurement(
+              measureMillingStockAgainstTarget(checkpoint.render, target),
+            );
+            break;
           }
-          const target = createM7FaceMillingTarget(before.configuration);
-          const measurement = measureMillingStockAgainstTarget(
+          if (checkpoint.render.renderType !== "turning-full") {
+            throw new Error("선삭 반경 필드 Stock checkpoint가 필요합니다.");
+          }
+          const target =
+            activeLessonIdRef.current === "od-turning"
+              ? createM7OdTurningTarget()
+              : createM7DrillingTarget();
+          const measurement = measureTurningStockAgainstTarget(
             checkpoint.render,
             target,
           );
-          lesson.recordMeasurement(measurement);
+          if (activeLessonIdRef.current === "od-turning") {
+            odTurningLessonController.recordMeasurement(measurement);
+          } else {
+            drillingLessonController.recordMeasurement(measurement);
+          }
           break;
         }
         case "assess":
@@ -1140,10 +1224,10 @@ export function MachineWorkspace() {
     }
   };
 
-  const lessonStep = faceMillingLesson.controller.currentStep;
-  const lessonPrimaryLabel = faceMillingLesson.running
+  const lessonStep = activeLesson.controller.currentStep;
+  const lessonPrimaryLabel = activeLesson.running
     ? "Worker/WASM 실행 중…"
-    : faceMillingLesson.controller.status === "completed"
+    : activeLesson.controller.status === "completed"
       ? "Lesson 다시 시작"
       : lessonStep.phase === "prepare"
         ? "준비 확인"
@@ -1158,8 +1242,8 @@ export function MachineWorkspace() {
     lessonStep.phase === "execute" || lessonStep.phase === "measure";
   const lessonPrimaryDisabled =
     lessonActionPending ||
-    faceMillingLesson.running ||
-    faceMillingLesson.controller.status === "failed" ||
+    activeLesson.running ||
+    activeLesson.controller.status === "failed" ||
     (lessonNeedsPipeline && !lessonPipelineReady);
   const lessonPhaseLabel = {
     prepare: "준비",
@@ -1314,22 +1398,37 @@ export function MachineWorkspace() {
           ) : activeArea === "learn" ? (
             <div
               className="context-content"
-              data-testid="face-milling-lesson"
+              data-testid="tutorial-lesson"
             >
               <p className="context-kicker">GUIDED LESSON · E2</p>
-              <h3>{faceMillingLesson.controller.lesson.title}</h3>
+              <label className="fixture-select">
+                <span>Lesson</span>
+                <select
+                  data-testid="lesson-selector"
+                  disabled={activeLesson.running || lessonActionPending}
+                  onChange={(event) =>
+                    switchLesson(event.currentTarget.value as M10LessonId)
+                  }
+                  value={activeLessonId}
+                >
+                  <option value="face-milling">{faceMillingLessonDocument.title}</option>
+                  <option value="od-turning">{odTurningLessonDocument.title}</option>
+                  <option value="drilling">{drillingLessonDocument.title}</option>
+                </select>
+              </label>
+              <h3>{activeLesson.controller.lesson.title}</h3>
               <ol className="learning-steps" aria-label="Lesson 5단계">
-                {faceMillingLesson.controller.lesson.steps.map(
+                {activeLesson.controller.lesson.steps.map(
                   (step, index) => {
                     const completed =
-                      faceMillingLesson.controller.completedStepIds.includes(
+                      activeLesson.controller.completedStepIds.includes(
                         step.id,
                       );
                     const active = lessonStep.id === step.id;
                     const state = completed
                       ? "completed"
                       : active &&
-                          faceMillingLesson.controller.status === "failed"
+                          activeLesson.controller.status === "failed"
                         ? "failed"
                         : active
                           ? "active"
@@ -1360,26 +1459,26 @@ export function MachineWorkspace() {
                 )}
               </ol>
               <section
-                aria-busy={faceMillingLesson.running || lessonActionPending}
+                aria-busy={activeLesson.running || lessonActionPending}
                 aria-live="polite"
                 className="lesson-current"
                 data-lesson-phase={lessonStep.phase}
-                data-lesson-status={faceMillingLesson.controller.status}
+                data-lesson-status={activeLesson.controller.status}
               >
                 <p className="lesson-phase">
-                  {lessonPhaseLabel} · {faceMillingLesson.controller.currentStepIndex + 1} / 5
+                  {lessonPhaseLabel} · {activeLesson.controller.currentStepIndex + 1} / 5
                 </p>
                 <h4>{lessonStep.title}</h4>
                 <p>{lessonStep.instruction}</p>
-                {faceMillingLesson.controller.guidance ? (
+                {activeLesson.controller.guidance ? (
                   <div className="lesson-guidance" role="alert">
-                    <p>{faceMillingLesson.controller.guidance.reason}</p>
+                    <p>{activeLesson.controller.guidance.reason}</p>
                     <button
                       className="context-secondary"
                       onClick={restoreLessonStep}
                       type="button"
                     >
-                      {faceMillingLesson.controller.guidance.recovery.label}
+                      {activeLesson.controller.guidance.recovery.label}
                     </button>
                   </div>
                 ) : null}
@@ -1388,43 +1487,65 @@ export function MachineWorkspace() {
                     {lessonActionError}
                   </p>
                 ) : null}
-                {faceMillingLesson.measurement ? (
+                {activeLesson.measurement ? (
                   <dl
                     className="lesson-measurement"
                     data-testid="lesson-measurement"
                   >
                     <div>
                       <dt>최대 형상 편차</dt>
-                      <dd>{formattedMetric(faceMillingLesson.measurement.maxDeviationMm, 3)} mm</dd>
+                      <dd>{formattedMetric(activeLesson.measurement.maxDeviationMm, 3)} mm</dd>
                     </div>
                     <div>
                       <dt>과절삭</dt>
-                      <dd>{formattedMetric(faceMillingLesson.measurement.overcutVolumeMm3, 2)} mm³</dd>
+                      <dd>{formattedMetric(activeLesson.measurement.overcutVolumeMm3, 2)} mm³</dd>
                     </div>
                     <div>
                       <dt>미절삭</dt>
-                      <dd>{formattedMetric(faceMillingLesson.measurement.undercutVolumeMm3, 2)} mm³</dd>
+                      <dd>{formattedMetric(activeLesson.measurement.undercutVolumeMm3, 2)} mm³</dd>
                     </div>
                     <div>
                       <dt>실제 / 목표 제거</dt>
                       <dd>
-                        {formattedMetric(faceMillingLesson.measurement.actualRemovedVolumeMm3, 0)} / {formattedMetric(faceMillingLesson.measurement.targetRemovedVolumeMm3, 0)} mm³
+                        {formattedMetric(activeLesson.measurement.actualRemovedVolumeMm3, 0)} / {formattedMetric(activeLesson.measurement.targetRemovedVolumeMm3, 0)} mm³
                       </dd>
                     </div>
                     <div>
                       <dt>표현 해상도</dt>
-                      <dd>{formattedMetric(faceMillingLesson.measurement.representationResolutionMm, 1)} mm</dd>
+                      <dd>{formattedMetric(activeLesson.measurement.representationResolutionMm, 1)} mm</dd>
                     </div>
+                    {"feature" in activeLesson.measurement ? (
+                      <>
+                        <div>
+                          <dt>
+                            {activeLesson.measurement.feature.kind === "outer-diameter" ? "외경" : "구멍 지름"} (실제 / 목표)
+                          </dt>
+                          <dd>
+                            {formattedMetric(activeLesson.measurement.feature.actualDiameterMm, 2)} /{" "}
+                            {formattedMetric(activeLesson.measurement.feature.targetDiameterMm, 2)} mm
+                          </dd>
+                        </div>
+                        {activeLesson.measurement.feature.kind === "drilled-hole" ? (
+                          <div>
+                            <dt>홀 깊이 (실제 / 목표)</dt>
+                            <dd>
+                              {formattedMetric(activeLesson.measurement.feature.actualDepthMm, 2)} /{" "}
+                              {formattedMetric(activeLesson.measurement.feature.targetDepthMm, 2)} mm
+                            </dd>
+                          </div>
+                        ) : null}
+                      </>
+                    ) : null}
                   </dl>
                 ) : null}
-                {faceMillingLesson.controller.score ? (
+                {activeLesson.controller.score ? (
                   <div className="lesson-score" data-testid="lesson-score">
                     <span>결정론적 점수</span>
                     <strong>
-                      {formattedMetric(faceMillingLesson.controller.score.score, 2)} / 100
+                      {formattedMetric(activeLesson.controller.score.score, 2)} / 100
                     </strong>
                     <small>
-                      {faceMillingLesson.controller.score.passed
+                      {activeLesson.controller.score.passed
                         ? "통과"
                         : "재학습 필요"}
                     </small>
@@ -1441,7 +1562,7 @@ export function MachineWorkspace() {
                 {lessonPrimaryLabel}
               </button>
               <ul className="lesson-limitations" aria-label="E2 제한 사항">
-                {faceMillingLesson.controller.lesson.accuracy.limitations.map(
+                {activeLesson.controller.lesson.accuracy.limitations.map(
                   (limitation) => <li key={limitation}>{limitation}</li>,
                 )}
               </ul>
@@ -1642,15 +1763,18 @@ export function MachineWorkspace() {
               onChange={(event) => {
                 const value = event.currentTarget.value;
                 setSelectedPipelineFixture(
-                  value === "turning" || value === "collision-stop"
-                    ? value
-                    : "milling",
+                  value === "turning" ||
+                    value === "drilling" ||
+                    value === "collision-stop"
+                      ? value
+                      : "milling",
                 );
               }}
               ref={fixtureSelectRef}
             >
               <option value="milling">3축 밀링</option>
               <option value="turning">외경 선삭</option>
+              <option value="drilling">센터 드릴링</option>
               <option value="collision-stop">충돌 정지</option>
             </select>
           </label>

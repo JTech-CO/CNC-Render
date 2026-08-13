@@ -1,4 +1,6 @@
 import {
+  createM7DrillingTarget,
+  createM7OdTurningTarget,
   createM7MillingToolpathPoints,
   createM7PipelineFixture,
 } from "../../packages/simulation/src/coordinator-fixtures";
@@ -58,5 +60,67 @@ M30
     );
     expect(collision.source).toContain("G1 X170 F2400");
     expect(collision.source).not.toContain("G1 Y60 F2400");
+  });
+});
+
+describe("M10 turning and drilling fixture targets", () => {
+  it("pairs the OD turning run with an independently authored radius target", () => {
+    const run = createM7PipelineFixture("turning", RUN_ID);
+    const target = createM7OdTurningTarget();
+
+    expect(run.fixtureId).toBe("m7-turning");
+    expect(run.process.processType).toBe("turning");
+    if (run.process.processType !== "turning") {
+      throw new Error("Expected a turning process.");
+    }
+    expect(run.process.toolKind).toBe("turning");
+    expect(target).toMatchObject({
+      process: "od-turning",
+      accuracyGrade: "E2",
+      commandedCutDepthMm: 8,
+      initialOuterRadiusMm: 40,
+      measurementZMm: 300,
+    });
+    expect(target.cuts).toHaveLength(2);
+  });
+
+  it("uses four deterministic drilling passes and an 80 mm hole target", () => {
+    const run = createM7PipelineFixture("drilling", RUN_ID);
+    const target = createM7DrillingTarget();
+
+    expect(run.fixtureId).toBe("m7-drilling");
+    expect(run.initialPositionMm).toEqual({ xMm: 16, yMm: 0, zMm: 370 });
+    expect(run.process.processType).toBe("turning");
+    if (run.process.processType !== "turning") {
+      throw new Error("Expected a turning process.");
+    }
+    expect(run.process.toolKind).toBe("drill");
+    expect(
+      run.source
+        .split("\n")
+        .filter((line) => line.startsWith("G1 Z")),
+    ).toEqual([
+      "G1 Z340 F900",
+      "G1 Z320 F900",
+      "G1 Z300 F900",
+      "G1 Z280 F900",
+    ]);
+    expect(target).toMatchObject({
+      process: "drilling",
+      accuracyGrade: "E2",
+      commandedCutDepthMm: 80,
+      toolDiameterMm: 16,
+      measurementZMm: 320,
+      freeEnd: "positive-z",
+    });
+    expect(target.cuts).toEqual([
+      {
+        operation: "drilling",
+        startZMm: 280,
+        endZMm: 360,
+        startInnerRadiusMm: 8,
+        endInnerRadiusMm: 8,
+      },
+    ]);
   });
 });

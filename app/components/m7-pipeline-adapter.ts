@@ -312,9 +312,14 @@ export function attachM7Pipeline(
     }
     renderer.setCollisionMarker(null);
     renderer.setPresentationMode(
-      selectedFixture === "turning" ? "turning" : "milling",
+      selectedFixture === "turning" || selectedFixture === "drilling"
+        ? "turning"
+        : "milling",
     );
-    if (selectedFixture !== "turning") {
+    if (
+      selectedFixture === "milling" ||
+      selectedFixture === "collision-stop"
+    ) {
       renderer.setMillingToolpath(
         createM7MillingToolpathPoints(millingConfiguration),
       );
@@ -336,7 +341,7 @@ export function attachM7Pipeline(
       playbackSpeed: options.playbackSpeed ?? 1,
       executionMode: options.executionMode ?? "realtime",
     });
-    if (selectedFixture === "turning") {
+    if (selectedFixture === "turning" || selectedFixture === "drilling") {
       renderer.focusLayer("stock");
     }
     return initialized;

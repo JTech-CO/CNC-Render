@@ -37,9 +37,15 @@ import {
   createM7PipelineFixture,
   type CoordinatorCheckpoint,
   type M7MillingConfigurationInput,
+  type M7PipelineFixture,
 } from "@cnc-render/simulation";
 
 import type { M7PipelineHarness } from "./m7-pipeline-adapter";
+
+type M8PersistenceFixture = Extract<
+  M7PipelineFixture,
+  "drilling" | "milling" | "turning"
+>;
 
 const PROJECT_ID = "83000000-0000-4000-8000-000000000001";
 const MACHINE_ID = "83000000-0000-4000-8000-000000000002";
@@ -94,7 +100,7 @@ export interface M8CorruptionReport {
 
 export interface M8PersistenceHarness {
   saveFixture(
-    fixture?: "milling" | "turning",
+    fixture?: M8PersistenceFixture,
     millingConfiguration?: M7MillingConfigurationInput,
   ): Promise<M8SaveReport>;
   loadPersistedProject(): Promise<M8LoadReport>;
@@ -117,13 +123,14 @@ function jsonValue(value: unknown): JsonValue {
 }
 
 async function representativeProject(
-  fixture: "milling" | "turning",
+  fixture: M8PersistenceFixture,
   run: CoordinatorRunRequest,
 ): Promise<Project> {
   const source = run.source;
   const gcodeBytes = encoder.encode(source);
   const turning = run.process.processType === "turning";
-  if ((fixture === "turning") !== turning) {
+  const drilling = fixture === "drilling";
+  if ((fixture !== "milling") !== turning) {
     throw new Error("Persistence fixture and process type must match.");
   }
   const stockGeometry =
@@ -143,7 +150,11 @@ async function representativeProject(
     $schema: PROJECT_SCHEMA_ID,
     schemaVersion: 1,
     id: PROJECT_ID,
-    name: turning ? "M8 turning persistence" : "M8 milling persistence",
+    name: drilling
+      ? "M8 drilling persistence"
+      : turning
+        ? "M8 turning persistence"
+        : "M8 milling persistence",
     createdAt: "2026-08-09T00:00:00Z",
     updatedAt: "2026-08-09T00:00:00Z",
     unitSystem: "metric",
@@ -213,22 +224,34 @@ async function representativeProject(
       {
         schemaVersion: 1,
         id: TOOL_ID,
-        name: turning ? "Training turning insert" : "4 mm flat end mill",
-        toolType: turning ? "turning-tool" : "milling-cutter",
+        name: drilling
+          ? "16 mm twist drill"
+          : turning
+            ? "Training turning insert"
+            : "4 mm flat end mill",
+        toolType: drilling
+          ? "drill"
+          : turning
+            ? "turning-tool"
+            : "milling-cutter",
         cutterGeometry: {
-          geometryType: turning ? "turning-insert" : "flat-end-mill",
-          diameterMm: turning ? 12 : 4,
-          cornerRadiusMm: turning ? 0.4 : 0,
-          fluteCount: turning ? 1 : 3,
-          cuttingLengthMm: turning ? 12 : 12,
-          overallLengthMm: turning ? 60 : 50,
+          geometryType: drilling
+            ? "drill"
+            : turning
+              ? "turning-insert"
+              : "flat-end-mill",
+          diameterMm: drilling ? 16 : turning ? 12 : 4,
+          cornerRadiusMm: drilling ? 0 : turning ? 0.4 : 0,
+          fluteCount: drilling ? 2 : turning ? 1 : 3,
+          cuttingLengthMm: drilling ? 90 : 12,
+          overallLengthMm: drilling ? 120 : turning ? 60 : 50,
         },
         holderGeometry: {
-          diameterMm: turning ? 20 : 20,
-          lengthMm: turning ? 80 : 35,
+          diameterMm: drilling ? 28 : 20,
+          lengthMm: drilling ? 75 : turning ? 80 : 35,
         },
-        gaugeLengthMm: turning ? 75 : 48,
-        stickoutLengthMm: turning ? 30 : 24,
+        gaugeLengthMm: drilling ? 115 : turning ? 75 : 48,
+        stickoutLengthMm: drilling ? 95 : turning ? 30 : 24,
         maxSpindleSpeedRpm: turning ? 4_500 : 12_000,
         wearRatio: 0,
         materialCompatibilityIds: [MATERIAL_ID],
@@ -254,16 +277,28 @@ async function representativeProject(
       {
         schemaVersion: 1,
         id: OPERATION_ID,
-        name: turning ? "Representative turning" : "Representative milling",
-        operationType: turning ? "turning" : "milling",
+        name: drilling
+          ? "Representative drilling"
+          : turning
+            ? "Representative turning"
+            : "Representative milling",
+        operationType: drilling
+          ? "drilling"
+          : turning
+            ? "turning"
+            : "milling",
         setupId: SETUP_ID,
         toolAssemblyId: TOOL_ID,
-        strategy: turning ? "longitudinal" : "contour",
+        strategy: drilling
+          ? "peck-drilling"
+          : turning
+            ? "longitudinal"
+            : "contour",
         feed: { mode: "per-minute", feedMmPerMin: 6_000 },
-        spindleSpeedRpm: turning ? 2_000 : 6_000,
+        spindleSpeedRpm: drilling ? 1_800 : turning ? 2_000 : 6_000,
         spindleDirection: "clockwise",
-        depthOfCutMm: 1,
-        widthOfCutMm: turning ? 1 : 2,
+        depthOfCutMm: drilling ? 80 : 1,
+        widthOfCutMm: drilling ? 16 : turning ? 1 : 2,
         targetGeometryResourceId: null,
         generatedToolpathId: null,
       },
@@ -320,7 +355,7 @@ async function semantic(value: unknown): Promise<string> {
 }
 
 async function generationInput(
-  fixture: "milling" | "turning",
+  fixture: M8PersistenceFixture,
   checkpoint: CoordinatorCheckpoint,
   generationId: string,
   millingConfiguration: M7MillingConfigurationInput = {},
@@ -527,7 +562,7 @@ export function attachM8Persistence(
   const repository = new ProjectRepository(metadata, files);
 
   async function saveFixture(
-    fixture: "milling" | "turning" = "milling",
+    fixture: M8PersistenceFixture = "milling",
     millingConfiguration: M7MillingConfigurationInput = {},
   ): Promise<M8SaveReport> {
     await pipeline.runPipelineFixture(fixture, {

@@ -48,3 +48,18 @@ M9의 학습 영역은 대표 절삭 공정을 실행할 수 있지만 정식 �
   생성, 실제 Worker/WASM 증거 어댑터와 튜토리얼 UI가 포함되지 않는다.
 - 후속 M10 단위는 이 계약을 확장하되 임계값 완화나 렌더 상태 참조 없이
   parity 및 E2E gate를 추가해야 한다.
+
+## 후속 구현 기록 — 2026-08-14
+
+- 초기 승인 시 제외했던 외경 선삭과 센터 드릴링 콘텐츠를 각각 strict 5단계
+  한국어 E2 Lesson으로 추가했다. 두 Lesson은 선반·원통 소재·3 jaw chuck를
+  공유하고 외경 insert/종방향 선삭과 Ø16 twist drill/80 mm 드릴링 선택 ID를
+  별도로 검증한다.
+- Web foundation의 공정별 controller는 준비→설정→실행→측정→평가 전이를
+  공유하되 terminal Worker/WASM 요약의 fixture ID, 공정 종류, 제거 체적과
+  측정 target/process/feature가 선택 Lesson과 일치하지 않으면 기록을 거부한다.
+- 학습 UI는 세 Lesson controller 중 하나를 명시적으로 선택한다. 실행 중에는
+  선택을 잠그고, 단계 전이 시에만 작은 snapshot을 React에 전달한다. renderer
+  frame과 실제 재생 경과는 계속 판정 입력이 아니다.
+- 이 후속 기록으로 선삭·드릴링 콘텐츠와 정식 UI/E2E 제외 범위는 해소됐다.
+  샌드박스 operation 생성·편집·저장과 힌트 정책 확장은 여전히 후속 M10 범위다.

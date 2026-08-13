@@ -1,0 +1,292 @@
+{
+  "schemaVersion": 1,
+  "id": "tutorial.od-turning",
+  "locale": "ko-KR",
+  "title": "외경 선삭 기초",
+  "process": "od-turning",
+  "accuracy": {
+    "grade": "E2",
+    "limitations": [
+      "선반 기구학과 인서트 접촉은 회전 대칭 교육용 근사이며 실제 제어기 검증 결과가 아닙니다.",
+      "가공 시간은 Toolpath IR의 결정론적 논리 시간으로 평가합니다.",
+      "목표 형상 비교는 1 mm 축 셀과 1 mm 반경 layer를 사용하므로 직경 표시는 2 mm 단위로 양자화됩니다."
+    ]
+  },
+  "prerequisites": [],
+  "estimatedDurationMin": 10,
+  "scoring": {
+    "maximumScore": 100,
+    "passingScore": 80,
+    "precisionDigits": 2,
+    "criteria": [
+      {
+        "id": "score.shape-deviation",
+        "metric": "maxDeviationMm",
+        "weight": 30,
+        "fullPointsAtOrBelow": 0.5,
+        "zeroPointsAtOrAbove": 2
+      },
+      {
+        "id": "score.collision",
+        "metric": "collisionCount",
+        "weight": 25,
+        "fullPointsAtOrBelow": 0,
+        "zeroPointsAtOrAbove": 1
+      },
+      {
+        "id": "score.logical-time",
+        "metric": "logicalTimeS",
+        "weight": 15,
+        "fullPointsAtOrBelow": 18,
+        "zeroPointsAtOrAbove": 36
+      },
+      {
+        "id": "score.tool-count",
+        "metric": "toolCount",
+        "weight": 10,
+        "fullPointsAtOrBelow": 1,
+        "zeroPointsAtOrAbove": 3
+      },
+      {
+        "id": "score.overcut",
+        "metric": "overcutVolumeMm3",
+        "weight": 10,
+        "fullPointsAtOrBelow": 0,
+        "zeroPointsAtOrAbove": 18276.53
+      },
+      {
+        "id": "score.undercut",
+        "metric": "undercutVolumeMm3",
+        "weight": 10,
+        "fullPointsAtOrBelow": 0,
+        "zeroPointsAtOrAbove": 18276.53
+      }
+    ]
+  },
+  "steps": [
+    {
+      "id": "prepare-turning-stock",
+      "phase": "prepare",
+      "title": "선반과 원통 소재 준비",
+      "instruction": "2축 교육용 CNC 선반과 지름 80 mm, 길이 120 mm 원통 소재를 선택하세요.",
+      "allowedActions": [
+        "machine.select",
+        "stock.configure",
+        "material.select"
+      ],
+      "offSequenceGuidance": {
+        "reason": "선반과 원통 소재가 확정되기 전에 실행하면 회전축과 목표 직경을 비교할 수 없습니다.",
+        "recovery": {
+          "kind": "restore-step-checkpoint",
+          "label": "준비 단계 체크포인트로 되돌리기"
+        }
+      },
+      "successRules": [
+        {
+          "id": "prepare.machine",
+          "kind": "selection.matches",
+          "field": "machineId",
+          "operator": "equals",
+          "expectedId": "machine.cnc-lathe-2x-edu",
+          "message": "교육용 2축 CNC 선반을 선택해야 합니다."
+        },
+        {
+          "id": "prepare.stock",
+          "kind": "selection.matches",
+          "field": "stockId",
+          "operator": "equals",
+          "expectedId": "stock.turning-cylinder-80x120",
+          "message": "지름 80 mm, 길이 120 mm 대표 원통 소재를 선택해야 합니다."
+        },
+        {
+          "id": "prepare.material",
+          "kind": "selection.matches",
+          "field": "materialId",
+          "operator": "equals",
+          "expectedId": "material.aluminum-6061",
+          "message": "Aluminum 6061 교육용 재료 프로필을 선택해야 합니다."
+        }
+      ],
+      "failureRules": []
+    },
+    {
+      "id": "setup-od-turning",
+      "phase": "setup",
+      "title": "척과 외경 공구 설정",
+      "instruction": "3조 척, 외경 인서트와 지름 64 mm 목표의 균형 외경 선삭 공정을 확정하세요.",
+      "allowedActions": [
+        "fixture.select",
+        "tool.select",
+        "operation.configure"
+      ],
+      "offSequenceGuidance": {
+        "reason": "설정 확정 전 실행은 잘못된 공구나 과도한 반경 절입을 놓칠 수 있습니다.",
+        "recovery": {
+          "kind": "restore-step-checkpoint",
+          "label": "설정 단계 체크포인트로 되돌리기"
+        }
+      },
+      "successRules": [
+        {
+          "id": "setup.fixture",
+          "kind": "selection.matches",
+          "field": "fixtureId",
+          "operator": "equals",
+          "expectedId": "fixture.three-jaw-chuck",
+          "message": "대표 3조 척을 선택해야 합니다."
+        },
+        {
+          "id": "setup.tool",
+          "kind": "selection.matches",
+          "field": "toolId",
+          "operator": "equals",
+          "expectedId": "tool.od-turning-insert",
+          "message": "외경 선삭 인서트를 선택해야 합니다."
+        },
+        {
+          "id": "setup.operation",
+          "kind": "selection.matches",
+          "field": "operationId",
+          "operator": "equals",
+          "expectedId": "operation.od-turning-balanced",
+          "message": "대표 균형 외경 선삭 공정을 선택해야 합니다."
+        },
+        {
+          "id": "setup.confirmed",
+          "kind": "event.occurred",
+          "event": "setup.completed",
+          "message": "설정 검토를 완료해야 합니다."
+        }
+      ],
+      "failureRules": [
+        {
+          "id": "setup.wrong-tool",
+          "kind": "selection.matches",
+          "field": "toolId",
+          "operator": "not-equals",
+          "expectedId": "tool.od-turning-insert",
+          "message": "이 실습에는 외경 선삭 인서트가 필요합니다."
+        },
+        {
+          "id": "setup.excessive-depth",
+          "kind": "metric.range",
+          "metric": "cutDepthMm",
+          "minimum": 10.01,
+          "message": "반경 절입 깊이가 교육용 안전 범위 10 mm를 초과했습니다."
+        }
+      ]
+    },
+    {
+      "id": "execute-turning-cut",
+      "phase": "execute",
+      "title": "4패스 외경 절삭 실행",
+      "instruction": "Worker/WASM 외경 공정을 실행하고 공구의 종방향 이동과 반경 감소를 관찰하세요.",
+      "allowedActions": [
+        "simulation.run"
+      ],
+      "offSequenceGuidance": {
+        "reason": "현재 단계에서는 확정된 선삭 공정을 실행해 반경 field 증거를 만들어야 합니다.",
+        "recovery": {
+          "kind": "restore-step-checkpoint",
+          "label": "실행 단계 체크포인트로 되돌리기"
+        }
+      },
+      "successRules": [
+        {
+          "id": "execute.completed",
+          "kind": "event.occurred",
+          "event": "simulation.completed",
+          "message": "대표 외경 공정을 끝까지 실행해야 합니다."
+        },
+        {
+          "id": "execute.removal",
+          "kind": "metric.range",
+          "metric": "removedVolumeMm3",
+          "minimum": 1,
+          "message": "원통 소재의 외경 제거 결과가 확인되어야 합니다."
+        }
+      ],
+      "failureRules": [
+        {
+          "id": "execute.collision",
+          "kind": "metric.range",
+          "metric": "collisionCount",
+          "minimum": 1,
+          "message": "척 또는 회전축 제한 충돌이 감지되어 실행 단계가 실패했습니다."
+        }
+      ]
+    },
+    {
+      "id": "measure-outer-diameter",
+      "phase": "measure",
+      "title": "외경과 형상 편차 측정",
+      "instruction": "완료 checkpoint의 외경 프로파일을 목표 지름 64 mm와 비교해 편차와 제거 체적을 기록하세요.",
+      "allowedActions": [
+        "measurement.record"
+      ],
+      "offSequenceGuidance": {
+        "reason": "평가 전에 실제 반경 field 측정 증거를 기록해야 결과를 재현할 수 있습니다.",
+        "recovery": {
+          "kind": "restore-step-checkpoint",
+          "label": "측정 단계 체크포인트로 되돌리기"
+        }
+      },
+      "successRules": [
+        {
+          "id": "measure.recorded",
+          "kind": "event.occurred",
+          "event": "measurement.recorded",
+          "message": "외경 측정 결과를 기록해야 합니다."
+        },
+        {
+          "id": "measure.deviation",
+          "kind": "metric.range",
+          "metric": "maxDeviationMm",
+          "maximum": 1,
+          "message": "최대 반경 편차가 E2 표현 해상도 1 mm 이하여야 합니다."
+        }
+      ],
+      "failureRules": [
+        {
+          "id": "measure.overcut",
+          "kind": "metric.range",
+          "metric": "overcutVolumeMm3",
+          "minimum": 0.01,
+          "message": "목표 외경보다 더 제거된 과절삭 체적이 확인됐습니다."
+        }
+      ]
+    },
+    {
+      "id": "assess-turning-result",
+      "phase": "assess",
+      "title": "외경 선삭 결과 평가",
+      "instruction": "최종 회전 Stock을 유지한 채 직경, 편차, 충돌과 E2 제한을 검토하세요.",
+      "allowedActions": [
+        "result.review"
+      ],
+      "offSequenceGuidance": {
+        "reason": "최종 평가는 실행과 외경 측정이 끝난 뒤 기록해야 합니다.",
+        "recovery": {
+          "kind": "restore-step-checkpoint",
+          "label": "평가 단계 체크포인트로 되돌리기"
+        }
+      },
+      "successRules": [
+        {
+          "id": "assess.reviewed",
+          "kind": "event.occurred",
+          "event": "result.reviewed",
+          "message": "최종 외경 결과와 제한 사항을 검토해야 합니다."
+        },
+        {
+          "id": "assess.no-collision",
+          "kind": "metric.range",
+          "metric": "collisionCount",
+          "maximum": 0,
+          "message": "척과 회전축 제한 충돌 없이 공정을 완료해야 합니다."
+        }
+      ],
+      "failureRules": []
+    }
+  ]
+}

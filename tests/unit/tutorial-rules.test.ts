@@ -13,7 +13,12 @@ import {
   parseLesson,
   scoreLesson,
 } from "@cnc-render/lesson-engine";
-import { FaceMillingLessonController } from "@cnc-render/web/foundation";
+import {
+  DrillingLessonController,
+  FaceMillingLessonController,
+  OdTurningLessonController,
+} from "@cnc-render/web/foundation";
+import type { TurningTargetMeasurement } from "@cnc-render/simulation";
 import { describe, expect, it } from "vitest";
 
 const HASH = "a".repeat(64);
@@ -23,6 +28,19 @@ const faceMillingDocument = JSON.parse(
     "utf8",
   ),
 ) as unknown;
+const odTurningDocument = JSON.parse(
+  readFileSync(
+    new URL("../../content/lessons/ko/od-turning.lesson.json", import.meta.url),
+    "utf8",
+  ),
+) as unknown;
+const drillingDocument = JSON.parse(
+  readFileSync(
+    new URL("../../content/lessons/ko/drilling.lesson.json", import.meta.url),
+    "utf8",
+  ),
+) as unknown;
+
 
 const completeEvidence = {
   selections: {
@@ -461,5 +479,170 @@ describe("M10 tutorial rules", () => {
       finalSemanticHashSha256: HASH,
       collisionCount: 0,
     });
+  });
+});
+
+function turningMeasurement(input: {
+  readonly targetId: string;
+  readonly process: "drilling" | "od-turning";
+  readonly targetCutCells: number;
+  readonly actualRemovedVolumeMm3: number;
+  readonly targetRemovedVolumeMm3?: number;
+  readonly feature: TurningTargetMeasurement["feature"];
+}): TurningTargetMeasurement {
+  const common = {
+    targetId: input.targetId,
+    comparedCells: 120,
+    targetCutCells: input.targetCutCells,
+    representationResolutionMm: 1,
+    numericToleranceMm: 0.000001,
+    maxDeviationMm: 0,
+    meanAbsoluteDeviationMm: 0,
+    overcutVolumeMm3: 0,
+    undercutVolumeMm3: 0,
+    actualRemovedVolumeMm3: input.actualRemovedVolumeMm3,
+    targetRemovedVolumeMm3:
+      input.targetRemovedVolumeMm3 ?? input.actualRemovedVolumeMm3,
+  };
+  if (
+    input.process === "od-turning" &&
+    input.feature.kind === "outer-diameter"
+  ) {
+    return {
+      ...common,
+      process: input.process,
+      feature: input.feature,
+    };
+  }
+  if (
+    input.process === "drilling" &&
+    input.feature.kind === "drilled-hole"
+  ) {
+    return {
+      ...common,
+      process: input.process,
+      feature: input.feature,
+    };
+  }
+  throw new TypeError("Turning measurement process and feature must match.");
+}
+describe.each([
+  {
+    name: "OD turning",
+    Controller: OdTurningLessonController,
+    document: odTurningDocument,
+    fixtureId: "m7-turning",
+    process: "od-turning",
+    targetId: "m7.od-turning.balanced",
+    targetCutCells: 101,
+    actualRemovedVolumeMm3: Math.PI * (40 ** 2 - 32 ** 2) * 101,
+    feature: {
+      kind: "outer-diameter",
+      sampleZMm: 300,
+      actualDiameterMm: 64,
+      targetDiameterMm: 64,
+    },
+  },
+  {
+    name: "drilling",
+    Controller: DrillingLessonController,
+    document: drillingDocument,
+    fixtureId: "m7-drilling",
+    process: "drilling",
+    targetId: "m7.drilling-16x80.balanced",
+    targetCutCells: 80,
+    actualRemovedVolumeMm3: Math.PI * 8 ** 2 * 80,
+    feature: {
+      kind: "drilled-hole",
+      sampleZMm: 320,
+      actualDiameterMm: 16,
+      targetDiameterMm: 16,
+      actualDepthMm: 80,
+      targetDepthMm: 80,
+      freeEnd: "positive-z",
+    },
+  },
+] as const)("M10 $name Lesson controller", ({
+  Controller,
+  document,
+  fixtureId,
+  process,
+  targetId,
+  targetCutCells,
+  actualRemovedVolumeMm3,
+  feature,
+}) => {
+  it("parses every ordered E2 phase", () => {
+    const lesson = parseLesson(document);
+    expect(lesson.process).toBe(process);
+    expect(lesson.steps.map((step) => step.phase)).toEqual(LESSON_PHASES);
+    expect(lesson.accuracy.limitations).toHaveLength(3);
+  });
+
+  it("connects terminal evidence and a scalar Stock measurement", () => {
+    const controller = new Controller(document);
+    controller.prepare();
+    controller.setup();
+    controller.beginExecution();
+    controller.completeExecution({
+      ...completedSummary,
+      processType: "turning",
+      fixtureId,
+      removedVolumeMm3: actualRemovedVolumeMm3,
+      logicalTimeS: 12,
+    });
+    controller.recordMeasurement(turningMeasurement({
+      targetId,
+      process,
+      targetCutCells,
+      actualRemovedVolumeMm3,
+      feature,
+    }));
+    const completed = controller.assess().snapshot;
+    const snapshot = controller.getSnapshot();
+
+    expect(completed.status).toBe("completed");
+    expect(completed.score).toMatchObject({ score: 100, passed: true });
+    expect(snapshot.evidenceSource).toBe("worker-wasm");
+    expect(snapshot.measurement).toMatchObject({ targetId, process, feature });
+    expect(JSON.stringify(snapshot)).not.toContain("RadiusMm\":[");
+    expect(snapshot.run).toMatchObject({
+      fixtureId,
+      removedVolumeMm3: actualRemovedVolumeMm3,
+      collisionCount: 0,
+    });
+  });
+
+  it("rejects another fixture and a measurement from another run", () => {
+    const controller = new Controller(document);
+    controller.prepare();
+    controller.setup();
+    controller.beginExecution();
+    expect(() =>
+      controller.completeExecution({
+        ...completedSummary,
+        processType: "turning",
+        fixtureId: fixtureId === "m7-turning" ? "m7-drilling" : "m7-turning",
+      }),
+    ).toThrowError("does not match the selected lesson");
+
+    controller.abortExecution();
+    controller.beginExecution();
+    controller.completeExecution({
+      ...completedSummary,
+      processType: "turning",
+      fixtureId,
+      removedVolumeMm3: actualRemovedVolumeMm3,
+    });
+    expect(() =>
+      controller.recordMeasurement(turningMeasurement({
+        targetId,
+        process,
+        targetCutCells,
+        actualRemovedVolumeMm3: actualRemovedVolumeMm3 + 100_000,
+        targetRemovedVolumeMm3: actualRemovedVolumeMm3,
+        feature,
+      })),
+    ).toThrowError("does not belong to the terminal lesson run");
   });
 });

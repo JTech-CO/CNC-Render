@@ -55,9 +55,9 @@ test.describe("M9 accessibility", () => {
     ).toEqual([]);
 
     await page.getByTestId("workspace-area-learn").click();
-    await expect(page.getByTestId("face-milling-lesson")).toBeVisible();
+    await expect(page.getByTestId("tutorial-lesson")).toBeVisible();
     const lessonScan = await new AxeBuilder({ page })
-      .include('[data-testid="face-milling-lesson"]')
+      .include('[data-testid="tutorial-lesson"]')
       .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
       .analyze();
     expect(

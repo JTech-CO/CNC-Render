@@ -1,12 +1,69 @@
 ﻿# CNC Render Progress
 
 - Current phase: M10 튜토리얼·샌드박스 MVP(E2) 진행 중
-- Status: 실제 Stock 목표 형상 측정·평면 밀링 5단계 Lesson controller 완료
-- Last completed: Worker/WASM checkpoint 측정·100점 판정 WebGPU/WebGL 2 E2E 통과
-- Next task: 외경 선삭·드릴링 Lesson과 공정별 측정 어댑터 연결
+- Status: 평면 밀링·외경 선삭·센터 드릴링 5단계 Lesson과 실제 Stock 측정 완료
+- Last completed: 외경/홀 반경 field 측정·100점 판정·저장 복원 WebGPU/WebGL 2 통과
+- Next task: 성공·실패 visual baseline과 샌드박스 operation 생성·편집·저장
 - Open questions: 없음
 - Known regressions: 없음
 
+
+## M10 외경 선삭·드릴링 측정/Controller (2026-08-14, 완료)
+
+### 구현
+
+- `packages/simulation`에 `turning-full` Stock 반경 field와 별도 작성한 외경·홀
+  목표 cut field를 1 mm 축방향 layer에서 비교하는 순수 측정 어댑터를 추가했다.
+  목표는 실제 배열이나 제거 체적에서 역산하지 않으며 외경/내경 반경, Stock 경계,
+  cut 구간이 일치하지 않거나 비유한 값이 있으면 측정을 거부한다.
+- 외경 선삭은 초기 Ø80 mm 원통의 Z 250–350 mm 구간을 Ø64 mm로 만드는 목표를
+  사용한다. 실제/목표 외경, 최대·평균 반경 편차, 과절삭·미절삭, 환형 제거 체적을
+  반환하며 대표 Worker/WASM 결과는 120 layer 중 목표 절삭 101 layer와 약
+  `182,765.294 mm³` 제거에 일치한다.
+- 센터 드릴링은 positive-Z 자유단에서 Ø16 × 80 mm 홀을 만드는 네 번의 점진
+  진입(Z 340→320→300→280 mm)과 안전 복귀 fixture를 추가했다. 측정 summary는
+  실제/목표 홀 지름과 연속 홀 깊이, 80개 목표 절삭 layer와 약
+  `16,084.954 mm³` 제거 체적을 제공한다.
+- 외경 선삭 대표 공정은 네 종방향 pass를 유지하면서 작성된 18초 만점 기준을
+  임계값 완화 없이 충족하도록 종방향 feed를 `2,400 mm/min`으로 조정했다.
+- 외경 선삭·드릴링 각각에 strict 한국어 E2 5단계 Lesson과 Web foundation
+  controller를 추가했다. controller는 선택 ID, terminal fixture/process,
+  제거 체적, target/process/feature가 일치할 때만 측정·평가를 허용한다.
+- 학습 탭에 평면 밀링·외경 선삭·센터 드릴링 선택기를 연결했다. 실행 중 선택을
+  잠그고 완료 checkpoint에서만 측정하며 React에는 배열 없이 scalar summary와
+  점수만 저장한다. 외경/구멍 지름과 홀 깊이를 단위와 함께 표시한다.
+- 드릴링을 M7 Worker/WASM·turning renderer presentation과 M8 프로젝트
+  생성·저장·checkpoint 복원 경로에 연결했다. 저장 프로젝트는 drill 공구,
+  drilling operation과 peck-drilling strategy를 별도로 보존한다.
+- ADR 0013·0014에 공정별 controller, 반경 field 비교 방식, 목표 체적, 시간 기준과
+  E2 한계를 후속 구현 기록으로 추가했다.
+
+### 검증
+
+| Gate | Result |
+|---|---|
+| `git diff --check` | 통과 |
+| `pnpm typecheck` | 통과 |
+| `pnpm test:unit --filter turning-target-measurement` | 통과 — 1 file, 7 tests |
+| `pnpm test:unit --filter tutorial-rules` | 통과 — 1 file, 18 tests |
+| `pnpm test:unit --filter coordinator-fixtures-configuration` | 통과 — 1 file, 4 tests |
+| `pnpm test:parity --filter scoring` | 통과 — 실제 Rust/WASM 밀링·충돌·외경 선삭·드릴링 4 tests |
+| `pnpm test:e2e --grep "radius field"` | 통과 — WebGPU·WebGL 2 외경/드릴 4 passed, visual 중복 2 skipped |
+| 드릴링 M8 저장·복원 E2E | 통과 — WebGPU·WebGL 2 2 passed, visual 중복 1 skipped |
+| `pnpm test:a11y` | 통과 — WebGPU·WebGL 2 2 passed, visual 중복 1 skipped |
+| `pnpm verify` (Node 24.18.0, pnpm 11.5.3) | 통과 — unit 173, contracts 51, parity 67, Cargo check, production build |
+| dependency boundary | 통과 — 108 modules, 243 dependencies, 위반 0 |
+| production WASM | 793,536 bytes, SHA-256 `d788f5b38bc27cd0429f5500e63ad6523fc1b9dce07574c2983a78b444bd9fec` |
+
+### 남은 위험과 다음 M10 단위
+
+- 회전 Stock은 1 mm 축방향/radial layer를 쓰므로 외경은 2 mm 단위로 양자화된다.
+  실제 공구 nose/드릴 point·버·표면 조도·열 변형은 평가하지 않으며 Lesson에서
+  E2 교육용 한계로 노출한다.
+- 목표 형상 heatmap, 측정 리포트 내보내기와 성공·실패 visual baseline은 남아 있다.
+- 샌드박스 operation 생성·편집·저장과 durable undo/redo를 아직 제공하지 않으므로
+  M10 전체 완료로 기록하지 않는다.
+- 현재 엔진은 첫 충돌에서 정지하므로 충돌 횟수는 계속 `0` 또는 `1`인 E2 값이다.
 ## M10 실제 Stock 측정·평면 밀링 Lesson controller (2026-08-13, 완료)
 
 ### 구현

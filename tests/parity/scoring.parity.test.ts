@@ -10,11 +10,15 @@ import {
 } from "@cnc-render/lesson-engine";
 import {
   CncRenderWasmRuntime,
+  createM7DrillingTarget,
   createM7FaceMillingTarget,
+  createM7OdTurningTarget,
   createM7PipelineFixture,
   measureMillingStockAgainstTarget,
+  measureTurningStockAgainstTarget,
   type M7PipelineFixture,
   type MillingStockSurfaceDescriptor,
+  type TurningProfileSurfaceDescriptor,
   type WasmCoreInvocation,
 } from "@cnc-render/simulation";
 import { beforeAll, describe, expect, it } from "vitest";
@@ -212,5 +216,205 @@ describe("M10 scoring Worker/WASM parity", () => {
     const collisionScore = scoreLesson(faceMillingLesson, collision.evidence);
     expect(collisionScore.score).toBeLessThan(75);
     expect(collisionScore.passed).toBe(false);
+  });
+});
+
+type TurningFixture = Extract<M7PipelineFixture, "drilling" | "turning">;
+
+const odTurningLesson = parseLesson(
+  JSON.parse(
+    readFileSync(
+      new URL("../../content/lessons/ko/od-turning.lesson.json", import.meta.url),
+      "utf8",
+    ),
+  ),
+);
+const drillingLesson = parseLesson(
+  JSON.parse(
+    readFileSync(
+      new URL("../../content/lessons/ko/drilling.lesson.json", import.meta.url),
+      "utf8",
+    ),
+  ),
+);
+
+function turningArray(
+  invocation: WasmCoreInvocation,
+  binaryKind: "turning.inner-radius-mm" | "turning.outer-radius-mm",
+): Float32Array {
+  const layout = invocation.summary.binaryLayout.find(
+    (entry) => entry.binaryKind === binaryKind,
+  );
+  if (!layout) {
+    throw new TypeError("WASM snapshot is missing " + binaryKind);
+  }
+  const offset = finite(layout.offset, binaryKind + ".offset");
+  const byteLength = finite(layout.byteLength, binaryKind + ".byteLength");
+  if (offset % 4 !== 0 || byteLength % 4 !== 0) {
+    throw new TypeError(binaryKind + " is not Float32 aligned");
+  }
+  return new Float32Array(
+    invocation.binary,
+    offset,
+    byteLength / Float32Array.BYTES_PER_ELEMENT,
+  ).slice();
+}
+
+function turningSurface(
+  invocation: WasmCoreInvocation,
+): TurningProfileSurfaceDescriptor {
+  const render = record(invocation.summary.render, "render");
+  if (render.renderType !== "turning-full") {
+    throw new TypeError("WASM snapshot must contain a complete turning surface");
+  }
+  const axisCenterMm = record(render.axisCenterMm, "render.axisCenterMm");
+  const axialCells = positiveInteger(render.axialCells, "render.axialCells");
+  const innerRadiusMm = turningArray(
+    invocation,
+    "turning.inner-radius-mm",
+  );
+  const outerRadiusMm = turningArray(
+    invocation,
+    "turning.outer-radius-mm",
+  );
+  if (
+    innerRadiusMm.length !== axialCells ||
+    outerRadiusMm.length !== axialCells
+  ) {
+    throw new TypeError("WASM turning surface length does not match axialCells");
+  }
+  return {
+    axisCenterMm: {
+      xMm: finite(axisCenterMm.xMm, "render.axisCenterMm.xMm"),
+      yMm: finite(axisCenterMm.yMm, "render.axisCenterMm.yMm"),
+    },
+    minimumZMm: finite(render.minimumZMm, "render.minimumZMm"),
+    maximumZMm: finite(render.maximumZMm, "render.maximumZMm"),
+    axialCells,
+    radialSegments: positiveInteger(
+      render.radialSegments,
+      "render.radialSegments",
+    ),
+    resolutionMm: finite(render.resolutionMm, "render.resolutionMm"),
+    innerRadiusMm,
+    outerRadiusMm,
+  };
+}
+
+function turningTarget(fixture: TurningFixture) {
+  return fixture === "drilling"
+    ? createM7DrillingTarget()
+    : createM7OdTurningTarget();
+}
+
+async function runTurning(fixture: TurningFixture, runId: string) {
+  const runtime = await CncRenderWasmRuntime.instantiate(wasmBytes);
+  let invocation = runtime.initialize(createM7PipelineFixture(fixture, runId));
+  while (!invocation.summary.completed && !invocation.summary.stopped) {
+    invocation = runtime.step();
+  }
+  const target = turningTarget(fixture);
+  const measurement = measureTurningStockAgainstTarget(
+    turningSurface(runtime.snapshot()),
+    target,
+  );
+  return { summary: invocation.summary, target, measurement };
+}
+
+function turningEvidenceFrom(
+  result: Awaited<ReturnType<typeof runTurning>>,
+  fixture: TurningFixture,
+) {
+  return createCoordinatorLessonEvidence({
+    summary: result.summary,
+    selections: {
+      machineId: "machine.cnc-lathe-2x-edu",
+      stockId: "stock.turning-cylinder-80x120",
+      materialId: "material.aluminum-6061",
+      fixtureId: "fixture.three-jaw-chuck",
+      toolId:
+        fixture === "drilling"
+          ? "tool.twist-drill-16"
+          : "tool.od-turning-insert",
+      operationId:
+        fixture === "drilling"
+          ? "operation.drilling-16x80"
+          : "operation.od-turning-balanced",
+    },
+    completedEvents: [
+      "setup.completed",
+      "measurement.recorded",
+      "result.reviewed",
+    ],
+    metrics: {
+      toolCount: 1,
+      maxDeviationMm: result.measurement.maxDeviationMm,
+      overcutVolumeMm3: result.measurement.overcutVolumeMm3,
+      undercutVolumeMm3: result.measurement.undercutVolumeMm3,
+      cutDepthMm: result.target.commandedCutDepthMm,
+    },
+  });
+}
+
+describe.each([
+  {
+    fixture: "turning" as const,
+    lesson: odTurningLesson,
+    targetId: "m7.od-turning.balanced",
+    diameterMm: 64,
+  },
+  {
+    fixture: "drilling" as const,
+    lesson: drillingLesson,
+    targetId: "m7.drilling-16x80.balanced",
+    diameterMm: 16,
+  },
+])("M10 $fixture Worker/WASM scoring parity", (fixtureCase) => {
+  it("produces deterministic radius-field evidence and a passing score", async () => {
+    const firstRun = await runTurning(
+      fixtureCase.fixture,
+      fixtureCase.fixture === "turning"
+        ? "a2000000-0000-4000-8000-000000000001"
+        : "a2000000-0000-4000-8000-000000000003",
+    );
+    const secondRun = await runTurning(
+      fixtureCase.fixture,
+      fixtureCase.fixture === "turning"
+        ? "a2000000-0000-4000-8000-000000000002"
+        : "a2000000-0000-4000-8000-000000000004",
+    );
+    const first = turningEvidenceFrom(firstRun, fixtureCase.fixture);
+    const second = turningEvidenceFrom(secondRun, fixtureCase.fixture);
+
+    expect(first.finalSemanticHashSha256).toBe(
+      second.finalSemanticHashSha256,
+    );
+    expect(firstRun.measurement).toEqual(secondRun.measurement);
+    expect(firstRun.measurement).toMatchObject({
+      targetId: fixtureCase.targetId,
+      maxDeviationMm: 0,
+      overcutVolumeMm3: 0,
+      undercutVolumeMm3: 0,
+      feature: {
+        actualDiameterMm: fixtureCase.diameterMm,
+        targetDiameterMm: fixtureCase.diameterMm,
+      },
+    });
+    if (firstRun.measurement.process === "drilling") {
+      expect(firstRun.measurement.feature.actualDepthMm).toBe(80);
+      expect(firstRun.measurement.feature.targetDepthMm).toBe(80);
+    }
+    expect(firstRun.summary.removedVolumeMm3).toBeCloseTo(
+      firstRun.measurement.actualRemovedVolumeMm3,
+      3,
+    );
+    expect(first.evidence).toEqual(second.evidence);
+    expect(scoreLesson(fixtureCase.lesson, first.evidence)).toEqual(
+      scoreLesson(fixtureCase.lesson, second.evidence),
+    );
+    expect(scoreLesson(fixtureCase.lesson, first.evidence)).toMatchObject({
+      score: 100,
+      passed: true,
+    });
   });
 });

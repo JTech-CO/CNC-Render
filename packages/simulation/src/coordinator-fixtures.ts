@@ -1,8 +1,16 @@
 import type { CoordinatorRunRequest } from "@cnc-render/contracts";
 
 import type { MillingFlatEndSweepTarget } from "./milling-target-measurement";
+import type {
+  DrillingRadiusFieldTarget,
+  OdTurningRadiusFieldTarget,
+} from "./turning-target-measurement";
 
-export type M7PipelineFixture = "milling" | "turning" | "collision-stop";
+export type M7PipelineFixture =
+  | "milling"
+  | "turning"
+  | "drilling"
+  | "collision-stop";
 export type M7MillingStockPreset = "standard" | "compact";
 export type M7MillingCutDirection = "x" | "y";
 
@@ -14,6 +22,17 @@ export interface M7MillingConfiguration {
 export interface M7FaceMillingTarget extends MillingFlatEndSweepTarget {
   readonly accuracyGrade: "E2";
   readonly commandedCutDepthMm: number;
+}
+
+export interface M7OdTurningTarget extends OdTurningRadiusFieldTarget {
+  readonly accuracyGrade: "E2";
+  readonly commandedCutDepthMm: number;
+}
+
+export interface M7DrillingTarget extends DrillingRadiusFieldTarget {
+  readonly accuracyGrade: "E2";
+  readonly commandedCutDepthMm: number;
+  readonly toolDiameterMm: number;
 }
 
 export type M7MillingConfigurationInput = Partial<M7MillingConfiguration>;
@@ -50,6 +69,19 @@ const MILLING_STOCK_PROFILES: Record<M7MillingStockPreset, MillingStockProfile> 
     safeZMm: 354,
   },
 };
+
+const TURNING_STOCK_PROFILE = {
+  diameterMm: 80,
+  lengthMm: 120,
+  positionMm: { xMm: 0, yMm: 0, zMm: 300 },
+  baseResolutionMm: 1,
+  initialOuterRadiusMm: 40,
+  minimumZMm: 240,
+  maximumZMm: 360,
+} as const;
+
+const OD_FINISH_RADIUS_MM = 32;
+const DRILL_DIAMETER_MM = 16;
 
 export function resolveM7MillingConfiguration(
   configuration: M7MillingConfigurationInput = {},
@@ -139,6 +171,73 @@ export function createM7FaceMillingTarget(
   };
 }
 
+export function createM7OdTurningTarget(): M7OdTurningTarget {
+  const finishStartZMm = 250;
+  const finishEndZMm = 350;
+  const halfCellMm = TURNING_STOCK_PROFILE.baseResolutionMm / 2;
+  return {
+    targetId: "m7.od-turning.balanced",
+    kind: "turning-radius-profile",
+    process: "od-turning",
+    accuracyGrade: "E2",
+    commandedCutDepthMm:
+      TURNING_STOCK_PROFILE.initialOuterRadiusMm - OD_FINISH_RADIUS_MM,
+    axisCenterMm: {
+      xMm: TURNING_STOCK_PROFILE.positionMm.xMm,
+      yMm: TURNING_STOCK_PROFILE.positionMm.yMm,
+    },
+    minimumZMm: TURNING_STOCK_PROFILE.minimumZMm,
+    maximumZMm: TURNING_STOCK_PROFILE.maximumZMm,
+    initialOuterRadiusMm: TURNING_STOCK_PROFILE.initialOuterRadiusMm,
+    measurementZMm: 300,
+    cuts: [
+      {
+        operation: "groove",
+        startZMm: finishEndZMm - halfCellMm,
+        endZMm: finishEndZMm + halfCellMm,
+        startOuterRadiusMm: OD_FINISH_RADIUS_MM,
+        endOuterRadiusMm: OD_FINISH_RADIUS_MM,
+      },
+      {
+        operation: "od-turning",
+        startZMm: finishStartZMm,
+        endZMm: finishEndZMm,
+        startOuterRadiusMm: OD_FINISH_RADIUS_MM,
+        endOuterRadiusMm: OD_FINISH_RADIUS_MM,
+      },
+    ],
+  };
+}
+
+export function createM7DrillingTarget(): M7DrillingTarget {
+  return {
+    targetId: "m7.drilling-16x80.balanced",
+    kind: "turning-radius-profile",
+    process: "drilling",
+    accuracyGrade: "E2",
+    commandedCutDepthMm: 80,
+    toolDiameterMm: DRILL_DIAMETER_MM,
+    axisCenterMm: {
+      xMm: TURNING_STOCK_PROFILE.positionMm.xMm,
+      yMm: TURNING_STOCK_PROFILE.positionMm.yMm,
+    },
+    minimumZMm: TURNING_STOCK_PROFILE.minimumZMm,
+    maximumZMm: TURNING_STOCK_PROFILE.maximumZMm,
+    initialOuterRadiusMm: TURNING_STOCK_PROFILE.initialOuterRadiusMm,
+    measurementZMm: 320,
+    freeEnd: "positive-z",
+    cuts: [
+      {
+        operation: "drilling",
+        startZMm: 280,
+        endZMm: 360,
+        startInnerRadiusMm: DRILL_DIAMETER_MM / 2,
+        endInnerRadiusMm: DRILL_DIAMETER_MM / 2,
+      },
+    ],
+  };
+}
+
 function coordinate(value: number): string {
   return String(Object.is(value, -0) ? 0 : value);
 }
@@ -176,19 +275,19 @@ function millingSource(configuration: M7MillingConfiguration): string {
 const TURNING_SOURCE = `G21 G90 G18
 G0 X90 Z350
 G1 X76 F900
-G1 Z250 F1800
+G1 Z250 F2400
 G0 X90
 G0 Z350
 G1 X72 F900
-G1 Z250 F1800
+G1 Z250 F2400
 G0 X90
 G0 Z350
 G1 X68 F900
-G1 Z250 F1800
+G1 Z250 F2400
 G0 X90
 G0 Z350
 G1 X64 F900
-G1 Z250 F1800
+G1 Z250 F2400
 G0 X90
 G0 Z370
 M30
@@ -241,22 +340,48 @@ function millingRun(
   };
 }
 
-function turningRun(runId: string): CoordinatorRunRequest {
+const DRILLING_SOURCE =
+  [
+    "G21 G90 G18",
+    "G0 X16 Z360",
+    "G1 Z340 F900",
+    "G0 Z370",
+    "G0 Z360",
+    "G1 Z320 F900",
+    "G0 Z370",
+    "G0 Z360",
+    "G1 Z300 F900",
+    "G0 Z370",
+    "G0 Z360",
+    "G1 Z280 F900",
+    "G0 Z370",
+    "M30",
+  ].join("\n") + "\n";
+
+function turningRun(
+  runId: string,
+  fixture: "drilling" | "turning",
+): CoordinatorRunRequest {
+  const drilling = fixture === "drilling";
   return {
     schemaVersion: 1,
     runId,
-    fixtureId: "m7-turning",
-    source: TURNING_SOURCE,
-    initialPositionMm: { xMm: 90, yMm: 0, zMm: 370 },
+    fixtureId: drilling ? "m7-drilling" : "m7-turning",
+    source: drilling ? DRILLING_SOURCE : TURNING_SOURCE,
+    initialPositionMm: {
+      xMm: drilling ? DRILL_DIAMETER_MM : 90,
+      yMm: 0,
+      zMm: 370,
+    },
     process: {
       processType: "turning",
       stock: {
-        diameterMm: 80,
-        lengthMm: 120,
-        positionMm: { xMm: 0, yMm: 0, zMm: 300 },
-        baseResolutionMm: 1,
+        diameterMm: TURNING_STOCK_PROFILE.diameterMm,
+        lengthMm: TURNING_STOCK_PROFILE.lengthMm,
+        positionMm: TURNING_STOCK_PROFILE.positionMm,
+        baseResolutionMm: TURNING_STOCK_PROFILE.baseResolutionMm,
       },
-      toolKind: "turning",
+      toolKind: drilling ? "drill" : "turning",
       preset: "balanced",
       seed: 7,
       machineMaxSpindleSpeedRpm: 4_500,
@@ -276,7 +401,9 @@ export function createM7PipelineFixture(
     case "milling":
       return millingRun(runId, false, configuration);
     case "turning":
-      return turningRun(runId);
+      return turningRun(runId, "turning");
+    case "drilling":
+      return turningRun(runId, "drilling");
     case "collision-stop":
       return millingRun(runId, true, DEFAULT_M7_MILLING_CONFIGURATION);
   }
