@@ -39,7 +39,7 @@ import {
   type StockSurfacePatch,
 } from "./stock-surface";
 
-const TOOL_TIP_HOME_MM = 340;
+const MILLING_TOOL_TIP_HOME_MM = 340;
 
 const MACHINE_COLOR = 0xaeb8c3;
 const MACHINE_DARK_COLOR = 0x55616f;
@@ -53,13 +53,20 @@ const COLLISION_MARKER_COLOR = 0xb42318;
 export const DEFAULT_VIEWPORT_BACKGROUND =
   SCENE_PRESENTATION.viewportBackground;
 
+export type MachinePresentationMode = "milling" | "turning";
+
 export interface MachineScene {
   readonly scene: Scene;
   readonly contentRoot: Group;
   readonly layerGroups: ReadonlyMap<SceneLayerId, Group>;
   readonly selectableObjects: Object3D[];
   readonly fitBounds: Box3;
+  readonly presentationMode: MachinePresentationMode;
   select(object: Object3D | null): SceneLayerId | null;
+  setPresentationMode(mode: MachinePresentationMode): void;
+  setMillingToolpath(
+    pointsMm: readonly (readonly [number, number, number])[],
+  ): void;
   configureStockSurface(
     descriptor: StockSurfaceDescriptor,
   ): StockSurfaceBufferDiagnostics;
@@ -180,6 +187,104 @@ function makeLayerGroups(): Map<SceneLayerId, Group> {
   );
 }
 
+function makePresentationGroup(
+  parent: Group,
+  mode: MachinePresentationMode,
+  layerId: SceneLayerId,
+  visible: boolean,
+): Group {
+  const group = new Group();
+  group.name = `presentation:${mode}:${layerId}`;
+  group.visible = visible;
+  tagObject(group, layerId, false);
+  parent.add(group);
+  return group;
+}
+
+function addTurningFixture(
+  layer: Group,
+  selectableObjects: Object3D[],
+  material: MeshStandardMaterial,
+): void {
+  const chuck = cylinder(
+    layer,
+    "fixture",
+    58,
+    58,
+    36,
+    [0, 0, 222],
+    material,
+  );
+  const jaws = [
+    box(layer, "fixture", [18, 34, 18], [34, 0, 245], material),
+    box(layer, "fixture", [18, 34, 18], [-34, 0, 245], material),
+    box(layer, "fixture", [34, 18, 18], [0, 34, 245], material),
+    box(layer, "fixture", [34, 18, 18], [0, -34, 245], material),
+  ];
+  selectableObjects.push(chuck, ...jaws);
+}
+
+function addTurningToolAssembly(
+  holderLayer: Group,
+  cutterLayer: Group,
+  selectableObjects: Object3D[],
+  holderMaterial: MeshStandardMaterial,
+  cutterMaterial: MeshStandardMaterial,
+): void {
+  const holder = box(
+    holderLayer,
+    "holder",
+    [76, 34, 26],
+    [46, 0, 0],
+    holderMaterial,
+  );
+  const insert = box(
+    cutterLayer,
+    "cutter",
+    [16, 14, 10],
+    [8, 0, 0],
+    cutterMaterial,
+  );
+  selectableObjects.push(holder, insert);
+}
+
+function addTurningToolpath(layer: Group): void {
+  const pointsMm: readonly [number, number, number][] = [
+    [45, 0, 370],
+    [45, 0, 350],
+    [38, 0, 350],
+    [38, 0, 250],
+    [45, 0, 250],
+    [45, 0, 350],
+    [36, 0, 350],
+    [36, 0, 250],
+    [45, 0, 250],
+    [45, 0, 350],
+    [34, 0, 350],
+    [34, 0, 250],
+    [45, 0, 250],
+    [45, 0, 350],
+    [32, 0, 350],
+    [32, 0, 250],
+    [45, 0, 250],
+    [45, 0, 370],
+  ];
+  const points = pointsMm.map((point) => {
+    const [x, y, z] = domainMmToScene(point);
+    return new Vector3(x, y, z);
+  });
+  const line = new Line(
+    new BufferGeometry().setFromPoints(points),
+    new LineBasicMaterial({
+      color: TOOLPATH_COLOR,
+      transparent: true,
+      opacity: 0.9,
+    }),
+  );
+  line.name = "turning-toolpath";
+  tagObject(line, "toolpath", false);
+  layer.add(line);
+}
 function addMachine(
   layer: Group,
   selectableObjects: Object3D[],
@@ -338,7 +443,7 @@ function addToolAssembly(
   selectableObjects.push(head, spindle, taper, cutter);
 }
 
-function addToolpath(layer: Group): void {
+function addToolpath(layer: Group): Line {
   const pathPointsMm: readonly [number, number, number][] = [
     [-145, -70, 370],
     [-145, -70, 338],
@@ -363,6 +468,7 @@ function addToolpath(layer: Group): void {
   line.name = "education-toolpath";
   tagObject(line, "toolpath", false);
   layer.add(line);
+  return line;
 }
 
 function disposeObjectResources(root: Object3D): void {
@@ -435,27 +541,93 @@ export function createMachineScene(): MachineScene {
   const selectableObjects: Object3D[] = [];
 
   addMachine(layerGroups.get("machine")!, selectableObjects, materials);
-  addFixture(
-    layerGroups.get("fixture")!,
-    selectableObjects,
-    materials.fixture,
-  );
   const stockLayer = layerGroups.get("stock")!;
-  const educationStock = addStock(
+  const millingFixtureGroup = makePresentationGroup(
+    layerGroups.get("fixture")!,
+    "milling",
+    "fixture",
+    true,
+  );
+  const turningFixtureGroup = makePresentationGroup(
+    layerGroups.get("fixture")!,
+    "turning",
+    "fixture",
+    false,
+  );
+  const millingStockGroup = makePresentationGroup(
     stockLayer,
+    "milling",
+    "stock",
+    true,
+  );
+  const turningStockGroup = makePresentationGroup(
+    stockLayer,
+    "turning",
+    "stock",
+    false,
+  );
+  const millingHolderGroup = makePresentationGroup(
+    layerGroups.get("holder")!,
+    "milling",
+    "holder",
+    true,
+  );
+  const turningHolderGroup = makePresentationGroup(
+    layerGroups.get("holder")!,
+    "turning",
+    "holder",
+    false,
+  );
+  const millingCutterGroup = makePresentationGroup(
+    layerGroups.get("cutter")!,
+    "milling",
+    "cutter",
+    true,
+  );
+  const turningCutterGroup = makePresentationGroup(
+    layerGroups.get("cutter")!,
+    "turning",
+    "cutter",
+    false,
+  );
+  const millingToolpathGroup = makePresentationGroup(
+    layerGroups.get("toolpath")!,
+    "milling",
+    "toolpath",
+    true,
+  );
+  const turningToolpathGroup = makePresentationGroup(
+    layerGroups.get("toolpath")!,
+    "turning",
+    "toolpath",
+    false,
+  );
+
+  addFixture(millingFixtureGroup, selectableObjects, materials.fixture);
+  addTurningFixture(turningFixtureGroup, selectableObjects, materials.fixture);
+  const educationStock = addStock(
+    millingStockGroup,
     selectableObjects,
     materials.stock,
   );
   let partialStockSurface: PartialStockSurface | null = null;
   let rotationalStockSurface: PartialRotationalStockSurface | null = null;
   addToolAssembly(
-    layerGroups.get("holder")!,
-    layerGroups.get("cutter")!,
+    millingHolderGroup,
+    millingCutterGroup,
     selectableObjects,
     materials.holder,
     materials.cutter,
   );
-  addToolpath(layerGroups.get("toolpath")!);
+  addTurningToolAssembly(
+    turningHolderGroup,
+    turningCutterGroup,
+    selectableObjects,
+    materials.holder,
+    materials.cutter,
+  );
+  const millingToolpath = addToolpath(millingToolpathGroup);
+  addTurningToolpath(turningToolpathGroup);
 
   const floor = new Mesh(
     new PlaneGeometry(2_100, 1_650),
@@ -514,6 +686,34 @@ export function createMachineScene(): MachineScene {
   tagObject(collisionMarker, "fixture", false);
   scene.add(collisionMarker);
 
+  let presentationMode: MachinePresentationMode = "milling";
+  const presentationGroups = {
+    milling: [
+      millingFixtureGroup,
+      millingStockGroup,
+      millingHolderGroup,
+      millingCutterGroup,
+      millingToolpathGroup,
+    ],
+    turning: [
+      turningFixtureGroup,
+      turningStockGroup,
+      turningHolderGroup,
+      turningCutterGroup,
+      turningToolpathGroup,
+    ],
+  } as const;
+  const applyPresentationMode = (mode: MachinePresentationMode): void => {
+    presentationMode = mode;
+    for (const candidate of ["milling", "turning"] as const) {
+      for (const group of presentationGroups[candidate]) {
+        group.visible = candidate === mode;
+      }
+    }
+    selectionBox.visible = false;
+  };
+  applyPresentationMode("milling");
+
   const fitBounds = new Box3().setFromObject(contentRoot);
 
   return {
@@ -522,6 +722,9 @@ export function createMachineScene(): MachineScene {
     layerGroups,
     selectableObjects,
     fitBounds,
+    get presentationMode() {
+      return presentationMode;
+    },
     select(object) {
       if (!object) {
         selectionBox.visible = false;
@@ -542,7 +745,28 @@ export function createMachineScene(): MachineScene {
       const layerId = object.userData.sceneLayerId;
       return typeof layerId === "string" ? (layerId as SceneLayerId) : null;
     },
+    setPresentationMode(mode) {
+      applyPresentationMode(mode);
+    },
+    setMillingToolpath(pointsMm) {
+      if (
+        pointsMm.length < 2 ||
+        pointsMm.some((point) => point.some((value) => !Number.isFinite(value)))
+      ) {
+        throw new RangeError(
+          "Milling toolpath requires at least two finite millimetre points.",
+        );
+      }
+      const points = pointsMm.map((point) => {
+        const [x, y, z] = domainMmToScene(point);
+        return new Vector3(x, y, z);
+      });
+      const previousGeometry = millingToolpath.geometry;
+      millingToolpath.geometry = new BufferGeometry().setFromPoints(points);
+      previousGeometry.dispose();
+    },
     configureStockSurface(descriptor) {
+      applyPresentationMode("milling");
       if (partialStockSurface) {
         partialStockSurface.mesh.visible = false;
         stockLayer.remove(partialStockSurface.mesh);
@@ -572,6 +796,7 @@ export function createMachineScene(): MachineScene {
       return partialStockSurface.applyPatches(patches);
     },
     configureRotationalStockSurface(descriptor) {
+      applyPresentationMode("turning");
       if (partialStockSurface) {
         stockLayer.remove(partialStockSurface.mesh);
         partialStockSurface.dispose();
@@ -614,13 +839,23 @@ export function createMachineScene(): MachineScene {
       }
     },
     setToolPositionMm(positionMm) {
-      const translationMm: readonly [number, number, number] = [
+      if (presentationMode === "turning") {
+        const turningPositionMm: readonly [number, number, number] = [
+          positionMm[0] / 2,
+          positionMm[1],
+          positionMm[2],
+        ];
+        positionFromDomain(layerGroups.get("holder")!, turningPositionMm);
+        positionFromDomain(layerGroups.get("cutter")!, turningPositionMm);
+        return;
+      }
+      const millingTranslationMm: readonly [number, number, number] = [
         positionMm[0],
         positionMm[1],
-        positionMm[2] - TOOL_TIP_HOME_MM,
+        positionMm[2] - MILLING_TOOL_TIP_HOME_MM,
       ];
-      positionFromDomain(layerGroups.get("holder")!, translationMm);
-      positionFromDomain(layerGroups.get("cutter")!, translationMm);
+      positionFromDomain(layerGroups.get("holder")!, millingTranslationMm);
+      positionFromDomain(layerGroups.get("cutter")!, millingTranslationMm);
     },
     setCollisionMarker(positionMm) {
       if (positionMm === null) {

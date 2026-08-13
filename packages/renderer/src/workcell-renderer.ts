@@ -31,6 +31,7 @@ import { domainMmToScene } from "./coordinate-space";
 import {
   createMachineScene,
   DEFAULT_VIEWPORT_BACKGROUND,
+  type MachinePresentationMode,
   type MachineScene,
 } from "./machine-scene";
 import type {
@@ -103,6 +104,7 @@ export interface WorkcellRendererDiagnostics {
   readonly collisionMarkerMm: readonly [number, number, number] | null;
   readonly stockSurface: StockSurfaceBufferDiagnostics | null;
   readonly rotationalStockSurface: RotationalStockSurfaceDiagnostics | null;
+  readonly presentationMode: MachinePresentationMode;
 }
 
 const MINIMUM_FOCUS_DISTANCE_MM = 180;
@@ -505,6 +507,18 @@ export class WorkcellRenderer {
     this.#onStatus?.(this.#status());
   }
 
+  setPresentationMode(mode: MachinePresentationMode): void {
+    this.#machineScene?.setPresentationMode(mode);
+    this.invalidate();
+  }
+
+  setMillingToolpath(
+    pointsMm: readonly (readonly [number, number, number])[],
+  ): void {
+    this.#machineScene?.setMillingToolpath(pointsMm);
+    this.invalidate();
+  }
+
   configureStockSurface(
     descriptor: StockSurfaceDescriptor,
   ): StockSurfaceBufferDiagnostics {
@@ -747,6 +761,7 @@ export class WorkcellRenderer {
       stockSurface: this.#machineScene?.getStockSurfaceDiagnostics() ?? null,
       rotationalStockSurface:
         this.#machineScene?.getRotationalStockSurfaceDiagnostics() ?? null,
+      presentationMode: this.#machineScene?.presentationMode ?? "milling",
     };
   }
 

@@ -11,6 +11,7 @@ const suiteFiles = {
     "tests/persistence.spec.ts",
     "tests/viewport.spec.ts",
     "tests/viewport-soak.spec.ts",
+    "tests/workspace-configuration.spec.ts",
     "tests/workspace-ui.spec.ts",
   ],
   pages: ["tests/pages-deployment.spec.ts"],

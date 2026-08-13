@@ -177,6 +177,23 @@ test.describe("M9 workspace UI", () => {
     await expect(page.getByRole("tabpanel", { name: /Diagnostics/u })).toBeVisible();
   });
 
+  test("activity contexts replace the scene panel without sharing its grid cell", async ({
+    page,
+  }, testInfo) => {
+    await openWorkspace(page, testInfo);
+    await page.setViewportSize({ width: 1_440, height: 900 });
+
+    for (const area of ["code", "learn", "results"] as const) {
+      await page.getByTestId(`workspace-area-${area}`).click();
+      await expect(page.locator(".context-panel")).toBeVisible();
+      await expect(page.locator(".scene-panel")).toBeHidden();
+    }
+
+    await page.getByTestId("workspace-area-scene").click();
+    await expect(page.locator(".scene-panel")).toBeVisible();
+    await expect(page.locator(".context-panel")).toHaveCount(0);
+  });
+
   test("zoom-200 preserves help, activity navigation, and simulation commands", async ({
     page,
   }, testInfo) => {
@@ -296,5 +313,63 @@ test.describe("M9 workspace UI", () => {
     await expect(page.locator(".context-panel")).toContainText("재생 경과");
     await expect(page.locator(".context-panel")).toContainText("가공 추정");
     await expect(page.locator(".context-panel")).toContainText("mm³");
+  });
+
+  test("turning playback stays progressive and uses a turning presentation", async ({
+    page,
+  }, testInfo) => {
+    await openWorkspace(page, testInfo);
+    await page.setViewportSize({ width: 1_440, height: 900 });
+
+    await page.getByTestId("pipeline-fixture").selectOption("turning");
+    await page.getByTestId("pipeline-play").click();
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const state = window.__CNC_RENDER_M7__?.getPipelineState();
+          const summary = state?.summary;
+          return (
+            state?.status === "running" &&
+            (summary?.currentStep ?? 0) > 0 &&
+            (summary?.currentStep ?? 0) < (summary?.totalSteps ?? 0) &&
+            (summary?.stockRevision ?? 0) > 0
+          );
+        }),
+      )
+      .toBe(true);
+
+    const progressive = await page.evaluate(() => {
+      const pipeline = window.__CNC_RENDER_M7__?.getPipelineState();
+      const diagnostics = window.__CNC_RENDER_M3__?.getDiagnostics() as unknown as
+        | {
+            presentationMode?: string;
+            rotationalStockSurface?: { partialBufferUpdates: number } | null;
+          }
+        | undefined;
+      return {
+        currentStep: pipeline?.summary?.currentStep ?? 0,
+        presentationMode: diagnostics?.presentationMode,
+        rotationalStock: diagnostics?.rotationalStockSurface,
+        stockRevision: pipeline?.summary?.stockRevision ?? 0,
+        totalSteps: pipeline?.summary?.totalSteps ?? 0,
+      };
+    });
+    expect(progressive.currentStep).toBeGreaterThan(0);
+    expect(progressive.currentStep).toBeLessThan(progressive.totalSteps);
+    expect(progressive.totalSteps).toBeGreaterThanOrEqual(10);
+    expect(progressive.stockRevision).toBeGreaterThan(0);
+    expect(progressive.presentationMode).toBe("turning");
+    expect(progressive.rotationalStock?.partialBufferUpdates).toBeGreaterThan(0);
+
+    await expect
+      .poll(() =>
+        page.evaluate(() => window.__CNC_RENDER_M7__?.getPipelineState().status),
+      )
+      .toBe("completed");
+    const completed = await page.evaluate(() =>
+      window.__CNC_RENDER_M7__?.getPipelineState(),
+    );
+    expect(completed?.playbackElapsedS).toBeGreaterThan(1.5);
+    expect(completed?.summary?.removedVolumeMm3).toBeGreaterThan(0);
   });
 });

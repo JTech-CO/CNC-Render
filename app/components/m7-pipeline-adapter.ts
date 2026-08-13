@@ -5,21 +5,32 @@ import type {
 import type { WorkcellRenderer } from "@cnc-render/renderer/workcell";
 import {
   SimulationCoordinator,
+  createM7MillingToolpathPoints,
   createM7PipelineFixture,
+  resolveM7MillingConfiguration,
   type CoordinatorCheckpoint,
   type CoordinatorExecutionMode,
   type CoordinatorRenderUpdate,
   type CoordinatorSnapshot,
+  type M7MillingConfiguration,
+  type M7MillingConfigurationInput,
   type M7PipelineFixture,
 } from "@cnc-render/simulation";
 
 export interface M7PipelineBrowserState extends CoordinatorSnapshot {
   readonly fixture: M7PipelineFixture | null;
+  readonly millingConfiguration: M7MillingConfiguration;
   readonly baselineRenderFrame: number | null;
   readonly renderedOnFrame: number | null;
   readonly playbackElapsedS: number;
   readonly longTasksOver50Ms: number;
   readonly maximumLongTaskMs: number;
+}
+
+export interface M7PipelineRunOptions {
+  readonly playbackSpeed?: number;
+  readonly executionMode?: CoordinatorExecutionMode;
+  readonly millingConfiguration?: M7MillingConfigurationInput;
 }
 
 export interface M7PipelineUiObserver {
@@ -38,17 +49,11 @@ interface PlaybackPerformanceWindow {
 export interface M7PipelineHarness {
   startPipelineFixture(
     fixture: M7PipelineFixture,
-    options?: {
-      readonly playbackSpeed?: number;
-      readonly executionMode?: CoordinatorExecutionMode;
-    },
+    options?: M7PipelineRunOptions,
   ): Promise<CoordinatorCoreSummary>;
   runPipelineFixture(
     fixture: M7PipelineFixture,
-    options?: {
-      readonly playbackSpeed?: number;
-      readonly executionMode?: CoordinatorExecutionMode;
-    },
+    options?: M7PipelineRunOptions,
   ): Promise<CoordinatorCoreSummary>;
   pausePipeline(): Promise<CoordinatorCoreSummary>;
   resumePipeline(playbackSpeed?: number): void;
@@ -146,6 +151,7 @@ export function attachM7Pipeline(
 ): { readonly harness: M7PipelineHarness; dispose(): void } {
   const coordinator = new SimulationCoordinator();
   let fixture: M7PipelineFixture | null = null;
+  let millingConfiguration = resolveM7MillingConfiguration();
   let baselineRenderFrame: number | null = null;
   let renderedOnFrame: number | null = null;
   let pendingRender: Promise<number> | null = null;
@@ -277,12 +283,12 @@ export function attachM7Pipeline(
 
   async function start(
     selectedFixture: M7PipelineFixture,
-    options: {
-      readonly playbackSpeed?: number;
-      readonly executionMode?: CoordinatorExecutionMode;
-    } = {},
+    options: M7PipelineRunOptions = {},
   ): Promise<CoordinatorCoreSummary> {
     fixture = selectedFixture;
+    millingConfiguration = resolveM7MillingConfiguration(
+      selectedFixture === "milling" ? options.millingConfiguration : {},
+    );
     if (!performanceMeasurementStarted) {
       coordinator.beginMainThreadPerformanceWindow();
       longTaskObserver?.takeRecords();
@@ -305,8 +311,18 @@ export function attachM7Pipeline(
       playbackPerformanceWindows.shift();
     }
     renderer.setCollisionMarker(null);
+    renderer.setPresentationMode(
+      selectedFixture === "turning" ? "turning" : "milling",
+    );
+    if (selectedFixture !== "turning") {
+      renderer.setMillingToolpath(
+        createM7MillingToolpathPoints(millingConfiguration),
+      );
+    }
     viewport.dataset.pipelineState = "starting";
     viewport.dataset.pipelineFixture = selectedFixture;
+    viewport.dataset.pipelineStockPreset = millingConfiguration.stockPreset;
+    viewport.dataset.pipelineCutDirection = millingConfiguration.cutDirection;
     viewport.dataset.pipelinePlaybackElapsedS = "0";
     delete viewport.dataset.pipelineRenderedFrame;
     delete viewport.dataset.pipelineFinalHash;
@@ -314,11 +330,16 @@ export function attachM7Pipeline(
     const run: CoordinatorRunRequest = createM7PipelineFixture(
       selectedFixture,
       runId,
+      millingConfiguration,
     );
-    return coordinator.start(run, {
+    const initialized = await coordinator.start(run, {
       playbackSpeed: options.playbackSpeed ?? 1,
       executionMode: options.executionMode ?? "realtime",
     });
+    if (selectedFixture === "turning") {
+      renderer.focusLayer("stock");
+    }
+    return initialized;
   }
 
   const harness: M7PipelineHarness = {
@@ -362,6 +383,7 @@ export function attachM7Pipeline(
       return {
         ...coordinator.getSnapshot(),
         fixture,
+        millingConfiguration,
         baselineRenderFrame,
         renderedOnFrame,
         playbackElapsedS: playbackElapsedS(),

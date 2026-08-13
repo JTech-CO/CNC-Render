@@ -7,6 +7,7 @@ import {
   canonicalJson,
   semanticHash,
   type CheckpointIndex,
+  type CoordinatorRunRequest,
   type JsonValue,
   type PersistedComponentHashes,
   type PersistedDiagnostic,
@@ -35,6 +36,7 @@ import {
 import {
   createM7PipelineFixture,
   type CoordinatorCheckpoint,
+  type M7MillingConfigurationInput,
 } from "@cnc-render/simulation";
 
 import type { M7PipelineHarness } from "./m7-pipeline-adapter";
@@ -91,7 +93,10 @@ export interface M8CorruptionReport {
 }
 
 export interface M8PersistenceHarness {
-  saveFixture(fixture?: "milling" | "turning"): Promise<M8SaveReport>;
+  saveFixture(
+    fixture?: "milling" | "turning",
+    millingConfiguration?: M7MillingConfigurationInput,
+  ): Promise<M8SaveReport>;
   loadPersistedProject(): Promise<M8LoadReport>;
   testInterruptedSave(): Promise<M8InterruptedSaveReport>;
   testMigrationFixture(): Promise<M8MigrationReport>;
@@ -113,10 +118,27 @@ function jsonValue(value: unknown): JsonValue {
 
 async function representativeProject(
   fixture: "milling" | "turning",
-  source: string,
+  run: CoordinatorRunRequest,
 ): Promise<Project> {
+  const source = run.source;
   const gcodeBytes = encoder.encode(source);
-  const turning = fixture === "turning";
+  const turning = run.process.processType === "turning";
+  if ((fixture === "turning") !== turning) {
+    throw new Error("Persistence fixture and process type must match.");
+  }
+  const stockGeometry =
+    run.process.processType === "turning"
+      ? {
+          primitiveType: "cylinder" as const,
+          diameterMm: run.process.stock.diameterMm,
+          lengthMm: run.process.stock.lengthMm,
+        }
+      : {
+          primitiveType: "box" as const,
+          sizeMm: run.process.stock.sizeMm,
+        };
+  const stockPositionMm = run.process.stock.positionMm;
+  const stockResolutionMm = run.process.stock.baseResolutionMm;
   return ProjectSchema.parse({
     $schema: PROJECT_SCHEMA_ID,
     schemaVersion: 1,
@@ -217,19 +239,14 @@ async function representativeProject(
         schemaVersion: 1,
         id: STOCK_ID,
         name: turning ? "Training billet" : "Training block",
-        geometry: turning
-          ? { primitiveType: "cylinder", diameterMm: 40, lengthMm: 60 }
-          : {
-              primitiveType: "box",
-              sizeMm: { xMm: 40, yMm: 30, zMm: 10 },
-            },
+        geometry: stockGeometry,
         transform: {
-          positionMm: { xMm: 0, yMm: 0, zMm: turning ? 40 : 0 },
+          positionMm: stockPositionMm,
           rotationRad: { xRad: 0, yRad: 0, zRad: 0 },
         },
         materialId: MATERIAL_ID,
         representationType: turning ? "voxel" : "dexel",
-        resolutionMm: 1,
+        resolutionMm: stockResolutionMm,
         sourceModelResourceId: null,
       },
     ],
@@ -306,14 +323,19 @@ async function generationInput(
   fixture: "milling" | "turning",
   checkpoint: CoordinatorCheckpoint,
   generationId: string,
+  millingConfiguration: M7MillingConfigurationInput = {},
 ): Promise<{
   readonly input: SaveProjectGenerationInput;
   readonly checkpointId: string;
   readonly checkpointByteLength: number;
 }> {
   const summary = checkpoint.summary;
-  const run = createM7PipelineFixture(fixture, summary.runId);
-  const project = await representativeProject(fixture, run.source);
+  const run = createM7PipelineFixture(
+    fixture,
+    summary.runId,
+    millingConfiguration,
+  );
+  const project = await representativeProject(fixture, run);
   const projectHash = await semantic(project);
   const encodedCheckpoint = await encodeSimulationCheckpoint(
     {
@@ -506,14 +528,21 @@ export function attachM8Persistence(
 
   async function saveFixture(
     fixture: "milling" | "turning" = "milling",
+    millingConfiguration: M7MillingConfigurationInput = {},
   ): Promise<M8SaveReport> {
     await pipeline.runPipelineFixture(fixture, {
       playbackSpeed: 100,
       executionMode: "fast-forward",
+      millingConfiguration,
     });
     const checkpoint = await pipeline.capturePipelineCheckpoint();
     const generationId = crypto.randomUUID();
-    const built = await generationInput(fixture, checkpoint, generationId);
+    const built = await generationInput(
+      fixture,
+      checkpoint,
+      generationId,
+      millingConfiguration,
+    );
     await repository.save(built.input);
     viewport.dataset.persistenceState = "saved";
     viewport.dataset.persistenceGenerationId = generationId;
@@ -617,7 +646,7 @@ export function attachM8Persistence(
         "milling",
         "83000000-0000-4000-8000-000000000100",
       );
-      const current = await representativeProject("milling", run.source);
+      const current = await representativeProject("milling", run);
       const document = structuredClone(current) as unknown as Record<
         string,
         unknown
@@ -683,7 +712,7 @@ export function attachM8Persistence(
         "milling",
         "83000000-0000-4000-8000-000000000101",
       );
-      const withResource = await representativeProject("milling", run.source);
+      const withResource = await representativeProject("milling", run);
       const project = ProjectSchema.parse({ ...withResource, resources: [] });
       const archive = await exportProjectContainer({
         project,

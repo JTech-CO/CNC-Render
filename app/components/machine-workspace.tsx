@@ -22,6 +22,9 @@ import {
   type LatheRadiusFieldEngine,
   type M5MillingDemoOperation,
   type M6TurningDemoOperation,
+  type M7MillingConfiguration,
+  type M7MillingCutDirection,
+  type M7MillingStockPreset,
   type M7PipelineFixture,
   type MillingMaterialRemovalDiagnostics,
   type SparseDexelMillingEngine,
@@ -290,8 +293,12 @@ function updateAxisSummary(
 export function MachineWorkspace() {
   const [activeArea, setActiveArea] = useState<WorkspaceArea>("scene");
   const [dockTab, setDockTab] = useState<DockTab>("gcode");
+  const [selectedPipelineFixture, setSelectedPipelineFixture] =
+    useState<M7PipelineFixture>("milling");
   const workspaceRef = useRef<HTMLDivElement>(null);
   const fixtureSelectRef = useRef<HTMLSelectElement>(null);
+  const stockPresetSelectRef = useRef<HTMLSelectElement>(null);
+  const cutDirectionSelectRef = useRef<HTMLSelectElement>(null);
   const pipelineHarnessRef = useRef<M7PipelineHarness | null>(null);
   const persistenceHarnessRef = useRef<
     ReturnType<typeof attachM8Persistence>["harness"] | null
@@ -767,6 +774,15 @@ export function MachineWorkspace() {
             ? value
             : "milling";
         };
+        const selectedMillingConfiguration = (): M7MillingConfiguration => {
+          const stockPreset: M7MillingStockPreset =
+            stockPresetSelectRef.current?.value === "compact"
+              ? "compact"
+              : "standard";
+          const cutDirection: M7MillingCutDirection =
+            cutDirectionSelectRef.current?.value === "y" ? "y" : "x";
+          return { stockPreset, cutDirection };
+        };
 
         playToggleRef.current = async () => {
           const snapshot = pipeline.getPipelineState();
@@ -789,6 +805,7 @@ export function MachineWorkspace() {
           const terminal = await pipeline.runPipelineFixture(fixture, {
             executionMode: "realtime",
             playbackSpeed: WORKSPACE_PLAYBACK_SPEED,
+            millingConfiguration: selectedMillingConfiguration(),
           });
           updatePipelineSummary(
             workspace,
@@ -819,6 +836,7 @@ export function MachineWorkspace() {
             const fixture = selectedFixture();
             await persistenceBinding!.harness.saveFixture(
               fixture === "turning" ? "turning" : "milling",
+              selectedMillingConfiguration(),
             );
             const pipelineSnapshot = pipeline.getPipelineState();
             const summary = pipelineSnapshot.summary;
@@ -999,7 +1017,8 @@ export function MachineWorkspace() {
         </button>
       </nav>
 
-      <aside className="scene-panel" aria-labelledby="scene-heading">
+      {activeArea === "scene" ? (
+        <aside className="scene-panel" aria-labelledby="scene-heading">
         <div className="panel-heading">
           <div>
             <p>SCENE GRAPH</p>
@@ -1054,7 +1073,8 @@ export function MachineWorkspace() {
           <strong>G54 · X/Y/Z · mm</strong>
           <p>렌더 경계는 1 scene unit = 1 mm를 사용합니다.</p>
         </div>
-      </aside>
+        </aside>
+      ) : null}
       {activeArea !== "scene" ? (
         <aside className="context-panel" aria-labelledby="context-heading">
           <div className="panel-heading">
@@ -1102,6 +1122,7 @@ export function MachineWorkspace() {
               <button
                 className="context-primary"
                 onClick={() => {
+                  setSelectedPipelineFixture("milling");
                   if (fixtureSelectRef.current) {
                     fixtureSelectRef.current.value = "milling";
                   }
@@ -1309,6 +1330,14 @@ export function MachineWorkspace() {
             <select
               data-testid="pipeline-fixture"
               defaultValue="milling"
+              onChange={(event) => {
+                const value = event.currentTarget.value;
+                setSelectedPipelineFixture(
+                  value === "turning" || value === "collision-stop"
+                    ? value
+                    : "milling",
+                );
+              }}
               ref={fixtureSelectRef}
             >
               <option value="milling">3축 밀링</option>
@@ -1316,6 +1345,41 @@ export function MachineWorkspace() {
               <option value="collision-stop">충돌 정지</option>
             </select>
           </label>
+          <div className="simulation-configuration">
+            <label className="fixture-select">
+              <span>소재 규격</span>
+              <select
+                data-testid="pipeline-stock-preset"
+                defaultValue="standard"
+                disabled={selectedPipelineFixture !== "milling"}
+                ref={stockPresetSelectRef}
+              >
+                <option value="standard">
+                  표준 블록 · 360 × 200 × 88 mm
+                </option>
+                <option value="compact">
+                  소형 블록 · 280 × 160 × 72 mm
+                </option>
+              </select>
+            </label>
+            <label className="fixture-select">
+              <span>절삭 방향</span>
+              <select
+                data-testid="pipeline-cut-direction"
+                defaultValue="x"
+                disabled={selectedPipelineFixture !== "milling"}
+                ref={cutDirectionSelectRef}
+              >
+                <option value="x">X축 왕복</option>
+                <option value="y">Y축 왕복</option>
+              </select>
+            </label>
+          </div>
+          <p className="simulation-config-note">
+            {selectedPipelineFixture === "milling"
+              ? "소재와 방향 변경은 다음 실행부터 적용됩니다."
+              : "소재와 방향 설정은 3축 밀링에서 사용합니다."}
+          </p>
           <progress
             aria-label="시뮬레이션 진행"
             data-pipeline-progress

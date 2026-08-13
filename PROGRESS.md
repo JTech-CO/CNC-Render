@@ -1,11 +1,53 @@
 ﻿# CNC Render Progress
 
-- Current phase: M10 튜토리얼·샌드박스 MVP(E2) 착수 준비
-- Status: 시간 표시 PR #12 배포 및 WebGL 2 전체 E2E 성능 gate 안정화 완료
-- Last completed: WebGL 2 결정론 성능 시나리오 10회와 전체 E2E 순서를 50 ms 기준 변경 없이 통과
+- Current phase: M10 튜토리얼·샌드박스 MVP(E2) 착수 가능
+- Status: 작업실 탭·공정별 재생·밀링 소재/방향 설정 안정화 완료
+- Last completed: WebGPU·WebGL 2 전체 E2E 63건을 기준 완화 없이 통과
 - Next task: M10 Lesson·Step·allowed action·success/failure rule 계약과 첫 대표 실습 fixture 구현
 - Open questions: 없음
 - Known regressions: 없음
+
+## 작업실 탭·공정 재생·밀링 설정 안정화 (2026-08-13, 완료)
+
+### 원인과 수정
+
+- 장면 패널과 코드·학습·결과 Context 패널이 같은 grid cell에 동시에 렌더링되어
+  겹쳤다. Activity에 따라 두 패널을 상호 배타적으로 렌더링하도록 수정했다.
+- 공개 외경 선삭 fixture는 모션이 3개뿐이어서 약 `0.6 s` 만에 끝났고 VMC
+  장면에 선삭 좌표를 적용해 공구가 소재를 관통하는 것처럼 보였다. 선삭 전용
+  척·holder·insert·toolpath를 분리하고 controller X 지름을 장면 반경 `X / 2`로
+  변환했다.
+- 외경 선삭을 지름 `80 mm`, 길이 `120 mm` 소재의 4개 종방향 패스와 안전
+  복귀를 포함한 18단계 fixture로 교체했다. 회전 Stock이 선삭 presentation을
+  자동 선택하며 실행 시작 후 소재 범위에 camera focus를 맞춘다.
+- 3축 밀링에 표준 블록 `360 × 200 × 88 mm`, 소형 블록
+  `280 × 160 × 72 mm`와 X축·Y축 왕복 절삭 방향을 추가했다. 설정은 결정론적
+  G-code, toolpath guide, Worker/WASM 실행, Stock 교체와 M8 저장 프로젝트에
+  같은 값으로 전달된다. 선삭·충돌 정지에서는 밀링 전용 설정을 비활성화한다.
+- 전체 E2E에서 M8 저장 후 이전 run ID를 기준으로 다음 실행을 기다리던 테스트
+  경합을 발견했다. 저장 직후 활성 run ID를 기준으로 수정하고 WebGPU 3회 반복과
+  전체 순서를 다시 통과했다.
+
+### 검증
+
+| Gate | Result |
+|---|---|
+| `git diff --check` | 통과 |
+| `pnpm verify` | 통과 — unit 139, contract 51, parity 63, dependency 위반 0, Cargo check, production build |
+| `pnpm test:a11y` | 통과 — WebGPU·WebGL 2 2 passed, visual 중복 1 skipped |
+| 탭·선삭·소재/방향 핵심 E2E | 통과 — WebGPU·WebGL 2 6 passed, visual 중복 3 skipped |
+| WebGPU 소재/방향/저장 반복 | 통과 — 3/3 passed |
+| `pnpm test:e2e` | 통과 — WebGPU·WebGL 2 63 passed, 조건부 visual 18 skipped, 실패 0 |
+| production WASM | 793,536 bytes, SHA-256 `d788f5b38bc27cd0429f5500e63ad6523fc1b9dce07574c2983a78b444bd9fec` |
+
+### 남은 위험과 M10 경계
+
+- 공개 선삭 선택기는 현재 외경 선삭 대표 공정 하나다. 단면·테이퍼 fixture와
+  드릴링을 준비→설정→실행→측정→판정의 정식 lesson으로 노출하는 작업은 M10 범위다.
+- 밀링 소재는 두 개의 검증된 박스 preset이다. 임의 치수·재료·공구·절삭 조건과
+  저장 후 UI control 재구성은 M10 sandbox project model에서 완성한다.
+- 선삭 장면과 segment 끝점 단위 재생은 E2 교육용 표현이다. 실제 선반 기구학,
+  서보 보간, 공구 보정 또는 산업용 검증과 동일하지 않다.
 
 ## M9 공개 릴리스 안정화 (2026-08-09)
 
