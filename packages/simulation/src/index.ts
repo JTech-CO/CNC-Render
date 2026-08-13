@@ -10,6 +10,7 @@ export * from "./coordinator-fixtures";
 export * from "./kinematics";
 export * from "./material-removal-demo";
 export * from "./material-removal-milling";
+export * from "./milling-target-measurement";
 export * from "./material-removal-turning-demo";
 export * from "./material-removal-turning";
 export * from "./wasm-runtime";

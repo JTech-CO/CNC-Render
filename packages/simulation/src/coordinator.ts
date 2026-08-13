@@ -106,6 +106,7 @@ type RenderListener = (
 ) => void;
 
 interface ReplyWaiter {
+  readonly commandType: CoordinatorCommand["type"];
   readonly resolve: (packet: CoordinatorTransportPacket) => void;
   readonly reject: (error: Error) => void;
   readonly timer: ReturnType<typeof setTimeout>;
@@ -629,6 +630,9 @@ export class SimulationCoordinator {
           rawPacket.binary instanceof ArrayBuffer ? rawPacket.binary : null,
       };
       this.#metrics.workerMessages += 1;
+      const replyCommandType = message.replyTo
+        ? this.#replyWaiters.get(message.replyTo)?.commandType
+        : undefined;
 
       if (
         message.runId !== null &&
@@ -674,7 +678,7 @@ export class SimulationCoordinator {
         this.#summary = summary;
         this.#status = terminalStatus(summary);
         const update = renderUpdate(packet, summary);
-        if (update) {
+        if (update && replyCommandType !== "simulation.snapshot") {
           this.#metrics.renderUpdates += 1;
           for (const listener of this.#renderListeners) {
             listener(update, summary);
@@ -762,7 +766,12 @@ export class SimulationCoordinator {
           ),
         );
       }, DEFAULT_TIMEOUT_MS);
-      this.#replyWaiters.set(command.messageId, { resolve, reject, timer });
+      this.#replyWaiters.set(command.messageId, {
+        commandType: command.type,
+        resolve,
+        reject,
+        timer,
+      });
     });
     this.#worker.postMessage(command);
     return promise;

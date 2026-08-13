@@ -4,6 +4,7 @@ import type { CoordinatorCoreSummary } from "@cnc-render/contracts";
 import {
   LESSON_EVENTS,
   LESSON_PHASES,
+  LessonController,
   LessonRuleSchema,
   LessonSchema,
   createCoordinatorLessonEvidence,
@@ -12,6 +13,7 @@ import {
   parseLesson,
   scoreLesson,
 } from "@cnc-render/lesson-engine";
+import { FaceMillingLessonController } from "@cnc-render/web/foundation";
 import { describe, expect, it } from "vitest";
 
 const HASH = "a".repeat(64);
@@ -45,7 +47,7 @@ const completeEvidence = {
     maxDeviationMm: 0.2,
     overcutVolumeMm3: 0,
     undercutVolumeMm3: 0,
-    cutDepthMm: 2,
+    cutDepthMm: 4,
   },
 } as const;
 const completedSummary = {
@@ -80,7 +82,7 @@ const externalMetrics = {
   maxDeviationMm: 0.2,
   overcutVolumeMm3: 0,
   undercutVolumeMm3: 0,
-  cutDepthMm: 2,
+  cutDepthMm: 4,
 } as const;
 
 describe("M10 tutorial rules", () => {
@@ -88,7 +90,7 @@ describe("M10 tutorial rules", () => {
     const lesson = parseLesson(faceMillingDocument);
 
     expect(lesson.accuracy.grade).toBe("E2");
-    expect(lesson.accuracy.limitations).toHaveLength(2);
+    expect(lesson.accuracy.limitations).toHaveLength(3);
     expect(lesson.steps.map((step) => step.phase)).toEqual(LESSON_PHASES);
   });
 
@@ -364,5 +366,100 @@ describe("M10 tutorial rules", () => {
       15, 0, 7.5, 5, 5, 0,
     ]);
     expect(evidence).toEqual(before);
+  });
+
+  it("advances, guides, restores, and scores through the generic five-step controller", () => {
+    const controller = new LessonController(faceMillingDocument);
+    const warning = controller.dispatch("simulation.run");
+    expect(warning.decision.outcome).toBe("guided-warning");
+    expect(warning.snapshot.currentStep.phase).toBe("prepare");
+    expect(warning.snapshot.evidence.events).toEqual([]);
+    expect(controller.restoreStepCheckpoint().guidance).toBeNull();
+
+    controller.dispatch("machine.select", {
+      selections: {
+        machineId: completeEvidence.selections.machineId,
+        stockId: completeEvidence.selections.stockId,
+        materialId: completeEvidence.selections.materialId,
+      },
+    });
+    controller.dispatch("operation.configure", {
+      selections: {
+        fixtureId: completeEvidence.selections.fixtureId,
+        toolId: completeEvidence.selections.toolId,
+        operationId: completeEvidence.selections.operationId,
+      },
+      events: ["setup.completed"],
+      metrics: { cutDepthMm: 4, toolCount: 1 },
+    });
+    controller.dispatch("simulation.run", {
+      events: ["simulation.completed"],
+      metrics: {
+        logicalTimeS: completedSummary.logicalTimeS,
+        removedVolumeMm3: completedSummary.removedVolumeMm3,
+        collisionCount: 0,
+      },
+    });
+    controller.dispatch("measurement.record", {
+      events: ["measurement.recorded"],
+      metrics: {
+        maxDeviationMm: 0,
+        overcutVolumeMm3: 0,
+        undercutVolumeMm3: 0,
+      },
+    });
+    const completed = controller.dispatch("result.review", {
+      events: ["result.reviewed"],
+    }).snapshot;
+
+    expect(completed.status).toBe("completed");
+    expect(completed.completedStepIds).toEqual(
+      parseLesson(faceMillingDocument).steps.map((step) => step.id),
+    );
+    expect(completed.evidence.events).toEqual(LESSON_EVENTS);
+    expect(completed.score).toMatchObject({ score: 100, passed: true });
+  });
+
+  it("connects the face-milling session to terminal and measured evidence without Stock arrays", () => {
+    const session = new FaceMillingLessonController(faceMillingDocument);
+    expect(session.beginExecution().decision.outcome).toBe("guided-warning");
+    expect(session.getSnapshot().running).toBe(false);
+    session.restoreStepCheckpoint();
+
+    session.prepare();
+    session.setup();
+    expect(session.beginExecution().decision.outcome).toBe("allowed");
+    expect(session.getSnapshot().running).toBe(true);
+    session.completeExecution(completedSummary);
+    session.recordMeasurement({
+      targetId: "m7.face-milling.standard.x",
+      comparedCells: 1_125,
+      targetCutCells: 699,
+      representationResolutionMm: 8,
+      numericToleranceMm: 0.000001,
+      maxDeviationMm: 0,
+      meanAbsoluteDeviationMm: 0,
+      overcutVolumeMm3: 0,
+      undercutVolumeMm3: 0,
+      actualRemovedVolumeMm3: 357_888,
+      targetRemovedVolumeMm3: 357_888,
+    });
+    const completed = session.assess().snapshot;
+    const snapshot = session.getSnapshot();
+
+    expect(completed.status).toBe("completed");
+    expect(completed.score).toMatchObject({ score: 100, passed: true });
+    expect(snapshot.evidenceSource).toBe("worker-wasm");
+    expect(snapshot.measurement).toMatchObject({
+      targetId: "m7.face-milling.standard.x",
+      maxDeviationMm: 0,
+      actualRemovedVolumeMm3: 357_888,
+    });
+    expect(snapshot.measurement).not.toHaveProperty("topZMm");
+    expect(snapshot.run).toMatchObject({
+      runId: completedSummary.runId,
+      finalSemanticHashSha256: HASH,
+      collisionCount: 0,
+    });
   });
 });

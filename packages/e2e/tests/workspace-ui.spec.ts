@@ -225,7 +225,7 @@ test.describe("M9 workspace UI", () => {
     await page.getByTestId("workspace-area-code").click();
     await expect(page.getByText("대표 밀링 Fixture")).toBeVisible();
     await page.getByTestId("workspace-area-learn").click();
-    await expect(page.getByRole("button", { name: "기본 절삭 실행" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "준비 확인" })).toBeVisible();
     await page.getByTestId("workspace-area-scene").click();
 
     const viewport = page.getByTestId("machine-viewport");

@@ -1,5 +1,7 @@
 import type { CoordinatorRunRequest } from "@cnc-render/contracts";
 
+import type { MillingFlatEndSweepTarget } from "./milling-target-measurement";
+
 export type M7PipelineFixture = "milling" | "turning" | "collision-stop";
 export type M7MillingStockPreset = "standard" | "compact";
 export type M7MillingCutDirection = "x" | "y";
@@ -7,6 +9,11 @@ export type M7MillingCutDirection = "x" | "y";
 export interface M7MillingConfiguration {
   readonly stockPreset: M7MillingStockPreset;
   readonly cutDirection: M7MillingCutDirection;
+}
+
+export interface M7FaceMillingTarget extends MillingFlatEndSweepTarget {
+  readonly accuracyGrade: "E2";
+  readonly commandedCutDepthMm: number;
 }
 
 export type M7MillingConfigurationInput = Partial<M7MillingConfiguration>;
@@ -90,6 +97,46 @@ export function createM7MillingToolpathPoints(
   const finalPoint = points.at(-1)!;
   points.push([finalPoint[0], finalPoint[1], profile.safeZMm]);
   return points;
+}
+
+export function createM7FaceMillingTarget(
+  configuration: M7MillingConfigurationInput = {},
+): M7FaceMillingTarget {
+  const resolved = resolveM7MillingConfiguration(configuration);
+  const profile = MILLING_STOCK_PROFILES[resolved.stockPreset];
+  const halfStock = {
+    xMm: profile.sizeMm.xMm / 2,
+    yMm: profile.sizeMm.yMm / 2,
+    zMm: profile.sizeMm.zMm / 2,
+  };
+  const points = createM7MillingToolpathPoints(resolved);
+  return {
+    targetId: `m7.face-milling.${resolved.stockPreset}.${resolved.cutDirection}`,
+    kind: "flat-end-sweep",
+    accuracyGrade: "E2",
+    commandedCutDepthMm:
+      profile.positionMm.zMm + halfStock.zMm - profile.cutZMm,
+    stockBoundsMm: {
+      minimum: {
+        xMm: profile.positionMm.xMm - halfStock.xMm,
+        yMm: profile.positionMm.yMm - halfStock.yMm,
+        zMm: profile.positionMm.zMm - halfStock.zMm,
+      },
+      maximum: {
+        xMm: profile.positionMm.xMm + halfStock.xMm,
+        yMm: profile.positionMm.yMm + halfStock.yMm,
+        zMm: profile.positionMm.zMm + halfStock.zMm,
+      },
+    },
+    cutterDiameterMm: 20,
+    sweeps: points.slice(1).map((end, index) => {
+      const start = points[index];
+      return {
+        startMm: { xMm: start[0], yMm: start[1], zMm: start[2] },
+        endMm: { xMm: end[0], yMm: end[1], zMm: end[2] },
+      };
+    }),
+  };
 }
 
 function coordinate(value: number): string {

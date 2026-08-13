@@ -1,11 +1,66 @@
 ﻿# CNC Render Progress
 
 - Current phase: M10 튜토리얼·샌드박스 MVP(E2) 진행 중
-- Status: Lesson 규칙·Worker/WASM 증거 어댑터·결정론적 점수 계약 완료
-- Last completed: 실제 WASM 평면 밀링 재실행·충돌 정지 scoring parity 통과
-- Next task: 실제 목표 형상 측정 요약과 평면 밀링 Lesson 5단계 controller 연결
+- Status: 실제 Stock 목표 형상 측정·평면 밀링 5단계 Lesson controller 완료
+- Last completed: Worker/WASM checkpoint 측정·100점 판정 WebGPU/WebGL 2 E2E 통과
+- Next task: 외경 선삭·드릴링 Lesson과 공정별 측정 어댑터 연결
 - Open questions: 없음
 - Known regressions: 없음
+
+## M10 실제 Stock 측정·평면 밀링 Lesson controller (2026-08-13, 완료)
+
+### 구현
+
+- `packages/simulation`에 실제 `milling-full` Stock surface와 별도 작성된 목표
+  sweep을 비교하는 순수 측정 어댑터를 추가했다. 대표 fixture의 Stock 경계,
+  20 mm 평엔드밀과 5패스 경로가 목표 형상을 정의하며 실제 surface 배열에서
+  목표를 역산하지 않는다.
+- 각 덱셀 셀 중심에서 목표 높이를 계산하고 실제 높이가 더 낮으면 과절삭, 더
+  높으면 미절삭으로 판정한다. 가장자리 셀 면적을 반영해 실제·목표 제거 체적,
+  과절삭·미절삭 체적을 `mm³`로 적분하고 최대·평균 절대 편차를 `mm`로 반환한다.
+  비유한 값, 잘못된 grid 크기, 범위 밖 높이와 다른 Stock용 목표는 거부한다.
+- 대표 표준/X방향 Worker/WASM 결과는 Stock `1,125`셀 중 목표 절삭 대상
+  `699`셀, 실제·목표 제거 체적 각 `357,888 mm³`, 최대 편차·과절삭·미절삭
+  모두 0으로 측정된다. standard/compact와 X/Y방향 조합도 결정론적으로
+  동일 목표에 수렴한다.
+- `packages/lesson-engine`의 일반 controller가 준비→설정→실행→측정→평가 전이,
+  허용 행동, 순서 밖 행동 이유, 체크포인트 복구, 실패와 최종 점수를 관리한다.
+  Web foundation의 평면 밀링 controller는 실제 Worker/WASM terminal summary와
+  측정 summary만 결합하고 대형 `Float32Array`를 Lesson 또는 React에 저장하지 않는다.
+- 학습 탭은 5단계 상태와 현재 지시, 오순서 복구, 측정값, 최종 `100 / 100` 판정을
+  노출한다. 실행 단계는 기존 실시간 Worker/WASM 파이프라인을 사용하고 측정 단계는
+  완료된 run의 full checkpoint를 읽는다. 단계 행동과 terminal 시점에만 React를
+  갱신하며 렌더 프레임별 commit은 추가하지 않았다.
+- 측정용 `simulation.snapshot` reply가 renderer 구독자에게 전체 Stock을 다시
+  방송해 부분 buffer update 진단을 초기화하던 경로를 분리했다. checkpoint는
+  호출자에게만 반환하고 명시적 복원 API를 호출할 때만 렌더한다.
+- E2 제한에 `8 mm` 덱셀 셀 중심·양자화 높이 측정임을 추가했다. `8 mm` 미만의
+  국부 형상은 평가하지 않으며 산업용 공차 판정으로 표현하지 않는다.
+
+### 검증
+
+| Gate | Result |
+|---|---|
+| `git diff --check` | 통과 |
+| `pnpm test:unit --filter milling-target-measurement` | 통과 — 1 file, 6 tests |
+| `pnpm test:unit --filter tutorial-rules` | 통과 — 1 file, 12 tests |
+| `pnpm test:unit --filter simulation-coordinator` | 통과 — 1 file, 3 tests; snapshot 렌더 비방송 포함 |
+| `pnpm test:parity --filter scoring` | 통과 — 실제 WASM Stock 측정·충돌 정지 2 tests |
+| `pnpm test:e2e --grep tutorial-face` | 통과 — WebGPU·WebGL 2 2 passed, visual 중복 1 skipped |
+| `pnpm test:a11y` | 통과 — WebGPU·WebGL 2 2 passed, visual 중복 1 skipped |
+| `pnpm verify` | 통과 — unit 158, contracts 51, parity 65, Cargo check, production build |
+| dependency boundary | 통과 — 104 modules, 234 dependencies, 위반 0 |
+| production WASM | 793,536 bytes, SHA-256 `d788f5b38bc27cd0429f5500e63ad6523fc1b9dce07574c2983a78b444bd9fec` |
+
+### 남은 위험과 다음 M10 단위
+
+- 정식 UI Lesson은 아직 평면 밀링 1개다. 외경 선삭·드릴링은 공정별 목표 형상
+  측정 어댑터와 5단계 controller 연결이 필요하다.
+- 현재 측정 어댑터는 평엔드밀 sweep과 dexel 상면 비교 범위다. 회전 반경 field,
+  드릴 구멍 형상, 측정 heatmap과 리포트 내보내기는 후속 단위다.
+- 성공·실패 visual baseline과 샌드박스 operation 생성·저장은 남아 있으므로 M10
+  전체 완료로 기록하지 않는다.
+- 현재 엔진은 첫 충돌에서 정지하므로 충돌 횟수는 계속 `0` 또는 `1`인 E2 값이다.
 
 ## M10 Lesson 규칙·Worker/WASM 증거·점수 계약 (2026-08-13, 완료)
 

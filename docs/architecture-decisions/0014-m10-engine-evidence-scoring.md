@@ -53,12 +53,26 @@ ADR 0013은 강의 스키마와 단계 판정을 순수 규칙으로 고정했�
    실제 재생 경과와 `performance.now()` 값은 점수 입력이 아니다.
 8. 점수에 필요한 metric이 하나라도 없으면 `lesson.score.metric-missing` 오류를
    반환한다. 누락값을 0 또는 최적값으로 대체하지 않는다.
+9. 평면 밀링 측정 경계는 `packages/simulation`에 둔다. 완료된 Worker/WASM의
+   `milling-full` Stock surface와 별도로 작성된 평엔드밀 목표 sweep을 같은 덱셀
+   셀 중심·해상도에서 비교한다. 실제 표면이 목표보다 낮으면 과절삭, 높으면
+   미절삭으로 정의하고 셀 가장자리 면적까지 반영해 체적을 `mm³`로 적분한다.
+   목표는 실제 surface 배열에서 역산하지 않고 fixture의 Stock 경계, 공구 지름과
+   공구 경로로 생성한다.
+10. 전체 `Float32Array`는 측정 호출 안에서만 읽고 Lesson/React에는 비교 셀 수,
+    표현 해상도, 최대·평균 편차, 실제·목표 제거 체적, 과절삭·미절삭 체적의 작은
+    summary만 전달한다. `simulation.snapshot` reply는 checkpoint 호출자에게만
+    반환하고 renderer 구독 스트림에는 재방송하지 않는다. 사용자가 명시적으로
+    checkpoint를 렌더하도록 요청한 경우에만 별도 render API를 사용한다.
 
 ## 결과와 제약
 
 - 독립적인 실제 WASM 재실행은 같은 증거와 점수를 만들고, 실제 충돌 fixture는
   `execute.collision` 실패와 25점 감점을 함께 만든다.
-- 이번 단위에서 Worker/WASM가 직접 소유하는 값은 논리 시간, 제거 체적과 첫 충돌
-  유무다. 목표 형상 편차·과절삭·미절삭을 실제 Stock과 목표 형상에서 산출하는 측정
-  어댑터는 후속 M10 단위에서 연결해야 한다.
+- 대표 평면 밀링의 실제 Worker/WASM Stock `1,125`셀과 목표 sweep의 절삭 대상
+  `699`셀을 비교하면 실제·목표 제거 체적은 모두 `357,888 mm³`, 최대 편차와
+  과절삭·미절삭은 모두 0으로 재현된다. 이 summary가 5단계 Lesson controller의
+  측정·평가 증거와 결정론적 점수로 전달된다.
+- 대표 fixture의 balanced dexel 해상도는 `8 mm`다. 측정은 셀 중심과 양자화 높이를
+  사용하므로 `8 mm` 미만의 국부 형상·표면 조도·열 변형은 평가하지 않는다.
 - 점수는 학습 피드백이며 E2 정확도 등급을 넘는 산업용 합격 판정으로 표현하지 않는다.

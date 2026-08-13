@@ -2,6 +2,10 @@
 
 import type { CoordinatorCoreSummary } from "@cnc-render/contracts";
 import {
+  FaceMillingLessonController,
+  type FaceMillingLessonSnapshot,
+} from "@cnc-render/web/foundation";
+import {
   CAMERA_PRESETS,
   SCENE_LAYERS,
   type CameraPresetId,
@@ -17,6 +21,8 @@ import type {
 import {
   createM5MillingDemoSession,
   createM6TurningDemoSession,
+  createM7FaceMillingTarget,
+  measureMillingStockAgainstTarget,
   runM4CollisionStopDemo,
   type CollisionEvent,
   type LatheRadiusFieldEngine,
@@ -30,7 +36,9 @@ import {
   type SparseDexelMillingEngine,
   type TurningMaterialRemovalDiagnostics,
 } from "@cnc-render/simulation";
+import faceMillingLessonDocument from "../../content/lessons/ko/face-milling.lesson.json";
 import {
+  useCallback,
   useEffect,
   useRef,
   useState,
@@ -110,12 +118,17 @@ interface CncRenderM6Harness extends CncRenderM5Harness {
   getTurningState(): M6TurningBrowserRun | null;
 }
 
+interface CncRenderM10Harness {
+  getLessonState(): FaceMillingLessonSnapshot;
+}
+
 declare global {
   interface Window {
     __CNC_RENDER_M3__?: CncRenderM3Harness;
     __CNC_RENDER_M4__?: CncRenderM4Harness;
     __CNC_RENDER_M5__?: CncRenderM5Harness;
     __CNC_RENDER_M6__?: CncRenderM6Harness;
+    __CNC_RENDER_M10__?: CncRenderM10Harness;
   }
 }
 
@@ -291,10 +304,23 @@ function updateAxisSummary(
 }
 
 export function MachineWorkspace() {
+  const [faceMillingLessonController] = useState(
+    () => new FaceMillingLessonController(faceMillingLessonDocument),
+  );
   const [activeArea, setActiveArea] = useState<WorkspaceArea>("scene");
   const [dockTab, setDockTab] = useState<DockTab>("gcode");
   const [selectedPipelineFixture, setSelectedPipelineFixture] =
     useState<M7PipelineFixture>("milling");
+  const [faceMillingLesson, setFaceMillingLesson] =
+    useState<FaceMillingLessonSnapshot>(() =>
+      faceMillingLessonController.getSnapshot(),
+    );
+  const [lessonPipelineReady, setLessonPipelineReady] = useState(false);
+  const [lessonActionPending, setLessonActionPending] = useState(false);
+  const [lessonActionError, setLessonActionError] = useState<string | null>(
+    null,
+  );
+  const activeAreaRef = useRef<WorkspaceArea>("scene");
   const workspaceRef = useRef<HTMLDivElement>(null);
   const fixtureSelectRef = useRef<HTMLSelectElement>(null);
   const stockPresetSelectRef = useRef<HTMLSelectElement>(null);
@@ -304,6 +330,9 @@ export function MachineWorkspace() {
     ReturnType<typeof attachM8Persistence>["harness"] | null
   >(null);
   const playToggleRef = useRef<() => Promise<void>>(async () => undefined);
+  const publishLessonSnapshot = useCallback(() => {
+    setFaceMillingLesson(faceMillingLessonController.getSnapshot());
+  }, [faceMillingLessonController]);
   const stopPipelineRef = useRef<() => Promise<void>>(async () => undefined);
   const saveWorkspaceRef = useRef<() => Promise<void>>(async () => undefined);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -785,43 +814,100 @@ export function MachineWorkspace() {
         };
 
         playToggleRef.current = async () => {
-          const snapshot = pipeline.getPipelineState();
-          const fixture = selectedFixture();
+          const pipelineSnapshot = pipeline.getPipelineState();
+          const selected = selectedFixture();
           if (
-            (snapshot.status === "running" || snapshot.status === "starting") &&
-            snapshot.fixture !== null
+            (pipelineSnapshot.status === "running" ||
+              pipelineSnapshot.status === "starting") &&
+            pipelineSnapshot.fixture !== null
           ) {
             await pipeline.pausePipeline();
-            dispatchWorkspaceStatus({ state: "paused", fixture });
+            dispatchWorkspaceStatus({ state: "paused", fixture: selected });
             return;
           }
-          if (snapshot.status === "paused") {
+          if (pipelineSnapshot.status === "paused") {
             pipeline.resumePipeline(WORKSPACE_PLAYBACK_SPEED);
-            dispatchWorkspaceStatus({ state: "running", fixture });
+            dispatchWorkspaceStatus({ state: "running", fixture: selected });
             return;
           }
 
+          let fixture = selected;
+          let millingConfiguration = selectedMillingConfiguration();
+          const lesson =
+            activeAreaRef.current === "learn"
+              ? faceMillingLessonController
+              : null;
+          let lessonRun = false;
+          if (lesson) {
+            const transition = lesson.beginExecution();
+            publishLessonSnapshot();
+            if (transition.decision.outcome === "guided-warning") {
+              return;
+            }
+            lessonRun = lesson.getSnapshot().running;
+            if (!lessonRun) {
+              return;
+            }
+            fixture = "milling";
+            millingConfiguration = lesson.getSnapshot().configuration;
+            setSelectedPipelineFixture("milling");
+            if (fixtureSelectRef.current) {
+              fixtureSelectRef.current.value = "milling";
+            }
+            if (stockPresetSelectRef.current) {
+              stockPresetSelectRef.current.value =
+                millingConfiguration.stockPreset;
+            }
+            if (cutDirectionSelectRef.current) {
+              cutDirectionSelectRef.current.value =
+                millingConfiguration.cutDirection;
+            }
+          }
+
           dispatchWorkspaceStatus({ state: "starting", fixture });
-          const terminal = await pipeline.runPipelineFixture(fixture, {
-            executionMode: "realtime",
-            playbackSpeed: WORKSPACE_PLAYBACK_SPEED,
-            millingConfiguration: selectedMillingConfiguration(),
-          });
-          updatePipelineSummary(
-            workspace,
-            terminal,
-            pipeline.getPipelineState().playbackElapsedS,
-          );
+          try {
+            const terminal = await pipeline.runPipelineFixture(fixture, {
+              executionMode: "realtime",
+              playbackSpeed: WORKSPACE_PLAYBACK_SPEED,
+              millingConfiguration,
+            });
+            updatePipelineSummary(
+              workspace,
+              terminal,
+              pipeline.getPipelineState().playbackElapsedS,
+            );
+            if (lessonRun) {
+              lesson!.completeExecution(terminal);
+            }
+          } catch (error) {
+            if (lessonRun) {
+              lesson!.abortExecution();
+            }
+            throw error;
+          } finally {
+            if (lessonRun) {
+              publishLessonSnapshot();
+            }
+          }
         };
 
         stopPipelineRef.current = async () => {
           await pipeline.cancelPipeline();
+          if (faceMillingLessonController.getSnapshot().running) {
+            faceMillingLessonController.abortExecution();
+            publishLessonSnapshot();
+          }
           dispatchWorkspaceStatus({
             state: "cancelled",
             fixture: selectedFixture(),
           });
         };
         window.__CNC_RENDER_M7__ = pipelineBinding.harness;
+        window.__CNC_RENDER_M10__ = {
+          getLessonState: () => faceMillingLessonController.getSnapshot(),
+        };
+        setLessonPipelineReady(true);
+        publishLessonSnapshot();
         viewport.dataset.pipelineState = "idle";
         viewport.dataset.pipelineWorker = "dedicated";
         try {
@@ -905,13 +991,15 @@ export function MachineWorkspace() {
       delete window.__CNC_RENDER_M6__;
       delete window.__CNC_RENDER_M7__;
       delete window.__CNC_RENDER_M8__;
+      delete window.__CNC_RENDER_M10__;
     };
-  }, []);
+  }, [faceMillingLessonController, publishLessonSnapshot]);
 
   const setView = (view: CameraPresetId) => {
     rendererRef.current?.setCameraPreset(view);
   };
   const selectWorkspaceArea = (area: WorkspaceArea) => {
+    activeAreaRef.current = area;
     setActiveArea(area);
     if (area === "code") {
       setDockTab("gcode");
@@ -968,6 +1056,119 @@ export function MachineWorkspace() {
     nextTab.focus();
     nextTab.click();
   };
+
+  const selectLessonMillingDefaults = () => {
+    const configuration = faceMillingLessonController.getSnapshot().configuration;
+    setSelectedPipelineFixture("milling");
+    if (fixtureSelectRef.current) {
+      fixtureSelectRef.current.value = "milling";
+    }
+    if (stockPresetSelectRef.current) {
+      stockPresetSelectRef.current.value = configuration.stockPreset;
+    }
+    if (cutDirectionSelectRef.current) {
+      cutDirectionSelectRef.current.value = configuration.cutDirection;
+    }
+  };
+
+  const restoreLessonStep = () => {
+    faceMillingLessonController.restoreStepCheckpoint();
+    setLessonActionError(null);
+    publishLessonSnapshot();
+  };
+
+  const handleLessonPrimaryAction = async () => {
+    const lesson = faceMillingLessonController;
+    const before = lesson.getSnapshot();
+    setLessonActionError(null);
+    setLessonActionPending(true);
+    try {
+      if (before.controller.status === "completed") {
+        lesson.reset();
+        selectLessonMillingDefaults();
+        return;
+      }
+
+      switch (before.controller.currentStep.phase) {
+        case "prepare":
+          selectLessonMillingDefaults();
+          lesson.prepare();
+          break;
+        case "setup":
+          selectLessonMillingDefaults();
+          lesson.setup();
+          break;
+        case "execute":
+          if (!lessonPipelineReady) {
+            throw new Error("Worker/WASM 파이프라인을 준비하고 있습니다.");
+          }
+          await playToggleRef.current();
+          break;
+        case "measure": {
+          if (!lessonPipelineReady || !pipelineHarnessRef.current) {
+            throw new Error("측정용 Worker/WASM checkpoint를 준비하고 있습니다.");
+          }
+          const checkpoint =
+            await pipelineHarnessRef.current.capturePipelineCheckpoint();
+          if (checkpoint.render.renderType !== "milling-full") {
+            throw new Error("평면 밀링 Stock checkpoint가 필요합니다.");
+          }
+          const target = createM7FaceMillingTarget(before.configuration);
+          const measurement = measureMillingStockAgainstTarget(
+            checkpoint.render,
+            target,
+          );
+          lesson.recordMeasurement(measurement);
+          break;
+        }
+        case "assess":
+          lesson.assess();
+          break;
+      }
+    } catch (error) {
+      if (lesson.getSnapshot().running) {
+        lesson.abortExecution();
+      }
+      setLessonActionError(
+        error instanceof Error
+          ? error.message
+          : "Lesson 단계를 완료하지 못했습니다.",
+      );
+    } finally {
+      publishLessonSnapshot();
+      setLessonActionPending(false);
+    }
+  };
+
+  const lessonStep = faceMillingLesson.controller.currentStep;
+  const lessonPrimaryLabel = faceMillingLesson.running
+    ? "Worker/WASM 실행 중…"
+    : faceMillingLesson.controller.status === "completed"
+      ? "Lesson 다시 시작"
+      : lessonStep.phase === "prepare"
+        ? "준비 확인"
+        : lessonStep.phase === "setup"
+          ? "설정 확정"
+          : lessonStep.phase === "execute"
+            ? "실제 절삭 실행"
+            : lessonStep.phase === "measure"
+              ? "Stock 측정 기록"
+              : "결과 판정";
+  const lessonNeedsPipeline =
+    lessonStep.phase === "execute" || lessonStep.phase === "measure";
+  const lessonPrimaryDisabled =
+    lessonActionPending ||
+    faceMillingLesson.running ||
+    faceMillingLesson.controller.status === "failed" ||
+    (lessonNeedsPipeline && !lessonPipelineReady);
+  const lessonPhaseLabel = {
+    prepare: "준비",
+    setup: "설정",
+    execute: "실행",
+    measure: "측정",
+    assess: "평가",
+  }[lessonStep.phase];
+
   return (
     <div
       className="workspace-grid"
@@ -1111,31 +1312,139 @@ export function MachineWorkspace() {
               </p>
             </div>
           ) : activeArea === "learn" ? (
-            <div className="context-content">
-              <p className="context-kicker">GUIDED PREVIEW</p>
-              <h3>소재 절삭 확인</h3>
-              <ol className="learning-steps">
-                <li><strong>1</strong><span>밀링 대표 공정을 선택합니다.</span></li>
-                <li><strong>2</strong><span>실행 후 공구와 소재 변화를 관찰합니다.</span></li>
-                <li><strong>3</strong><span>결과 영역에서 제거 체적을 확인합니다.</span></li>
+            <div
+              className="context-content"
+              data-testid="face-milling-lesson"
+            >
+              <p className="context-kicker">GUIDED LESSON · E2</p>
+              <h3>{faceMillingLesson.controller.lesson.title}</h3>
+              <ol className="learning-steps" aria-label="Lesson 5단계">
+                {faceMillingLesson.controller.lesson.steps.map(
+                  (step, index) => {
+                    const completed =
+                      faceMillingLesson.controller.completedStepIds.includes(
+                        step.id,
+                      );
+                    const active = lessonStep.id === step.id;
+                    const state = completed
+                      ? "completed"
+                      : active &&
+                          faceMillingLesson.controller.status === "failed"
+                        ? "failed"
+                        : active
+                          ? "active"
+                          : "pending";
+                    return (
+                      <li
+                        className={active ? "is-active" : undefined}
+                        data-lesson-step={step.id}
+                        data-state={state}
+                        key={step.id}
+                      >
+                        <strong aria-hidden="true">{index + 1}</strong>
+                        <span>
+                          <b>{step.title}</b>
+                          <small>
+                            {state === "completed"
+                              ? "완료"
+                              : state === "failed"
+                                ? "복구 필요"
+                                : state === "active"
+                                  ? "현재 단계"
+                                  : "대기"}
+                          </small>
+                        </span>
+                      </li>
+                    );
+                  },
+                )}
               </ol>
+              <section
+                aria-busy={faceMillingLesson.running || lessonActionPending}
+                aria-live="polite"
+                className="lesson-current"
+                data-lesson-phase={lessonStep.phase}
+                data-lesson-status={faceMillingLesson.controller.status}
+              >
+                <p className="lesson-phase">
+                  {lessonPhaseLabel} · {faceMillingLesson.controller.currentStepIndex + 1} / 5
+                </p>
+                <h4>{lessonStep.title}</h4>
+                <p>{lessonStep.instruction}</p>
+                {faceMillingLesson.controller.guidance ? (
+                  <div className="lesson-guidance" role="alert">
+                    <p>{faceMillingLesson.controller.guidance.reason}</p>
+                    <button
+                      className="context-secondary"
+                      onClick={restoreLessonStep}
+                      type="button"
+                    >
+                      {faceMillingLesson.controller.guidance.recovery.label}
+                    </button>
+                  </div>
+                ) : null}
+                {lessonActionError ? (
+                  <p className="lesson-error" role="alert">
+                    {lessonActionError}
+                  </p>
+                ) : null}
+                {faceMillingLesson.measurement ? (
+                  <dl
+                    className="lesson-measurement"
+                    data-testid="lesson-measurement"
+                  >
+                    <div>
+                      <dt>최대 형상 편차</dt>
+                      <dd>{formattedMetric(faceMillingLesson.measurement.maxDeviationMm, 3)} mm</dd>
+                    </div>
+                    <div>
+                      <dt>과절삭</dt>
+                      <dd>{formattedMetric(faceMillingLesson.measurement.overcutVolumeMm3, 2)} mm³</dd>
+                    </div>
+                    <div>
+                      <dt>미절삭</dt>
+                      <dd>{formattedMetric(faceMillingLesson.measurement.undercutVolumeMm3, 2)} mm³</dd>
+                    </div>
+                    <div>
+                      <dt>실제 / 목표 제거</dt>
+                      <dd>
+                        {formattedMetric(faceMillingLesson.measurement.actualRemovedVolumeMm3, 0)} / {formattedMetric(faceMillingLesson.measurement.targetRemovedVolumeMm3, 0)} mm³
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>표현 해상도</dt>
+                      <dd>{formattedMetric(faceMillingLesson.measurement.representationResolutionMm, 1)} mm</dd>
+                    </div>
+                  </dl>
+                ) : null}
+                {faceMillingLesson.controller.score ? (
+                  <div className="lesson-score" data-testid="lesson-score">
+                    <span>결정론적 점수</span>
+                    <strong>
+                      {formattedMetric(faceMillingLesson.controller.score.score, 2)} / 100
+                    </strong>
+                    <small>
+                      {faceMillingLesson.controller.score.passed
+                        ? "통과"
+                        : "재학습 필요"}
+                    </small>
+                  </div>
+                ) : null}
+              </section>
               <button
                 className="context-primary"
-                onClick={() => {
-                  setSelectedPipelineFixture("milling");
-                  if (fixtureSelectRef.current) {
-                    fixtureSelectRef.current.value = "milling";
-                  }
-                  void playToggleRef.current();
-                }}
+                data-testid="lesson-primary-action"
+                disabled={lessonPrimaryDisabled}
+                onClick={() => void handleLessonPrimaryAction()}
                 type="button"
               >
-                기본 절삭 실행
+                {lessonPrimaryLabel}
               </button>
-              <p className="context-note">
-                현재 학습 영역은 대표 절삭 안내만 제공합니다. 단계 검증·힌트·
-                채점과 정식 튜토리얼은 아직 제공되지 않습니다.
-              </p>
+              <ul className="lesson-limitations" aria-label="E2 제한 사항">
+                {faceMillingLesson.controller.lesson.accuracy.limitations.map(
+                  (limitation) => <li key={limitation}>{limitation}</li>,
+                )}
+              </ul>
             </div>
           ) : (
             <div className="context-content" aria-live="polite">
@@ -1168,8 +1477,8 @@ export function MachineWorkspace() {
                 </div>
               </dl>
               <p className="context-note">
-                목표 형상 비교·측정·Heatmap·리포트 내보내기는 아직 제공되지
-                않습니다.
+                평면 밀링 Lesson은 실제 Stock checkpoint와 목표 sweep을 비교합니다.
+                Heatmap·리포트 내보내기는 아직 제공되지 않습니다.
               </p>
             </div>
           )}

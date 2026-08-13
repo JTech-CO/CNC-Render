@@ -13,6 +13,7 @@ const suiteFiles = {
     "tests/viewport-soak.spec.ts",
     "tests/workspace-configuration.spec.ts",
     "tests/workspace-ui.spec.ts",
+    "tests/tutorial-face.spec.ts",
   ],
   pages: ["tests/pages-deployment.spec.ts"],
   a11y: ["tests/accessibility.spec.ts"],
