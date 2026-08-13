@@ -10,6 +10,9 @@ export default defineConfig({
       "@cnc-render/contracts": fileURLToPath(
         new URL("./packages/contracts/src/index.ts", import.meta.url),
       ),
+      "@cnc-render/lesson-engine": fileURLToPath(
+        new URL("./packages/lesson-engine/src/index.ts", import.meta.url),
+      ),
       "@cnc-render/ui": fileURLToPath(
         new URL("./packages/ui/src/index.ts", import.meta.url),
       ),

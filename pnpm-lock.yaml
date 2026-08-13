@@ -106,6 +106,15 @@ importers:
         specifier: 1.55.0
         version: 1.55.0
 
+  packages/lesson-engine:
+    dependencies:
+      '@cnc-render/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      zod:
+        specifier: 4.4.3
+        version: 4.4.3
+
   packages/renderer:
     dependencies:
       three:

@@ -1,11 +1,56 @@
 ﻿# CNC Render Progress
 
-- Current phase: M10 튜토리얼·샌드박스 MVP(E2) 착수 가능
-- Status: 작업실 탭·공정별 재생·밀링 소재/방향 설정 안정화 완료
-- Last completed: WebGPU·WebGL 2 전체 E2E 63건을 기준 완화 없이 통과
-- Next task: M10 Lesson·Step·allowed action·success/failure rule 계약과 첫 대표 실습 fixture 구현
+- Current phase: M10 튜토리얼·샌드박스 MVP(E2) 진행 중
+- Status: Lesson 규칙·Worker/WASM 증거 어댑터·결정론적 점수 계약 완료
+- Last completed: 실제 WASM 평면 밀링 재실행·충돌 정지 scoring parity 통과
+- Next task: 실제 목표 형상 측정 요약과 평면 밀링 Lesson 5단계 controller 연결
 - Open questions: 없음
 - Known regressions: 없음
+
+## M10 Lesson 규칙·Worker/WASM 증거·점수 계약 (2026-08-13, 완료)
+
+### 구현
+
+- `content/lessons/ko/face-milling.lesson.json`에 E2 평면 밀링의 준비→설정→실행→
+  측정→평가 5단계, 허용 행동, 순서 밖 행동의 이유·체크포인트 복구 경로와
+  성공·실패 규칙을 선언했다. 잘못된 공구, `5 mm` 초과 절입과 충돌은 작성 순서에
+  따라 서로 다른 실패 이유를 반환한다.
+- `packages/lesson-engine`은 strict Zod schema와 순수 단계 판정 계층으로 두었다.
+  알 수 없는 필드, 비유한 수치, 중복 ID·행동·점수 metric, 역행 단계와 100점이
+  아닌 배점 합계를 거부한다.
+- Worker/WASM Coordinator 완료 요약 또는 실제 충돌 정지만 Lesson evidence로
+  변환한다. `logicalTimeS`, 제거 체적, 첫 충돌 유무를 엔진 소유 metric으로 쓰고
+  run·fixture·공정 ID와 최종 semantic/Stock hash를 provenance로 보존한다.
+  렌더 프레임과 실제 재생 경과는 판정·점수에 사용하지 않는다.
+- 형상 편차 30점, 충돌 25점, 논리 시간 15점, 공구 수 10점, 과절삭·미절삭 각
+  10점인 100점 정책을 fixture에 선언했다. 만점/0점 경계 사이를 선형 감점하고
+  항목별·총점을 소수 둘째 자리로 반올림한다. 통과 기준은 `80 / 100`이며 필요한
+  metric 누락은 `lesson.score.metric-missing`으로 거부한다.
+- ADR 0013에 강의 규칙 경계를, ADR 0014에 실제 엔진 증거와 점수 공식·단위·
+  평면 밀링 임계값을 기록했다.
+
+### 검증
+
+| Gate | Result |
+|---|---|
+| `git diff --check` | 통과 |
+| 변경 소스·테스트 ESLint | 통과 |
+| `pnpm test:unit --filter tutorial-rules` | 통과 — 1 file, 10 tests |
+| `pnpm test:parity --filter scoring` | 통과 — 실제 WASM 독립 재실행·충돌 정지 2 tests |
+| `pnpm typecheck` | 통과 |
+| `pnpm check:boundaries` | 통과 — 98 modules, 215 dependencies, 위반 0 |
+| `pnpm verify` | 통과 — unit 149, contracts 51, parity 65, Cargo check, production build |
+| production WASM | 793,536 bytes, SHA-256 `d788f5b38bc27cd0429f5500e63ad6523fc1b9dce07574c2983a78b444bd9fec` |
+
+### 남은 위험과 다음 M10 단위
+
+- 현재 정식 Lesson 콘텐츠는 평면 밀링 1개다. 외경 선삭·드릴링 Lesson,
+  샌드박스 operation 생성·저장, Tutorial UI와 M10 E2E·visual gate는 남아 있다.
+- Worker/WASM가 직접 제공하는 점수 값은 논리 시간, 제거 체적과 첫 충돌 유무다.
+  최대 형상 편차·과절삭·미절삭은 아직 명시적 측정 입력이며 실제 Stock과 목표
+  형상을 비교하는 measurement adapter에 연결해야 한다.
+- 현재 엔진은 첫 충돌에서 정지하므로 충돌 횟수는 `0` 또는 `1`인 E2 값이다.
+  다중 충돌 누적은 Coordinator 계약 확장 전까지 지원하지 않는다.
 
 ## 작업실 탭·공정 재생·밀링 설정 안정화 (2026-08-13, 완료)
 

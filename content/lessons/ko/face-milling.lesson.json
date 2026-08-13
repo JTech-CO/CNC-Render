@@ -1,0 +1,285 @@
+{
+  "schemaVersion": 1,
+  "id": "tutorial.face-milling",
+  "locale": "ko-KR",
+  "title": "평면 밀링 기초",
+  "process": "face-milling",
+  "accuracy": {
+    "grade": "E2",
+    "limitations": [
+      "절삭력과 열 변형은 교육용 근사이며 산업용 검증 결과가 아닙니다.",
+      "가공 시간은 Toolpath IR의 결정론적 논리 시간으로 평가합니다."
+    ]
+  },
+  "prerequisites": [],
+  "estimatedDurationMin": 12,
+  "scoring": {
+    "maximumScore": 100,
+    "passingScore": 80,
+    "precisionDigits": 2,
+    "criteria": [
+      {
+        "id": "score.shape-deviation",
+        "metric": "maxDeviationMm",
+        "weight": 30,
+        "fullPointsAtOrBelow": 0.2,
+        "zeroPointsAtOrAbove": 1
+      },
+      {
+        "id": "score.collision",
+        "metric": "collisionCount",
+        "weight": 25,
+        "fullPointsAtOrBelow": 0,
+        "zeroPointsAtOrAbove": 1
+      },
+      {
+        "id": "score.logical-time",
+        "metric": "logicalTimeS",
+        "weight": 15,
+        "fullPointsAtOrBelow": 55,
+        "zeroPointsAtOrAbove": 110
+      },
+      {
+        "id": "score.tool-count",
+        "metric": "toolCount",
+        "weight": 10,
+        "fullPointsAtOrBelow": 1,
+        "zeroPointsAtOrAbove": 3
+      },
+      {
+        "id": "score.overcut",
+        "metric": "overcutVolumeMm3",
+        "weight": 10,
+        "fullPointsAtOrBelow": 0,
+        "zeroPointsAtOrAbove": 35788.8
+      },
+      {
+        "id": "score.undercut",
+        "metric": "undercutVolumeMm3",
+        "weight": 10,
+        "fullPointsAtOrBelow": 0,
+        "zeroPointsAtOrAbove": 35788.8
+      }
+    ]
+  },
+  "steps": [
+    {
+      "id": "prepare-workpiece",
+      "phase": "prepare",
+      "title": "기계와 소재 준비",
+      "instruction": "3축 교육용 VMC와 알루미늄 소재를 선택하고 소재 크기를 확인하세요.",
+      "allowedActions": [
+        "machine.select",
+        "stock.configure",
+        "material.select"
+      ],
+      "offSequenceGuidance": {
+        "reason": "준비 항목이 확정되기 전에 다음 공정을 실행하면 기준 좌표와 소재 조건을 비교할 수 없습니다.",
+        "recovery": {
+          "kind": "restore-step-checkpoint",
+          "label": "준비 단계 체크포인트로 되돌리기"
+        }
+      },
+      "successRules": [
+        {
+          "id": "prepare.machine",
+          "kind": "selection.matches",
+          "field": "machineId",
+          "operator": "equals",
+          "expectedId": "machine.vmc-3x-edu",
+          "message": "교육용 3축 VMC를 선택해야 합니다."
+        },
+        {
+          "id": "prepare.stock",
+          "kind": "selection.matches",
+          "field": "stockId",
+          "operator": "equals",
+          "expectedId": "stock.face-milling-360x200x88",
+          "message": "대표 평면 밀링 소재를 선택해야 합니다."
+        },
+        {
+          "id": "prepare.material",
+          "kind": "selection.matches",
+          "field": "materialId",
+          "operator": "equals",
+          "expectedId": "material.aluminum-6061",
+          "message": "Aluminum 6061 교육용 재료 프로필을 선택해야 합니다."
+        }
+      ],
+      "failureRules": []
+    },
+    {
+      "id": "setup-face-milling",
+      "phase": "setup",
+      "title": "고정구와 공구 설정",
+      "instruction": "바이스, 20 mm 평엔드밀과 균형 평면 밀링 공정을 설정한 뒤 설정을 확정하세요.",
+      "allowedActions": [
+        "fixture.select",
+        "tool.select",
+        "operation.configure"
+      ],
+      "offSequenceGuidance": {
+        "reason": "설정 확정 전 실행은 잘못된 공구나 절입 깊이를 놓칠 수 있습니다.",
+        "recovery": {
+          "kind": "restore-step-checkpoint",
+          "label": "설정 단계 체크포인트로 되돌리기"
+        }
+      },
+      "successRules": [
+        {
+          "id": "setup.fixture",
+          "kind": "selection.matches",
+          "field": "fixtureId",
+          "operator": "equals",
+          "expectedId": "fixture.vise-150",
+          "message": "150 mm 바이스를 선택해야 합니다."
+        },
+        {
+          "id": "setup.tool",
+          "kind": "selection.matches",
+          "field": "toolId",
+          "operator": "equals",
+          "expectedId": "tool.flat-end-mill-20",
+          "message": "20 mm 평엔드밀을 선택해야 합니다."
+        },
+        {
+          "id": "setup.operation",
+          "kind": "selection.matches",
+          "field": "operationId",
+          "operator": "equals",
+          "expectedId": "operation.face-milling-balanced",
+          "message": "대표 균형 평면 밀링 공정을 선택해야 합니다."
+        },
+        {
+          "id": "setup.confirmed",
+          "kind": "event.occurred",
+          "event": "setup.completed",
+          "message": "설정 검토를 완료해야 합니다."
+        }
+      ],
+      "failureRules": [
+        {
+          "id": "setup.wrong-tool",
+          "kind": "selection.matches",
+          "field": "toolId",
+          "operator": "not-equals",
+          "expectedId": "tool.flat-end-mill-20",
+          "message": "이 실습에는 20 mm 평엔드밀이 필요합니다."
+        },
+        {
+          "id": "setup.excessive-depth",
+          "kind": "metric.range",
+          "metric": "cutDepthMm",
+          "minimum": 5.01,
+          "message": "절입 깊이가 교육용 안전 범위 5 mm를 초과했습니다."
+        }
+      ]
+    },
+    {
+      "id": "execute-cut",
+      "phase": "execute",
+      "title": "절삭 실행",
+      "instruction": "Worker/WASM 대표 공정을 실행하고 공구 이동과 소재 제거를 관찰하세요.",
+      "allowedActions": ["simulation.run"],
+      "offSequenceGuidance": {
+        "reason": "현재 단계에서는 확정된 공정을 실행해 결과 증거를 만들어야 합니다.",
+        "recovery": {
+          "kind": "restore-step-checkpoint",
+          "label": "실행 단계 체크포인트로 되돌리기"
+        }
+      },
+      "successRules": [
+        {
+          "id": "execute.completed",
+          "kind": "event.occurred",
+          "event": "simulation.completed",
+          "message": "대표 공정을 끝까지 실행해야 합니다."
+        },
+        {
+          "id": "execute.removal",
+          "kind": "metric.range",
+          "metric": "removedVolumeMm3",
+          "minimum": 1,
+          "message": "소재 제거 결과가 확인되어야 합니다."
+        }
+      ],
+      "failureRules": [
+        {
+          "id": "execute.collision",
+          "kind": "metric.range",
+          "metric": "collisionCount",
+          "minimum": 1,
+          "message": "충돌이 감지되어 실행 단계가 실패했습니다."
+        }
+      ]
+    },
+    {
+      "id": "measure-result",
+      "phase": "measure",
+      "title": "가공 결과 측정",
+      "instruction": "최대 형상 편차와 과절삭 체적을 기록하고 목표와 비교하세요.",
+      "allowedActions": ["measurement.record"],
+      "offSequenceGuidance": {
+        "reason": "평가 전에 측정 증거를 기록해야 결과를 재현할 수 있습니다.",
+        "recovery": {
+          "kind": "restore-step-checkpoint",
+          "label": "측정 단계 체크포인트로 되돌리기"
+        }
+      },
+      "successRules": [
+        {
+          "id": "measure.recorded",
+          "kind": "event.occurred",
+          "event": "measurement.recorded",
+          "message": "측정 결과를 기록해야 합니다."
+        },
+        {
+          "id": "measure.deviation",
+          "kind": "metric.range",
+          "metric": "maxDeviationMm",
+          "maximum": 0.5,
+          "message": "최대 형상 편차가 E2 실습 허용값 0.5 mm 이하여야 합니다."
+        }
+      ],
+      "failureRules": [
+        {
+          "id": "measure.overcut",
+          "kind": "metric.range",
+          "metric": "overcutVolumeMm3",
+          "minimum": 0.01,
+          "message": "과절삭 체적이 허용값을 초과했습니다."
+        }
+      ]
+    },
+    {
+      "id": "assess-result",
+      "phase": "assess",
+      "title": "결과 평가",
+      "instruction": "최종 3D 결과를 유지한 채 단계 증거와 E2 제한을 검토하세요.",
+      "allowedActions": ["result.review"],
+      "offSequenceGuidance": {
+        "reason": "최종 평가는 실행과 측정이 끝난 뒤 기록해야 합니다.",
+        "recovery": {
+          "kind": "restore-step-checkpoint",
+          "label": "평가 단계 체크포인트로 되돌리기"
+        }
+      },
+      "successRules": [
+        {
+          "id": "assess.reviewed",
+          "kind": "event.occurred",
+          "event": "result.reviewed",
+          "message": "최종 3D 결과와 제한 사항을 검토해야 합니다."
+        },
+        {
+          "id": "assess.no-collision",
+          "kind": "metric.range",
+          "metric": "collisionCount",
+          "maximum": 0,
+          "message": "충돌 없이 공정을 완료해야 합니다."
+        }
+      ],
+      "failureRules": []
+    }
+  ]
+}

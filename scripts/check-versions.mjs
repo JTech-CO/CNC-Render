@@ -7,6 +7,7 @@ const packagePaths = [
   "package.json",
   "apps/web/package.json",
   "packages/contracts/package.json",
+  "packages/lesson-engine/package.json",
   "packages/renderer/package.json",
   "packages/simulation/package.json",
   "packages/storage/package.json",
@@ -89,6 +90,6 @@ if (errors.length > 0) {
   process.exitCode = 1;
 } else {
   console.log(
-    `[versions] Product, engine, 8 JS manifests, and 5 Rust crates match ${productVersion}; schema/protocol remain independent.`,
+    `[versions] Product, engine, ${packagePaths.length} JS manifests, and 5 Rust crates match ${productVersion}; schema/protocol remain independent.`,
   );
 }
