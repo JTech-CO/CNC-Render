@@ -480,6 +480,31 @@ describe("M10 tutorial rules", () => {
       collisionCount: 0,
     });
   });
+
+  it("surfaces an authored setup failure and restores the step checkpoint", () => {
+    const session = new FaceMillingLessonController(faceMillingDocument);
+    session.prepare();
+
+    const failure = session.setup({
+      toolId: "tool.ball-end-mill-12",
+    }).snapshot;
+    expect(failure.status).toBe("failed");
+    expect(failure.lastEvaluation).toMatchObject({
+      matchedFailureRuleId: "setup.wrong-tool",
+      failureReason: "이 실습에는 20 mm 평엔드밀이 필요합니다.",
+    });
+    expect(failure.guidance).toMatchObject({
+      kind: "failure",
+      recovery: { kind: "restore-step-checkpoint" },
+    });
+
+    const restored = session.restoreStepCheckpoint();
+    expect(restored.controller.status).toBe("active");
+    expect(restored.controller.currentStep.phase).toBe("setup");
+    expect(() => session.setup({ cutDepthMm: Number.NaN })).toThrowError(
+      "lesson setup requires a finite positive cut depth and tool count",
+    );
+  });
 });
 
 function turningMeasurement(input: {

@@ -208,6 +208,7 @@ async function runLessonToAssessment(page: Page) {
 
 for (const fixtureCase of [
   {
+    grepId: "tutorial-turning",
     lessonId: "od-turning",
     title: "외경 선삭 기초",
     targetId: "m7.od-turning.balanced",
@@ -218,6 +219,7 @@ for (const fixtureCase of [
     depthMm: null,
   },
   {
+    grepId: "tutorial-drilling",
     lessonId: "drilling",
     title: "선반 센터 드릴링 기초",
     targetId: "m7.drilling-16x80.balanced",
@@ -228,7 +230,7 @@ for (const fixtureCase of [
     depthMm: 80,
   },
 ] as const) {
-  test.describe("M10 " + fixtureCase.lessonId + " Lesson controller", () => {
+  test.describe("M10 " + fixtureCase.grepId + " Lesson controller", () => {
     test("runs the actual Worker/WASM radius field through measurement and assessment", async ({
       page,
     }, testInfo) => {

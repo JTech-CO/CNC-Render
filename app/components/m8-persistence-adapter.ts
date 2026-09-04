@@ -17,6 +17,13 @@ import {
   type ProjectContainerManifest,
 } from "@cnc-render/contracts";
 import {
+  SANDBOX_FACE_MILLING_ENTITY_IDS,
+  mapSandboxOperationToRunParameters,
+  parseSandboxOperationJournal,
+  type SandboxOperationDocument,
+  type SandboxOperationJournal,
+} from "@cnc-render/web/foundation";
+import {
   CLOUD_PERSISTENCE_PLAN,
   IndexedDbGenerationMetadataPort,
   OpfsGenerationFilePort,
@@ -32,11 +39,13 @@ import {
   projectManifestChecksum,
   sha256Hex,
   type SaveProjectGenerationInput,
+  type LoadedProjectGeneration,
 } from "@cnc-render/storage";
 import {
   createM7PipelineFixture,
   type CoordinatorCheckpoint,
   type M7MillingConfigurationInput,
+  type M7MillingOperationParametersInput,
   type M7PipelineFixture,
 } from "@cnc-render/simulation";
 
@@ -59,6 +68,8 @@ const OPERATION_ID = "83000000-0000-4000-8000-000000000009";
 const GCODE_RESOURCE_ID = "83000000-0000-4000-8000-00000000000a";
 const MEASUREMENT_ID = "83000000-0000-4000-8000-00000000000b";
 const RESTORED_TOOLPATH_ID = "83000000-0000-4000-8000-00000000000c";
+const SANDBOX_OPERATION_JOURNAL_PATH =
+  "sandbox/operation-history.json" as const;
 
 export interface M8SaveReport {
   readonly projectId: string;
@@ -77,6 +88,39 @@ export interface M8LoadReport extends M8SaveReport {
   readonly recoveryOutcomes: readonly string[];
 }
 
+export interface M8SandboxSaveReport extends M8SaveReport {
+  readonly operationId: string;
+  readonly operationSemanticHashSha256: string;
+  readonly journalRevision: number;
+  readonly journalSha256: string;
+}
+
+export interface M8SandboxLoadReport extends M8LoadReport {
+  readonly operationDocument: SandboxOperationDocument;
+  readonly operationJournal: SandboxOperationJournal;
+  readonly journal: SandboxOperationJournal;
+  readonly journalSha256: string;
+}
+
+export type M8SandboxPersistenceErrorCode =
+  | "sandbox.persistence.document-journal-mismatch"
+  | "sandbox.persistence.file-missing"
+  | "sandbox.persistence.project-invalid"
+  | "sandbox.persistence.hash-mismatch"
+  | "sandbox.persistence.identity-mismatch"
+  | "sandbox.persistence.checkpoint-mismatch";
+
+export class M8SandboxPersistenceError extends Error {
+  constructor(
+    readonly code: M8SandboxPersistenceErrorCode,
+    message: string,
+    options?: ErrorOptions,
+  ) {
+    super(message, options);
+    this.name = "M8SandboxPersistenceError";
+  }
+
+}
 export interface M8InterruptedSaveReport {
   readonly beforeGenerationId: string;
   readonly afterGenerationId: string;
@@ -103,7 +147,12 @@ export interface M8PersistenceHarness {
     fixture?: M8PersistenceFixture,
     millingConfiguration?: M7MillingConfigurationInput,
   ): Promise<M8SaveReport>;
+  saveSandboxOperation(
+    document: SandboxOperationDocument,
+    journal: string | SandboxOperationJournal,
+  ): Promise<M8SandboxSaveReport>;
   loadPersistedProject(): Promise<M8LoadReport>;
+  loadSandboxOperation(): Promise<M8SandboxLoadReport>;
   testInterruptedSave(): Promise<M8InterruptedSaveReport>;
   testMigrationFixture(): Promise<M8MigrationReport>;
   testCorruptionFixture(): Promise<M8CorruptionReport>;
@@ -117,19 +166,72 @@ declare global {
 }
 
 const encoder = new TextEncoder();
+const decoder = new TextDecoder("utf-8", { fatal: true });
 
 function jsonValue(value: unknown): JsonValue {
   return value as JsonValue;
 }
 
+function sameCanonical(left: unknown, right: unknown): boolean {
+  return canonicalJson(jsonValue(left)) === canonicalJson(jsonValue(right));
+}
+
+function sameBytes(left: Uint8Array, right: Uint8Array): boolean {
+  if (left.byteLength !== right.byteLength) return false;
+  for (let index = 0; index < left.byteLength; index += 1) {
+    if (left[index] !== right[index]) return false;
+  }
+  return true;
+}
+
+function sandboxPersistenceFailure(
+  code: M8SandboxPersistenceErrorCode,
+  message: string,
+  cause?: unknown,
+): M8SandboxPersistenceError {
+  return new M8SandboxPersistenceError(code, message, { cause });
+}
+
+export function validateSandboxOperationJournalMatch(
+  document: SandboxOperationDocument,
+  input: string | SandboxOperationJournal,
+): SandboxOperationJournal {
+  mapSandboxOperationToRunParameters(document);
+  const journal = parseSandboxOperationJournal(input);
+  const active = journal.revisions[journal.cursor];
+  if (
+    !active ||
+    document.presetId !== journal.presetId ||
+    !sameCanonical(active.operation, document.operation) ||
+    !sameCanonical(active.configuration, document.configuration)
+  ) {
+    throw sandboxPersistenceFailure(
+      "sandbox.persistence.document-journal-mismatch",
+      "The committed sandbox operation must exactly match the active journal revision.",
+    );
+  }
+  return journal;
+}
+
+
 async function representativeProject(
   fixture: M8PersistenceFixture,
   run: CoordinatorRunRequest,
+  sandboxDocument?: SandboxOperationDocument,
 ): Promise<Project> {
   const source = run.source;
   const gcodeBytes = encoder.encode(source);
   const turning = run.process.processType === "turning";
   const drilling = fixture === "drilling";
+  const sandboxParameters = sandboxDocument
+    ? mapSandboxOperationToRunParameters(sandboxDocument)
+    : null;
+  if (sandboxDocument && fixture !== "milling") {
+    throw sandboxPersistenceFailure(
+      "sandbox.persistence.identity-mismatch",
+      "Sandbox operations can only be saved with the milling fixture.",
+    );
+  }
   if ((fixture !== "milling") !== turning) {
     throw new Error("Persistence fixture and process type must match.");
   }
@@ -159,8 +261,8 @@ async function representativeProject(
     updatedAt: "2026-08-09T00:00:00Z",
     unitSystem: "metric",
     machineId: MACHINE_ID,
-    stockId: STOCK_ID,
-    operationIds: [OPERATION_ID],
+    stockId: sandboxParameters?.stockId ?? STOCK_ID,
+    operationIds: [sandboxDocument?.operation.id ?? OPERATION_ID],
     machines: [
       {
         schemaVersion: 1,
@@ -224,11 +326,13 @@ async function representativeProject(
       {
         schemaVersion: 1,
         id: TOOL_ID,
-        name: drilling
-          ? "16 mm twist drill"
-          : turning
-            ? "Training turning insert"
-            : "4 mm flat end mill",
+        name: sandboxDocument
+          ? "20 mm flat end mill"
+          : drilling
+            ? "16 mm twist drill"
+            : turning
+              ? "Training turning insert"
+              : "4 mm flat end mill",
         toolType: drilling
           ? "drill"
           : turning
@@ -240,18 +344,18 @@ async function representativeProject(
             : turning
               ? "turning-insert"
               : "flat-end-mill",
-          diameterMm: drilling ? 16 : turning ? 12 : 4,
+          diameterMm: sandboxDocument ? 20 : drilling ? 16 : turning ? 12 : 4,
           cornerRadiusMm: drilling ? 0 : turning ? 0.4 : 0,
           fluteCount: drilling ? 2 : turning ? 1 : 3,
-          cuttingLengthMm: drilling ? 90 : 12,
-          overallLengthMm: drilling ? 120 : turning ? 60 : 50,
+          cuttingLengthMm: sandboxDocument ? 44 : drilling ? 90 : 12,
+          overallLengthMm: sandboxDocument ? 80 : drilling ? 120 : turning ? 60 : 50,
         },
         holderGeometry: {
-          diameterMm: drilling ? 28 : 20,
-          lengthMm: drilling ? 75 : turning ? 80 : 35,
+          diameterMm: sandboxDocument ? 32 : drilling ? 28 : 20,
+          lengthMm: sandboxDocument ? 70 : drilling ? 75 : turning ? 80 : 35,
         },
-        gaugeLengthMm: drilling ? 115 : turning ? 75 : 48,
-        stickoutLengthMm: drilling ? 95 : turning ? 30 : 24,
+        gaugeLengthMm: sandboxDocument ? 80 : drilling ? 115 : turning ? 75 : 48,
+        stickoutLengthMm: sandboxDocument ? 48 : drilling ? 95 : turning ? 30 : 24,
         maxSpindleSpeedRpm: turning ? 4_500 : 12_000,
         wearRatio: 0,
         materialCompatibilityIds: [MATERIAL_ID],
@@ -260,7 +364,7 @@ async function representativeProject(
     stocks: [
       {
         schemaVersion: 1,
-        id: STOCK_ID,
+        id: sandboxParameters?.stockId ?? STOCK_ID,
         name: turning ? "Training billet" : "Training block",
         geometry: stockGeometry,
         transform: {
@@ -274,6 +378,7 @@ async function representativeProject(
       },
     ],
     operations: [
+      ...(sandboxDocument ? [sandboxDocument.operation] : [
       {
         schemaVersion: 1,
         id: OPERATION_ID,
@@ -302,6 +407,7 @@ async function representativeProject(
         targetGeometryResourceId: null,
         generatedToolpathId: null,
       },
+      ]),
     ],
     toolpaths: [],
     resources: [
@@ -338,6 +444,7 @@ function diagnosticRecords(
 
 function measurementRecords(
   removedVolumeMm3: number,
+  representationResolutionMm: number,
 ): readonly PersistedMeasurement[] {
   return [
     {
@@ -345,7 +452,7 @@ function measurementRecords(
       id: MEASUREMENT_ID,
       quantity: "volume",
       valueMm3: removedVolumeMm3,
-      representationResolutionMm: 1,
+      representationResolutionMm,
     },
   ];
 }
@@ -354,23 +461,53 @@ async function semantic(value: unknown): Promise<string> {
   return semanticHash(jsonValue(value));
 }
 
+interface SandboxGenerationPayload {
+  readonly document: SandboxOperationDocument;
+  readonly journal: SandboxOperationJournal;
+}
+
+function sandboxMillingOperation(
+  document: SandboxOperationDocument,
+): M7MillingOperationParametersInput {
+  const parameters = mapSandboxOperationToRunParameters(document);
+  return {
+    cuttingFeedMmPerMin: parameters.feedMmPerMin,
+    spindleSpeedRpm: parameters.spindleSpeedRpm,
+    depthOfCutMm: parameters.depthOfCutMm,
+  };
+}
+
 async function generationInput(
   fixture: M8PersistenceFixture,
   checkpoint: CoordinatorCheckpoint,
   generationId: string,
   millingConfiguration: M7MillingConfigurationInput = {},
+  sandbox?: SandboxGenerationPayload,
 ): Promise<{
   readonly input: SaveProjectGenerationInput;
   readonly checkpointId: string;
   readonly checkpointByteLength: number;
 }> {
   const summary = checkpoint.summary;
+  const sandboxParameters = sandbox
+    ? mapSandboxOperationToRunParameters(sandbox.document)
+    : null;
+  const effectiveMillingConfiguration =
+    sandboxParameters?.millingConfiguration ?? millingConfiguration;
+  const verifiedSandboxJournal = sandbox
+    ? validateSandboxOperationJournalMatch(sandbox.document, sandbox.journal)
+    : null;
   const run = createM7PipelineFixture(
     fixture,
     summary.runId,
-    millingConfiguration,
+    effectiveMillingConfiguration,
+    sandbox ? sandboxMillingOperation(sandbox.document) : {},
   );
-  const project = await representativeProject(fixture, run);
+  const project = await representativeProject(
+    fixture,
+    run,
+    sandbox?.document,
+  );
   const projectHash = await semantic(project);
   const encodedCheckpoint = await encodeSimulationCheckpoint(
     {
@@ -396,7 +533,10 @@ async function generationInput(
   const checkpointPath = `checkpoints/${checkpointId}.bin`;
   const checkpointSha256 = await sha256Hex(encodedCheckpoint.bytes);
   const diagnostics = diagnosticRecords(summary.diagnosticCodes);
-  const measurements = measurementRecords(summary.removedVolumeMm3);
+  const measurements = measurementRecords(
+    summary.removedVolumeMm3,
+    checkpoint.render.resolutionMm,
+  );
   const componentHashes: PersistedComponentHashes = {
     projectSha256: projectHash,
     machineSha256: await semantic(project.machines[0]),
@@ -413,7 +553,7 @@ async function generationInput(
     projectId: PROJECT_ID,
     machineId: MACHINE_ID,
     toolAssemblyId: TOOL_ID,
-    operationId: OPERATION_ID,
+    operationId: sandbox?.document.operation.id ?? OPERATION_ID,
     gcodeResourcePath: "programs/main.nc",
     logicalTimeS: summary.logicalTimeS,
     stock: {
@@ -466,11 +606,183 @@ async function generationInput(
           bytes: canonicalJsonBytes(jsonValue(project)),
         },
         { path: "programs/main.nc", bytes: encoder.encode(run.source) },
+        ...(verifiedSandboxJournal
+          ? [
+              {
+                path: SANDBOX_OPERATION_JOURNAL_PATH,
+                bytes: canonicalJsonBytes(jsonValue(verifiedSandboxJournal)),
+              },
+            ]
+          : []),
         { path: checkpointPath, bytes: encodedCheckpoint.bytes },
       ],
     },
     checkpointId,
     checkpointByteLength: encodedCheckpoint.bytes.byteLength,
+  };
+}
+
+
+interface ValidatedSandboxGeneration {
+  readonly project: Project;
+  readonly operationDocument: SandboxOperationDocument;
+  readonly operationJournal: SandboxOperationJournal;
+  readonly journalSha256: string;
+}
+
+function requiredGenerationFile(
+  loaded: LoadedProjectGeneration,
+  path: string,
+): Uint8Array {
+  const bytes = loaded.files.get(path);
+  if (!bytes) {
+    throw sandboxPersistenceFailure(
+      "sandbox.persistence.file-missing",
+      `Persisted sandbox generation is missing ${path}.`,
+    );
+  }
+  return bytes;
+}
+
+function parsePersistedProject(bytes: Uint8Array): Project {
+  try {
+    return ProjectSchema.parse(JSON.parse(decoder.decode(bytes)));
+  } catch (error) {
+    throw sandboxPersistenceFailure(
+      "sandbox.persistence.project-invalid",
+      "Persisted sandbox project.json is invalid.",
+      error,
+    );
+  }
+}
+
+async function validateLoadedSandboxGeneration(
+  loaded: LoadedProjectGeneration,
+): Promise<ValidatedSandboxGeneration> {
+  const state = loaded.marker.stateSnapshot;
+  const project = parsePersistedProject(
+    requiredGenerationFile(loaded, "project.json"),
+  );
+  let operationJournal: SandboxOperationJournal;
+  try {
+    operationJournal = parseSandboxOperationJournal(
+      decoder.decode(
+        requiredGenerationFile(loaded, SANDBOX_OPERATION_JOURNAL_PATH),
+      ),
+    );
+  } catch (error) {
+    throw sandboxPersistenceFailure(
+      "sandbox.persistence.project-invalid",
+      "Persisted sandbox operation journal is invalid.",
+      error,
+    );
+  }
+  const activeRevision = operationJournal.revisions[operationJournal.cursor];
+  const operation = project.operations.find(
+    (candidate) => candidate.id === state.operationId,
+  );
+  if (!activeRevision || !operation) {
+    throw sandboxPersistenceFailure(
+      "sandbox.persistence.identity-mismatch",
+      "Persisted sandbox operation identity is unavailable.",
+    );
+  }
+  const operationDocument: SandboxOperationDocument = {
+    presetId: operationJournal.presetId,
+    operation,
+    configuration: activeRevision.configuration,
+  };
+  validateSandboxOperationJournalMatch(operationDocument, operationJournal);
+  const parameters = mapSandboxOperationToRunParameters(operationDocument);
+  const machine = project.machines.find(
+    (candidate) => candidate.id === parameters.machineId,
+  );
+  const tool = project.toolAssemblies.find(
+    (candidate) => candidate.id === parameters.toolAssemblyId,
+  );
+  const stock = project.stocks.find(
+    (candidate) => candidate.id === parameters.stockId,
+  );
+  const material = project.materials.find(
+    (candidate) => candidate.id === parameters.materialId,
+  );
+  const setup = project.setups.find(
+    (candidate) => candidate.id === parameters.setupId,
+  );
+  if (
+    project.id !== parameters.projectId ||
+    project.machineId !== parameters.machineId ||
+    project.stockId !== parameters.stockId ||
+    !sameCanonical(project.operationIds, [parameters.operationId]) ||
+    project.operations.length !== 1 ||
+    state.projectId !== parameters.projectId ||
+    state.machineId !== parameters.machineId ||
+    state.toolAssemblyId !== parameters.toolAssemblyId ||
+    state.operationId !== parameters.operationId ||
+    !machine ||
+    !tool ||
+    !stock ||
+    !material ||
+    !setup ||
+    stock.materialId !== parameters.materialId
+  ) {
+    throw sandboxPersistenceFailure(
+      "sandbox.persistence.identity-mismatch",
+      "Persisted sandbox entity links do not match the active operation.",
+    );
+  }
+  const gcodeBytes = requiredGenerationFile(loaded, state.gcodeResourcePath);
+  const gcodeResource = project.resources.find(
+    (resource) => resource.path === state.gcodeResourcePath,
+  );
+  const [
+    projectSha256,
+    machineSha256,
+    toolSha256,
+    operationSha256,
+    gcodeSha256,
+    diagnosticsSha256,
+    measurementsSha256,
+  ] = await Promise.all([
+    semantic(project),
+    semantic(machine),
+    semantic(tool),
+    semantic(operation),
+    sha256Hex(gcodeBytes),
+    semantic(state.diagnostics),
+    semantic(state.measurements),
+  ]);
+  const componentHashes = state.componentHashes;
+  if (
+    projectSha256 !== componentHashes.projectSha256 ||
+    machineSha256 !== componentHashes.machineSha256 ||
+    toolSha256 !== componentHashes.toolSha256 ||
+    operationSha256 !== componentHashes.operationSha256 ||
+    gcodeSha256 !== componentHashes.gcodeSha256 ||
+    diagnosticsSha256 !== componentHashes.diagnosticsSha256 ||
+    measurementsSha256 !== componentHashes.measurementsSha256 ||
+    componentHashes.stockSha256 !== state.stock.stockHashSha256 ||
+    state.gcodeResourcePath !== "programs/main.nc" ||
+    !gcodeResource ||
+    gcodeResource.id !== GCODE_RESOURCE_ID ||
+    gcodeResource.role !== "gcode-program" ||
+    gcodeResource.mediaType !== "text/x-gcode" ||
+    !gcodeResource.authoritative ||
+    gcodeResource.byteLength !== gcodeBytes.byteLength ||
+    gcodeResource.sha256 !== gcodeSha256
+  ) {
+    throw sandboxPersistenceFailure(
+      "sandbox.persistence.hash-mismatch",
+      "Persisted sandbox component hashes do not match their payloads.",
+    );
+  }
+  return {
+    project,
+    operationDocument,
+    operationJournal,
+    journalSha256: await sha256Hex(
+      requiredGenerationFile(loaded, SANDBOX_OPERATION_JOURNAL_PATH),
+    ),
   };
 }
 
@@ -591,6 +903,75 @@ export function attachM8Persistence(
     );
   }
 
+  async function saveSandboxOperation(
+    document: SandboxOperationDocument,
+    journalInput: string | SandboxOperationJournal,
+  ): Promise<M8SandboxSaveReport> {
+    const operationJournal = validateSandboxOperationJournalMatch(
+      document,
+      journalInput,
+    );
+    const parameters = mapSandboxOperationToRunParameters(document);
+    const terminal = await pipeline.runPipelineFixture("milling", {
+      playbackSpeed: 100,
+      executionMode: "fast-forward",
+      millingConfiguration: parameters.millingConfiguration,
+      millingOperation: sandboxMillingOperation(document),
+    });
+    const checkpoint = await pipeline.capturePipelineCheckpoint();
+    if (
+      !terminal.completed ||
+      terminal.stopped ||
+      terminal.currentStep !== terminal.totalSteps ||
+      terminal.totalSteps !== checkpoint.summary.totalSteps ||
+      terminal.runId !== checkpoint.summary.runId ||
+      terminal.fixtureId !== checkpoint.summary.fixtureId ||
+      terminal.processType !== "milling" ||
+      checkpoint.summary.processType !== "milling" ||
+      terminal.currentStep !== checkpoint.summary.currentStep ||
+      terminal.logicalTimeS !== checkpoint.summary.logicalTimeS ||
+      terminal.stateSemanticHashSha256 !==
+        checkpoint.summary.stateSemanticHashSha256 ||
+      terminal.stockHashSha256 !== checkpoint.summary.stockHashSha256 ||
+      terminal.completed !== checkpoint.summary.completed ||
+      terminal.stopped !== checkpoint.summary.stopped
+    ) {
+      throw sandboxPersistenceFailure(
+        "sandbox.persistence.checkpoint-mismatch",
+        "Captured checkpoint does not belong to the completed sandbox run.",
+      );
+    }
+    const generationId = crypto.randomUUID();
+    const built = await generationInput(
+      "milling",
+      checkpoint,
+      generationId,
+      parameters.millingConfiguration,
+      { document, journal: operationJournal },
+    );
+    await repository.save(built.input);
+    const journalBytes = canonicalJsonBytes(jsonValue(operationJournal));
+    viewport.dataset.persistenceState = "saved";
+    viewport.dataset.persistenceGenerationId = generationId;
+    viewport.dataset.persistenceStateHash =
+      built.input.stateSnapshot.stateSemanticHashSha256;
+    return {
+      ...saveReport(
+        built.input,
+        built.checkpointId,
+        built.checkpointByteLength,
+        checkpoint.summary.currentStep,
+      ),
+      operationId: document.operation.id,
+      operationSemanticHashSha256:
+        built.input.stateSnapshot.componentHashes.operationSha256,
+      journalRevision:
+        operationJournal.revisions[operationJournal.cursor]!.sequence,
+      journalSha256: await sha256Hex(journalBytes),
+    };
+  }
+
+
   async function loadPersistedProject(): Promise<M8LoadReport> {
     const recovery = await repository.recoverInterruptedSaves();
     const loaded = await repository.load(PROJECT_ID);
@@ -629,9 +1010,170 @@ export function attachM8Persistence(
     };
   }
 
+  async function loadSandboxOperation(): Promise<M8SandboxLoadReport> {
+    const recovery = await repository.recoverInterruptedSaves();
+    const loaded = await repository.load(
+      SANDBOX_FACE_MILLING_ENTITY_IDS.projectId,
+    );
+    if (!loaded) {
+      throw sandboxPersistenceFailure(
+        "sandbox.persistence.file-missing",
+        "No persisted sandbox operation is available.",
+      );
+    }
+    const validated = await validateLoadedSandboxGeneration(loaded);
+    const descriptor = loaded.marker.checkpointIndex.checkpoints.at(-1);
+    if (!descriptor) {
+      throw sandboxPersistenceFailure(
+        "sandbox.persistence.file-missing",
+        "Persisted sandbox project has no checkpoint descriptor.",
+      );
+    }
+    const checkpointBytes = requiredGenerationFile(
+      loaded,
+      descriptor.payloadPath,
+    );
+    const decoded = await decodeSimulationCheckpoint(checkpointBytes);
+    const state = loaded.marker.stateSnapshot;
+    const operationParameters = mapSandboxOperationToRunParameters(
+      validated.operationDocument,
+    );
+    const expectedRun = createM7PipelineFixture(
+      "milling",
+      decoded.header.runId,
+      operationParameters.millingConfiguration,
+      sandboxMillingOperation(validated.operationDocument),
+    );
+    if (expectedRun.process.processType !== "milling") {
+      throw sandboxPersistenceFailure(
+        "sandbox.persistence.identity-mismatch",
+        "Sandbox operation did not resolve to a milling process.",
+      );
+    }
+    const expectedStock = expectedRun.process.stock;
+    const projectStock = validated.project.stocks.find(
+      (stock) => stock.id === operationParameters.stockId,
+    );
+    const projectMachine = validated.project.machines.find(
+      (machine) => machine.id === operationParameters.machineId,
+    );
+    const projectTool = validated.project.toolAssemblies.find(
+      (tool) => tool.id === operationParameters.toolAssemblyId,
+    );
+    const expectedBoundsMm = {
+      minimum: {
+        xMm: expectedStock.positionMm.xMm - expectedStock.sizeMm.xMm / 2,
+        yMm: expectedStock.positionMm.yMm - expectedStock.sizeMm.yMm / 2,
+        zMm: expectedStock.positionMm.zMm - expectedStock.sizeMm.zMm / 2,
+      },
+      maximum: {
+        xMm: expectedStock.positionMm.xMm + expectedStock.sizeMm.xMm / 2,
+        yMm: expectedStock.positionMm.yMm + expectedStock.sizeMm.yMm / 2,
+        zMm: expectedStock.positionMm.zMm + expectedStock.sizeMm.zMm / 2,
+      },
+    };
+    const persistedGcode = requiredGenerationFile(
+      loaded,
+      state.gcodeResourcePath,
+    );
+    const persistedVolumeMeasurement = state.measurements.find(
+      (measurement) => measurement.quantity === "volume",
+    );
+    if (
+      !decoded.header.completed ||
+      decoded.header.stopped ||
+      decoded.header.currentStep !== decoded.header.totalSteps ||
+      !projectStock ||
+      !projectMachine ||
+      !projectTool ||
+      projectMachine.machineType !== "vertical-machining-center" ||
+      projectStock.representationType !== "dexel" ||
+      projectStock.resolutionMm !== expectedStock.baseResolutionMm ||
+      !sameCanonical(projectStock.geometry, {
+        primitiveType: "box",
+        sizeMm: expectedStock.sizeMm,
+      }) ||
+      !sameCanonical(projectStock.transform, {
+        positionMm: expectedStock.positionMm,
+        rotationRad: { xRad: 0, yRad: 0, zRad: 0 },
+      }) ||
+      projectTool.toolType !== "milling-cutter" ||
+      projectTool.cutterGeometry.geometryType !== "flat-end-mill" ||
+      projectTool.cutterGeometry.diameterMm !==
+        expectedRun.process.tool.diameterMm ||
+      projectTool.cutterGeometry.cuttingLengthMm !==
+        expectedRun.process.tool.cuttingLengthMm ||
+      !sameBytes(persistedGcode, encoder.encode(expectedRun.source)) ||
+      state.stock.representation !== "milling-dexel" ||
+      state.stock.payloadPath !== descriptor.payloadPath ||
+      state.stock.payloadByteLength !== descriptor.byteLength ||
+      state.stock.payloadSha256 !== descriptor.sha256 ||
+      decoded.render.renderType !== "milling-full" ||
+      !sameCanonical(decoded.render.boundsMm, expectedBoundsMm) ||
+      decoded.render.resolutionMm !== expectedStock.baseResolutionMm ||
+      state.measurements.length !== 1 ||
+      !persistedVolumeMeasurement ||
+      persistedVolumeMeasurement.id !== MEASUREMENT_ID ||
+      persistedVolumeMeasurement.representationResolutionMm !== decoded.render.resolutionMm ||
+      decoded.render.columns !==
+        Math.ceil(expectedStock.sizeMm.xMm / expectedStock.baseResolutionMm) ||
+      decoded.render.rows !==
+        Math.ceil(expectedStock.sizeMm.yMm / expectedStock.baseResolutionMm) ||
+      decoded.header.stockRevision !== state.stock.revision ||
+      !sameCanonical(
+        decoded.header.diagnosticCodes,
+        state.diagnostics.map((diagnostic) => diagnostic.code),
+      ) ||
+      descriptor.boundary !== "terminal" ||
+      decoded.header.projectId !== validated.project.id ||
+      decoded.header.engineVersion !== loaded.marker.engineVersion ||
+      decoded.header.projectSemanticHashSha256 !==
+        state.componentHashes.projectSha256 ||
+      decoded.header.stateSemanticHashSha256 !==
+        state.stateSemanticHashSha256 ||
+      decoded.header.stockHashSha256 !== state.stock.stockHashSha256 ||
+      decoded.header.logicalTimeS !== state.logicalTimeS ||
+      descriptor.logicalTimeS !== decoded.header.logicalTimeS ||
+      descriptor.stateSemanticHashSha256 !==
+        decoded.header.stateSemanticHashSha256 ||
+      descriptor.stockHashSha256 !== decoded.header.stockHashSha256
+    ) {
+      throw sandboxPersistenceFailure(
+        "sandbox.persistence.checkpoint-mismatch",
+        "Persisted sandbox checkpoint provenance does not match its Project generation.",
+      );
+    }
+    const renderedOnFrame = await pipeline.renderPipelineCheckpoint(
+      restoredCheckpoint(decoded, state),
+    );
+    viewport.dataset.persistenceState = "loaded";
+    viewport.dataset.persistenceGenerationId = loaded.metadata.generationId;
+    viewport.dataset.persistenceStateHash = state.stateSemanticHashSha256;
+    return {
+      projectId: loaded.marker.projectId,
+      generationId: loaded.metadata.generationId,
+      checkpointId: descriptor.id,
+      componentHashes: state.componentHashes,
+      stateSemanticHashSha256: state.stateSemanticHashSha256,
+      stockHashSha256: state.stock.stockHashSha256,
+      currentStep: decoded.header.currentStep,
+      logicalTimeS: decoded.header.logicalTimeS,
+      checkpointByteLength: checkpointBytes.byteLength,
+      renderedOnFrame,
+      recoveryOutcomes: recovery.map((item) => item.outcome),
+      operationDocument: validated.operationDocument,
+      operationJournal: validated.operationJournal,
+      journal: validated.operationJournal,
+      journalSha256: validated.journalSha256,
+    };
+  }
+
+
   const harness: M8PersistenceHarness = {
     saveFixture,
+    saveSandboxOperation,
     loadPersistedProject,
+    loadSandboxOperation,
     async testInterruptedSave() {
       const before = await repository.load(PROJECT_ID);
       if (!before) {

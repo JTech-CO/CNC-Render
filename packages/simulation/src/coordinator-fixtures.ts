@@ -19,6 +19,12 @@ export interface M7MillingConfiguration {
   readonly cutDirection: M7MillingCutDirection;
 }
 
+export interface M7MillingOperationParameters {
+  readonly cuttingFeedMmPerMin: number;
+  readonly spindleSpeedRpm: number;
+  readonly depthOfCutMm: number;
+}
+
 export interface M7FaceMillingTarget extends MillingFlatEndSweepTarget {
   readonly accuracyGrade: "E2";
   readonly commandedCutDepthMm: number;
@@ -36,11 +42,20 @@ export interface M7DrillingTarget extends DrillingRadiusFieldTarget {
 }
 
 export type M7MillingConfigurationInput = Partial<M7MillingConfiguration>;
+export type M7MillingOperationParametersInput =
+  Partial<M7MillingOperationParameters>;
 
 export const DEFAULT_M7_MILLING_CONFIGURATION: M7MillingConfiguration = {
   stockPreset: "standard",
   cutDirection: "x",
 };
+
+export const DEFAULT_M7_MILLING_OPERATION_PARAMETERS: M7MillingOperationParameters =
+  {
+    cuttingFeedMmPerMin: 2_400,
+    spindleSpeedRpm: 6_000,
+    depthOfCutMm: 4,
+  };
 
 interface MillingStockProfile {
   readonly sizeMm: { readonly xMm: number; readonly yMm: number; readonly zMm: number };
@@ -93,14 +108,49 @@ export function resolveM7MillingConfiguration(
   };
 }
 
+export function resolveM7MillingOperationParameters(
+  input: M7MillingOperationParametersInput = {},
+): M7MillingOperationParameters {
+  const resolved = {
+    cuttingFeedMmPerMin:
+      input.cuttingFeedMmPerMin ??
+      DEFAULT_M7_MILLING_OPERATION_PARAMETERS.cuttingFeedMmPerMin,
+    spindleSpeedRpm:
+      input.spindleSpeedRpm ??
+      DEFAULT_M7_MILLING_OPERATION_PARAMETERS.spindleSpeedRpm,
+    depthOfCutMm:
+      input.depthOfCutMm ??
+      DEFAULT_M7_MILLING_OPERATION_PARAMETERS.depthOfCutMm,
+  };
+  for (const [name, value] of Object.entries(resolved)) {
+    if (!Number.isFinite(value) || value <= 0 || Object.is(value, -0)) {
+      throw new RangeError(`${name} must be a finite positive number`);
+    }
+  }
+  if (resolved.cuttingFeedMmPerMin > 12_000) {
+    throw new RangeError("cuttingFeedMmPerMin exceeds the VMC feed limit");
+  }
+  if (resolved.spindleSpeedRpm > 12_000) {
+    throw new RangeError("spindleSpeedRpm exceeds the VMC spindle limit");
+  }
+  if (resolved.depthOfCutMm > 44) {
+    throw new RangeError("depthOfCutMm exceeds the cutter length");
+  }
+  return resolved;
+}
+
 export function createM7MillingToolpathPoints(
   configuration: M7MillingConfigurationInput = {},
+  operationInput: M7MillingOperationParametersInput = {},
 ): readonly (readonly [number, number, number])[] {
   const resolved = resolveM7MillingConfiguration(configuration);
+  const operation = resolveM7MillingOperationParameters(operationInput);
   const profile = MILLING_STOCK_PROFILES[resolved.stockPreset];
+  const stockTopZMm = profile.positionMm.zMm + profile.sizeMm.zMm / 2;
+  const cutZMm = stockTopZMm - operation.depthOfCutMm;
   const points: Array<readonly [number, number, number]> = [
     [-profile.halfPathXmm, -profile.halfPathYmm, profile.safeZMm],
-    [-profile.halfPathXmm, -profile.halfPathYmm, profile.cutZMm],
+    [-profile.halfPathXmm, -profile.halfPathYmm, cutZMm],
   ];
 
   for (let pass = 0; pass < 5; pass += 1) {
@@ -108,20 +158,20 @@ export function createM7MillingToolpathPoints(
     if (resolved.cutDirection === "x") {
       const yMm = -profile.halfPathYmm + profile.halfPathYmm * 2 * laneRatio;
       const targetXmm = pass % 2 === 0 ? profile.halfPathXmm : -profile.halfPathXmm;
-      points.push([targetXmm, yMm, profile.cutZMm]);
+      points.push([targetXmm, yMm, cutZMm]);
       if (pass < 4) {
         const nextYmm =
           -profile.halfPathYmm + profile.halfPathYmm * 2 * ((pass + 1) / 4);
-        points.push([targetXmm, nextYmm, profile.cutZMm]);
+        points.push([targetXmm, nextYmm, cutZMm]);
       }
     } else {
       const xMm = -profile.halfPathXmm + profile.halfPathXmm * 2 * laneRatio;
       const targetYmm = pass % 2 === 0 ? profile.halfPathYmm : -profile.halfPathYmm;
-      points.push([xMm, targetYmm, profile.cutZMm]);
+      points.push([xMm, targetYmm, cutZMm]);
       if (pass < 4) {
         const nextXmm =
           -profile.halfPathXmm + profile.halfPathXmm * 2 * ((pass + 1) / 4);
-        points.push([nextXmm, targetYmm, profile.cutZMm]);
+        points.push([nextXmm, targetYmm, cutZMm]);
       }
     }
   }
@@ -133,21 +183,22 @@ export function createM7MillingToolpathPoints(
 
 export function createM7FaceMillingTarget(
   configuration: M7MillingConfigurationInput = {},
+  operationInput: M7MillingOperationParametersInput = {},
 ): M7FaceMillingTarget {
   const resolved = resolveM7MillingConfiguration(configuration);
+  const operation = resolveM7MillingOperationParameters(operationInput);
   const profile = MILLING_STOCK_PROFILES[resolved.stockPreset];
   const halfStock = {
     xMm: profile.sizeMm.xMm / 2,
     yMm: profile.sizeMm.yMm / 2,
     zMm: profile.sizeMm.zMm / 2,
   };
-  const points = createM7MillingToolpathPoints(resolved);
+  const points = createM7MillingToolpathPoints(resolved, operation);
   return {
     targetId: `m7.face-milling.${resolved.stockPreset}.${resolved.cutDirection}`,
     kind: "flat-end-sweep",
     accuracyGrade: "E2",
-    commandedCutDepthMm:
-      profile.positionMm.zMm + halfStock.zMm - profile.cutZMm,
+    commandedCutDepthMm: operation.depthOfCutMm,
     stockBoundsMm: {
       minimum: {
         xMm: profile.positionMm.xMm - halfStock.xMm,
@@ -242,14 +293,24 @@ function coordinate(value: number): string {
   return String(Object.is(value, -0) ? 0 : value);
 }
 
-function millingSource(configuration: M7MillingConfiguration): string {
-  const points = createM7MillingToolpathPoints(configuration);
+function millingSource(
+  configuration: M7MillingConfiguration,
+  operation: M7MillingOperationParameters,
+): string {
+  const points = createM7MillingToolpathPoints(configuration, operation);
   const first = points[0];
   const lines = [
     "G21 G90",
     `G0 X${coordinate(first[0])} Y${coordinate(first[1])} Z${coordinate(first[2])}`,
     `G1 Z${coordinate(points[1][2])} F1200`,
   ];
+
+  if (
+    operation.spindleSpeedRpm !==
+    DEFAULT_M7_MILLING_OPERATION_PARAMETERS.spindleSpeedRpm
+  ) {
+    lines.splice(1, 0, `S${coordinate(operation.spindleSpeedRpm)} M3`);
+  }
 
   for (let index = 2; index < points.length - 1; index += 1) {
     const previous = points[index - 1];
@@ -265,7 +326,11 @@ function millingSource(configuration: M7MillingConfiguration): string {
       configuration.cutDirection === "x"
         ? current[0] !== previous[0]
         : current[1] !== previous[1];
-    lines.push(`G1 ${words.join(" ")} F${cuttingMove ? 2400 : 1200}`);
+    lines.push(
+      `G1 ${words.join(" ")} F${
+        cuttingMove ? coordinate(operation.cuttingFeedMmPerMin) : 1200
+      }`,
+    );
   }
 
   lines.push(`G0 Z${coordinate(points.at(-1)![2])}`, "M30");
@@ -297,17 +362,21 @@ function millingRun(
   runId: string,
   collision: boolean,
   configurationInput: M7MillingConfigurationInput,
+  operationInput: M7MillingOperationParametersInput,
 ): CoordinatorRunRequest {
   const configuration = resolveM7MillingConfiguration(
     collision ? DEFAULT_M7_MILLING_CONFIGURATION : configurationInput,
   );
+  const operation = resolveM7MillingOperationParameters(
+    collision ? DEFAULT_M7_MILLING_OPERATION_PARAMETERS : operationInput,
+  );
   const profile = MILLING_STOCK_PROFILES[configuration.stockPreset];
-  const firstPoint = createM7MillingToolpathPoints(configuration)[0];
+  const firstPoint = createM7MillingToolpathPoints(configuration, operation)[0];
   return {
     schemaVersion: 1,
     runId,
     fixtureId: collision ? "m7-collision-stop" : "m7-milling",
-    source: millingSource(configuration),
+    source: millingSource(configuration, operation),
     initialPositionMm: {
       xMm: firstPoint[0],
       yMm: firstPoint[1],
@@ -396,15 +465,21 @@ export function createM7PipelineFixture(
   fixture: M7PipelineFixture,
   runId: string,
   configuration: M7MillingConfigurationInput = {},
+  operation: M7MillingOperationParametersInput = {},
 ): CoordinatorRunRequest {
   switch (fixture) {
     case "milling":
-      return millingRun(runId, false, configuration);
+      return millingRun(runId, false, configuration, operation);
     case "turning":
       return turningRun(runId, "turning");
     case "drilling":
       return turningRun(runId, "drilling");
     case "collision-stop":
-      return millingRun(runId, true, DEFAULT_M7_MILLING_CONFIGURATION);
+      return millingRun(
+        runId,
+        true,
+        DEFAULT_M7_MILLING_CONFIGURATION,
+        DEFAULT_M7_MILLING_OPERATION_PARAMETERS,
+      );
   }
 }

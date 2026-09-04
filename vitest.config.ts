@@ -28,6 +28,9 @@ export default defineConfig({
     },
   },
   test: {
+    // This suite contains strict wall-clock main-thread budgets. Running test
+    // files concurrently makes host scheduling pauses look like handler work.
+    fileParallelism: false,
     environment: "node",
     include: ["tests/unit/**/*.test.ts"],
     passWithNoTests: false,

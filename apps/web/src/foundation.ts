@@ -20,4 +20,5 @@ export type FoundationPackageName =
   (typeof CNC_RENDER_FOUNDATION_PACKAGES)[number];
 
 export * from "./face-milling-lesson-controller";
+export * from "./sandbox-operation-controller";
 export * from "./turning-profile-lesson-controller";

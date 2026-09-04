@@ -1,4 +1,5 @@
 import {
+  createM7FaceMillingTarget,
   createM7DrillingTarget,
   createM7OdTurningTarget,
   createM7MillingToolpathPoints,
@@ -60,6 +61,34 @@ M30
     );
     expect(collision.source).toContain("G1 X170 F2400");
     expect(collision.source).not.toContain("G1 Y60 F2400");
+  });
+
+  it("maps custom feed, spindle speed, and depth into the deterministic run", () => {
+    const configuration = { stockPreset: "compact", cutDirection: "y" } as const;
+    const operation = {
+      cuttingFeedMmPerMin: 1_800,
+      spindleSpeedRpm: 7_200,
+      depthOfCutMm: 2.5,
+    } as const;
+    const run = createM7PipelineFixture(
+      "milling",
+      RUN_ID,
+      configuration,
+      operation,
+    );
+    const points = createM7MillingToolpathPoints(configuration, operation);
+    const target = createM7FaceMillingTarget(configuration, operation);
+
+    expect(points[1]).toEqual([-130, -60, 323.5]);
+    expect(run.source).toContain("S7200 M3");
+    expect(run.source).toContain("G1 Y60 F1800");
+    expect(target.commandedCutDepthMm).toBe(2.5);
+    expect(() =>
+      createM7PipelineFixture("milling", RUN_ID, configuration, {
+        ...operation,
+        cuttingFeedMmPerMin: Number.POSITIVE_INFINITY,
+      }),
+    ).toThrowError("cuttingFeedMmPerMin must be a finite positive number");
   });
 });
 

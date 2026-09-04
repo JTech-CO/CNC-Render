@@ -31,6 +31,14 @@ export interface FaceMillingLessonRunSummary {
   readonly collisionCount: number;
 }
 
+export interface FaceMillingLessonSetupInput {
+  readonly fixtureId?: string;
+  readonly toolId?: string;
+  readonly operationId?: string;
+  readonly cutDepthMm?: number;
+  readonly toolCount?: number;
+}
+
 export interface FaceMillingLessonSnapshot {
   readonly controller: LessonControllerSnapshot;
   readonly configuration: M7MillingConfiguration;
@@ -43,6 +51,7 @@ export interface FaceMillingLessonSnapshot {
 export type FaceMillingLessonControllerErrorCode =
   | "lesson.face-milling.execution-not-started"
   | "lesson.face-milling.execution-not-terminal"
+  | "lesson.face-milling.setup-invalid"
   | "lesson.face-milling.measurement-missing"
   | "lesson.face-milling.measurement-invalid"
   | "lesson.face-milling.measurement-run-mismatch";
@@ -110,17 +119,34 @@ export class FaceMillingLessonController {
     });
   }
 
-  setup(): LessonControllerTransition {
+  setup(
+    input: FaceMillingLessonSetupInput = {},
+  ): LessonControllerTransition {
+    const cutDepthMm = input.cutDepthMm ?? this.#target.commandedCutDepthMm;
+    const toolCount = input.toolCount ?? 1;
+    if (
+      !Number.isFinite(cutDepthMm) ||
+      cutDepthMm <= 0 ||
+      Object.is(cutDepthMm, -0) ||
+      !Number.isSafeInteger(toolCount) ||
+      toolCount <= 0
+    ) {
+      throw new FaceMillingLessonControllerError(
+        "lesson.face-milling.setup-invalid",
+        "lesson setup requires a finite positive cut depth and tool count",
+      );
+    }
     return this.#controller.dispatch("operation.configure", {
       selections: {
-        fixtureId: FACE_MILLING_SELECTIONS.fixtureId,
-        toolId: FACE_MILLING_SELECTIONS.toolId,
-        operationId: FACE_MILLING_SELECTIONS.operationId,
+        fixtureId: input.fixtureId ?? FACE_MILLING_SELECTIONS.fixtureId,
+        toolId: input.toolId ?? FACE_MILLING_SELECTIONS.toolId,
+        operationId:
+          input.operationId ?? FACE_MILLING_SELECTIONS.operationId,
       },
       events: ["setup.completed"],
       metrics: {
-        cutDepthMm: this.#target.commandedCutDepthMm,
-        toolCount: 1,
+        cutDepthMm,
+        toolCount,
       },
     });
   }

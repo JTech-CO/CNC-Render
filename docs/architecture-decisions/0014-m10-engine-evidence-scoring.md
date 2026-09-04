@@ -100,3 +100,20 @@ ADR 0013은 강의 스키마와 단계 판정을 순수 규칙으로 고정했�
    만들었다. WebGPU와 WebGL 2에서 각 Lesson의 실제 실행→측정→평가 E2E를
    통과했으며, 1 mm layer와 지름 2 mm 양자화보다 작은 형상·드릴 point·버는
    평가하지 않는 E2 한계를 콘텐츠에 노출한다.
+
+## 후속 구현 기록 — 2026-09-04
+
+1. 샌드박스의 검증된 feed, spindle speed, cut depth와 Stock/direction 설정은
+   `M7MillingOperationParameters`로 변환되어 기존 G-code→Worker→Rust/WASM→
+   renderer 경로에 전달된다. renderer 표시용 dataset도 같은 해석된 값에서 만든다.
+2. 저장은 활성 operation과 journal cursor가 canonical JSON으로 정확히 일치할 때만
+   허용한다. 같은 operation으로 완료한 terminal과 capture checkpoint의 run ID,
+   fixture, process, step, logical time, state hash와 Stock hash를 비교한 다음 Project,
+   G-code, 진단, 측정, checkpoint와 journal을 같은 generation에 기록한다.
+3. 불러오기는 Project entity link와 component SHA-256, G-code resource, checkpoint
+   provenance를 모두 재검증한 뒤에만 Stock을 renderer에 복원하고 operation journal을
+   UI controller에 전달한다. 손상되거나 다른 revision인 payload는 명시적 진단으로
+   거부한다.
+4. 절삭 폭은 이번 E2 preset의 operation provenance에는 보존되지만 Ø20 mm 공구의
+   lane 간격은 대표 fixture로 고정된다. 자유 toolpath 생성과 width 기반 stepover는
+   M10 완료 조건 밖의 후속 샌드박스 확장으로 남긴다.

@@ -63,3 +63,20 @@ M9의 학습 영역은 대표 절삭 공정을 실행할 수 있지만 정식 �
   frame과 실제 재생 경과는 계속 판정 입력이 아니다.
 - 이 후속 기록으로 선삭·드릴링 콘텐츠와 정식 UI/E2E 제외 범위는 해소됐다.
   샌드박스 operation 생성·편집·저장과 힌트 정책 확장은 여전히 후속 M10 범위다.
+
+## 후속 구현 기록 — 2026-09-04
+
+- `tutorial-success`와 `tutorial-failure` visual baseline은 전용 WebGL 2 project에서
+  글꼴·포커스를 고정한 Lesson 결과 영역을 비교한다. 성공은 최종 3D 결과와 실제
+  Worker/WASM 제거·측정·100점 증거를 유지하고, 실패는 작성된 `setup.wrong-tool`
+  이유와 `restore-step-checkpoint` 복구 동작을 함께 검증한다.
+- 샌드박스 controller는 `Operation` strict schema를 유지하면서 대표 평면 밀링의
+  생성·편집·commit·discard와 최대 50개 revision의 durable undo/redo를 기록한다.
+  동일 operation ID와 단조 증가 sequence가 아닌 journal은 복원을 거부한다.
+- React에는 form과 작은 controller snapshot만 두며 실행은 기존 전용 Worker와
+  Rust/WASM 경로를 사용한다. 저장 시 같은 operation으로 fast-forward checkpoint를
+  다시 만들고 project와 canonical journal을 한 immutable generation에 기록한다.
+- 첫 샌드박스는 E2 수직 절편으로 Training VMC, Aluminum 6061, Ø20 mm 평엔드밀,
+  표준/소형 직육면체 Stock과 X/Y 왕복을 제공한다. balanced 8 mm 격자에서 0 체적
+  절삭을 허용하지 않도록 절입 깊이는 4–5 mm로 제한하며 이 범위를 UI에 표시한다.
+  더 많은 기계·재료·공구와 자유 공구경로는 후속 범위다.

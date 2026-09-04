@@ -1,12 +1,74 @@
 ﻿# CNC Render Progress
 
-- Current phase: M10 튜토리얼·샌드박스 MVP(E2) 진행 중
-- Status: 평면 밀링·외경 선삭·센터 드릴링 5단계 Lesson과 실제 Stock 측정 완료
-- Last completed: 외경/홀 반경 field 측정·100점 판정·저장 복원 WebGPU/WebGL 2 통과
-- Next task: 성공·실패 visual baseline과 샌드박스 operation 생성·편집·저장
+- Current phase: M10 튜토리얼·샌드박스 MVP(E2) 완료
+- Status: M10 Definition of Done 8개와 공식 unit·parity·E2E·visual gate 통과
+- Last completed: 성공·실패 visual baseline과 샌드박스 Operation 생성·편집·실행·저장·복원
+- Next task: M11 — G-code Lab·진단·측정·결과 비교(S1 기초)
 - Open questions: 없음
 - Known regressions: 없음
 
+
+## M10 성공·실패 visual baseline·샌드박스 Operation (2026-09-04, 완료)
+
+### 구현
+
+- 평면 밀링 Lesson의 성공과 작성된 잘못된 공구 실패를 전용 WebGL 2 visual
+  baseline으로 고정했다. 성공 상태는 실제 Worker/WASM 제거·Stock 갱신·독립 측정·
+  `100 / 100` 판정과 마지막 3D 결과를 유지하며 전체 화면 축하 효과를 만들지 않는다.
+  실패 상태는 `setup.wrong-tool` 이유와 설정 단계 checkpoint 복구를 함께 검증한다.
+- `Operation` strict schema를 사용하는 샌드박스 controller를 추가했다. 대표 E2
+  평면 밀링을 생성·편집하고 commit/discard하며 최대 50개 revision을 durable
+  undo/redo journal로 직렬화한다. operation identity, revision 순서, cursor와
+  configuration이 일치하지 않는 journal은 복원을 거부한다.
+- Training VMC, Aluminum 6061, Ø20 mm 평엔드밀, 표준/소형 직육면체 Stock과
+  X/Y 왕복을 선택할 수 있다. 이송, 회전수, 절입 깊이와 Stock/방향은 기존
+  G-code→전용 Worker→Rust/WASM→renderer 전체 경로에 실제 반영한다.
+- balanced 8 mm 격자에서 0 체적 절삭이 되는 하위 해상도 입력을 숨기지 않도록
+  이 E2 preset의 절입 깊이를 4–5 mm로 제한하고 UI에 표시한다. feed·rpm·절삭 폭도
+  유한값과 기계/preset 상한을 controller에서 검증하며 단위를 입력 옆에 표시한다.
+- 미적용 form draft가 stale committed Operation으로 실행·저장되지 않게 하고,
+  active/paused 이전 run을 취소한 뒤 새 run ID의 완료 summary만 성공으로 인정한다.
+  undo/redo/load도 미적용 draft가 있는 동안 비활성화하고 검증 원인을 alert로 노출한다.
+- 저장은 활성 Operation과 journal cursor의 canonical 일치, 완료/non-stopped terminal,
+  terminal/checkpoint provenance를 확인한 뒤 Project·G-code·진단·측정·Stock checkpoint·
+  journal을 하나의 immutable generation에 기록한다. 불러오기는 entity link, component
+  hash, G-code resource와 Stock payload/checkpoint 결속을 모두 재검증한 뒤 렌더한다.
+- 실제 wall-clock `maximumMainHandlerMs < 50` 기준은 유지했다. unit 파일 병렬 실행이
+  OS scheduling pause를 handler 비용으로 오인하던 문제만 `fileParallelism: false`로
+  격리했으며 coordinator metric과 임계값은 변경하지 않았다.
+- ADR 0013·0014에 visual 판정, 샌드박스 controller, 실제 엔진 전달과 저장 무결성
+  결정을 후속 구현 기록으로 추가했다.
+
+### 검증
+
+| Gate | Result |
+|---|---|
+| `git diff --check` | 통과 |
+| `pnpm test:unit --filter sandbox-operation-controller` | 통과 — 1 file, 15 tests |
+| `pnpm test:unit --filter persistence` | 통과 — 3 files, 11 tests |
+| `pnpm test:parity --filter scoring` | 통과 — 실제 Rust/WASM 4 tests |
+| `pnpm test:e2e --grep "tutorial-face\|tutorial-turning\|tutorial-drilling\|sandbox"` | 통과 — WebGPU·WebGL 2 8 passed, visual 중복 4 skipped |
+| `pnpm test:visual --grep "tutorial-success\|tutorial-failure"` | 통과 — WebGL 2 2 passed |
+| `pnpm test:a11y` | 통과 — WebGPU·WebGL 2 2 passed, visual 중복 1 skipped |
+| coordinator 성능 gate 단독 반복 | 통과 — 15/15, `< 50 ms` 기준 유지 |
+| `pnpm verify` (Node 24.18.0, pnpm 11.5.3) | 통과 — unit 190, contracts 51, parity 67, Cargo check, production build |
+| dependency boundary | 통과 — 111 modules, 248 dependencies, 위반 0 |
+| production WASM | 793,536 bytes, SHA-256 `d788f5b38bc27cd0429f5500e63ad6523fc1b9dce07574c2983a78b444bd9fec` |
+| visual assets | success 23,390 bytes `8f18ef8be574…`; failure 20,629 bytes `578ac84f9667…` |
+
+### 남은 위험과 M11 경계
+
+- 이번 샌드박스는 M10 E2 수직 절편이므로 기계·재료·공구는 각 1개다. 기술 백서의
+  다축 기계, 원통/튜브/사용자 모델, 재료·공구·고정구 전체 라이브러리, 조그/MDI와
+  자유 공구경로 생성기는 후속 샌드박스 확장 범위다.
+- 절삭 폭은 Operation provenance에 저장되지만 Ø20 mm 공구의 lane 간격은 대표
+  fixture에 고정되어 있다. width 기반 stepover와 임의 toolpath 편집은 후속 범위다.
+- 저장은 브라우저 OPFS/IndexedDB의 로컬 generation이다. 복제·공유·클라우드 동기화는
+  아직 제공하지 않는다.
+- balanced 8 mm 밀링 격자와 1 mm 회전 layer보다 작은 형상, 공구 접촉·표면 조도·
+  열 변형은 평가하지 않는다. 화면의 E2 표기를 산업용 검증으로 해석하면 안 된다.
+- 목표/결과 heatmap, 측정 도구, 진단 양방향 이동과 JSON/CSV/인쇄 리포트는 M11에서
+  구현한다.
 
 ## M10 외경 선삭·드릴링 측정/Controller (2026-08-14, 완료)
 

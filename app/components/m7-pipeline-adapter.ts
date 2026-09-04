@@ -8,17 +8,21 @@ import {
   createM7MillingToolpathPoints,
   createM7PipelineFixture,
   resolveM7MillingConfiguration,
+  resolveM7MillingOperationParameters,
   type CoordinatorCheckpoint,
   type CoordinatorExecutionMode,
   type CoordinatorRenderUpdate,
   type CoordinatorSnapshot,
   type M7MillingConfiguration,
   type M7MillingConfigurationInput,
+  type M7MillingOperationParameters,
+  type M7MillingOperationParametersInput,
   type M7PipelineFixture,
 } from "@cnc-render/simulation";
 
 export interface M7PipelineBrowserState extends CoordinatorSnapshot {
   readonly fixture: M7PipelineFixture | null;
+  readonly millingOperation: M7MillingOperationParameters;
   readonly millingConfiguration: M7MillingConfiguration;
   readonly baselineRenderFrame: number | null;
   readonly renderedOnFrame: number | null;
@@ -30,6 +34,7 @@ export interface M7PipelineBrowserState extends CoordinatorSnapshot {
 export interface M7PipelineRunOptions {
   readonly playbackSpeed?: number;
   readonly executionMode?: CoordinatorExecutionMode;
+  readonly millingOperation?: M7MillingOperationParametersInput;
   readonly millingConfiguration?: M7MillingConfigurationInput;
 }
 
@@ -151,6 +156,7 @@ export function attachM7Pipeline(
 ): { readonly harness: M7PipelineHarness; dispose(): void } {
   const coordinator = new SimulationCoordinator();
   let fixture: M7PipelineFixture | null = null;
+  let millingOperation = resolveM7MillingOperationParameters();
   let millingConfiguration = resolveM7MillingConfiguration();
   let baselineRenderFrame: number | null = null;
   let renderedOnFrame: number | null = null;
@@ -289,6 +295,9 @@ export function attachM7Pipeline(
     millingConfiguration = resolveM7MillingConfiguration(
       selectedFixture === "milling" ? options.millingConfiguration : {},
     );
+    millingOperation = resolveM7MillingOperationParameters(
+      selectedFixture === "milling" ? options.millingOperation : {},
+    );
     if (!performanceMeasurementStarted) {
       coordinator.beginMainThreadPerformanceWindow();
       longTaskObserver?.takeRecords();
@@ -321,13 +330,16 @@ export function attachM7Pipeline(
       selectedFixture === "collision-stop"
     ) {
       renderer.setMillingToolpath(
-        createM7MillingToolpathPoints(millingConfiguration),
+        createM7MillingToolpathPoints(millingConfiguration, millingOperation),
       );
     }
     viewport.dataset.pipelineState = "starting";
     viewport.dataset.pipelineFixture = selectedFixture;
     viewport.dataset.pipelineStockPreset = millingConfiguration.stockPreset;
     viewport.dataset.pipelineCutDirection = millingConfiguration.cutDirection;
+    viewport.dataset.pipelineCuttingFeed = String(millingOperation.cuttingFeedMmPerMin);
+    viewport.dataset.pipelineSpindleSpeed = String(millingOperation.spindleSpeedRpm);
+    viewport.dataset.pipelineCutDepth = String(millingOperation.depthOfCutMm);
     viewport.dataset.pipelinePlaybackElapsedS = "0";
     delete viewport.dataset.pipelineRenderedFrame;
     delete viewport.dataset.pipelineFinalHash;
@@ -336,6 +348,7 @@ export function attachM7Pipeline(
       selectedFixture,
       runId,
       millingConfiguration,
+      millingOperation,
     );
     const initialized = await coordinator.start(run, {
       playbackSpeed: options.playbackSpeed ?? 1,
@@ -389,6 +402,7 @@ export function attachM7Pipeline(
         ...coordinator.getSnapshot(),
         fixture,
         millingConfiguration,
+        millingOperation,
         baselineRenderFrame,
         renderedOnFrame,
         playbackElapsedS: playbackElapsedS(),

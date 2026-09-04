@@ -78,6 +78,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@cnc-render/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
       '@cnc-render/lesson-engine':
         specifier: workspace:*
         version: link:../../packages/lesson-engine

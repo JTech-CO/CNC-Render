@@ -5,7 +5,11 @@ import {
   DrillingLessonController,
   FaceMillingLessonController,
   OdTurningLessonController,
+  SandboxOperationController,
+  SandboxOperationControllerError,
+  mapSandboxOperationToRunParameters,
   type FaceMillingLessonSnapshot,
+  type SandboxOperationSnapshot,
   type TurningProfileLessonSnapshot,
 } from "@cnc-render/web/foundation";
 import {
@@ -32,6 +36,7 @@ import {
   runM4CollisionStopDemo,
   type CollisionEvent,
   type LatheRadiusFieldEngine,
+  type M7MillingOperationParametersInput,
   type M5MillingDemoOperation,
   type M6TurningDemoOperation,
   type M7MillingConfiguration,
@@ -137,6 +142,7 @@ type M10LessonSnapshot =
 
 interface CncRenderM10Harness {
   getLessonState(): M10LessonSnapshot;
+  getSandboxState(): SandboxOperationSnapshot;
 }
 
 declare global {
@@ -164,7 +170,9 @@ function viewLabel(view: WorkcellRendererStatus["cameraView"]): string {
   return view === "custom" ? "사용자 시점" : CAMERA_PRESETS[view].label;
 }
 
-function workspaceIcon(kind: "scene" | "code" | "learn" | "report") {
+function workspaceIcon(
+  kind: "scene" | "code" | "learn" | "sandbox" | "report",
+) {
   const paths = {
     scene: (
       <>
@@ -183,6 +191,11 @@ function workspaceIcon(kind: "scene" | "code" | "learn" | "report") {
         <path d="M20 5.5A3.5 3.5 0 0 0 16.5 2H12v18h4.5a3.5 3.5 0 0 1 3.5 3.5z" />
       </>
     ),
+    sandbox: (
+      <>
+        <path d="M4 4h16v16H4zM8 4v16M16 4v16M4 9h16M4 15h16" />
+      </>
+    ),
     report: (
       <>
         <path d="M5 3h14v18H5zM8 8h8M8 12h8M8 16h5" />
@@ -196,8 +209,78 @@ function workspaceIcon(kind: "scene" | "code" | "learn" | "report") {
     </svg>
   );
 }
-type WorkspaceArea = "scene" | "code" | "learn" | "results";
+type WorkspaceArea = "scene" | "code" | "learn" | "sandbox" | "results";
 type DockTab = "gcode" | "diagnostics";
+
+
+interface SandboxFormState {
+  readonly name: string;
+  readonly stockPreset: "standard" | "compact";
+  readonly cutDirection: "x" | "y";
+  readonly feedMmPerMin: string;
+  readonly spindleSpeedRpm: string;
+  readonly depthOfCutMm: string;
+  readonly widthOfCutMm: string;
+}
+
+interface SandboxNotice {
+  readonly kind: "idle" | "success" | "error";
+  readonly text: string;
+}
+
+const DEFAULT_SANDBOX_FORM: SandboxFormState = {
+  name: "E2 평면 밀링",
+  stockPreset: "standard",
+  cutDirection: "x",
+  feedMmPerMin: "2400",
+  spindleSpeedRpm: "6000",
+  depthOfCutMm: "4",
+  widthOfCutMm: "20",
+};
+
+function sandboxFormFromSnapshot(
+  snapshot: SandboxOperationSnapshot,
+): SandboxFormState {
+  const operation = snapshot.operation;
+  const configuration = snapshot.configuration;
+  if (!operation || !configuration || operation.feed.mode !== "per-minute") {
+    return DEFAULT_SANDBOX_FORM;
+  }
+  return {
+    name: operation.name,
+    stockPreset: configuration.stockPreset,
+    cutDirection: configuration.cutDirection,
+    feedMmPerMin: String(operation.feed.feedMmPerMin),
+    spindleSpeedRpm: String(operation.spindleSpeedRpm),
+    depthOfCutMm: String(operation.depthOfCutMm),
+    widthOfCutMm: String(operation.widthOfCutMm),
+  };
+}
+
+function sameSandboxForm(
+  left: SandboxFormState,
+  right: SandboxFormState,
+): boolean {
+  return (
+    left.name === right.name &&
+    left.stockPreset === right.stockPreset &&
+    left.cutDirection === right.cutDirection &&
+    left.feedMmPerMin === right.feedMmPerMin &&
+    left.spindleSpeedRpm === right.spindleSpeedRpm &&
+    left.depthOfCutMm === right.depthOfCutMm &&
+    left.widthOfCutMm === right.widthOfCutMm
+  );
+}
+
+function sandboxFailureText(error: unknown, fallback: string): string {
+  if (
+    error instanceof SandboxOperationControllerError &&
+    error.issues.length > 0
+  ) {
+    return error.issues.join(" · ");
+  }
+  return error instanceof Error ? error.message : fallback;
+}
 
 const WORKSPACE_PLAYBACK_SPEED = 0.1;
 
@@ -332,6 +415,13 @@ export function MachineWorkspace() {
   const [drillingLessonController] = useState(
     () => new DrillingLessonController(drillingLessonDocument),
   );
+  const [sandboxOperationController] = useState(
+    () =>
+      new SandboxOperationController({
+        createUuid: () => crypto.randomUUID(),
+        nowUtc: () => new Date().toISOString(),
+      }),
+  );
   const [activeArea, setActiveArea] = useState<WorkspaceArea>("scene");
   const [dockTab, setDockTab] = useState<DockTab>("gcode");
   const [selectedPipelineFixture, setSelectedPipelineFixture] =
@@ -347,6 +437,19 @@ export function MachineWorkspace() {
   const [lessonActionError, setLessonActionError] = useState<string | null>(
     null,
   );
+  const [sandboxSnapshot, setSandboxSnapshot] =
+    useState<SandboxOperationSnapshot>(() =>
+      sandboxOperationController.getSnapshot(),
+    );
+  const [sandboxForm, setSandboxForm] =
+    useState<SandboxFormState>(DEFAULT_SANDBOX_FORM);
+  const sandboxFormRef = useRef<SandboxFormState>(DEFAULT_SANDBOX_FORM);
+  const [sandboxActionPending, setSandboxActionPending] = useState(false);
+  const [sandboxPersistenceReady, setSandboxPersistenceReady] = useState(false);
+  const [sandboxNotice, setSandboxNotice] = useState<SandboxNotice>({
+    kind: "idle",
+    text: "Operation을 생성하거나 저장본을 불러오세요.",
+  });
   const activeAreaRef = useRef<WorkspaceArea>("scene");
   const activeLessonIdRef = useRef<M10LessonId>("face-milling");
   const activeLessonControllerRef = useRef<M10LessonController>(
@@ -365,6 +468,17 @@ export function MachineWorkspace() {
     setActiveLesson(activeLessonControllerRef.current.getSnapshot());
   }, []);
   const stopPipelineRef = useRef<() => Promise<void>>(async () => undefined);
+  const publishSandboxSnapshot = useCallback(
+    (snapshot = sandboxOperationController.getSnapshot()) => {
+      setSandboxSnapshot(snapshot);
+      if (snapshot.status === "ready") {
+        const form = sandboxFormFromSnapshot(snapshot);
+        sandboxFormRef.current = form;
+        setSandboxForm(form);
+      }
+    },
+    [sandboxOperationController],
+  );
   const saveWorkspaceRef = useRef<() => Promise<void>>(async () => undefined);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -851,6 +965,26 @@ export function MachineWorkspace() {
         playToggleRef.current = async () => {
           const pipelineSnapshot = pipeline.getPipelineState();
           const selected = selectedFixture();
+          if (activeAreaRef.current === "sandbox") {
+            const snapshot = sandboxOperationController.getSnapshot();
+            if (snapshot.status !== "ready") {
+              const message = "먼저 평면 밀링 Operation을 생성하세요.";
+              setSandboxNotice({ kind: "error", text: message });
+              throw new Error(message);
+            }
+            if (
+              !sameSandboxForm(
+                sandboxFormRef.current,
+                sandboxFormFromSnapshot(snapshot),
+              )
+            ) {
+              const message =
+                "변경 적용 후 Worker/WASM 실행 또는 저장을 진행하세요.";
+              setSandboxNotice({ kind: "error", text: message });
+              throw new Error(message);
+            }
+          }
+
           if (
             (pipelineSnapshot.status === "running" ||
               pipelineSnapshot.status === "starting") &&
@@ -868,6 +1002,37 @@ export function MachineWorkspace() {
 
           let fixture = selected;
           let millingConfiguration = selectedMillingConfiguration();
+          let millingOperation: M7MillingOperationParametersInput | undefined;
+          if (activeAreaRef.current === "sandbox") {
+            const snapshot = sandboxOperationController.getSnapshot();
+            if (snapshot.status !== "ready") {
+              setSandboxNotice({
+                kind: "error",
+                text: "먼저 평면 밀링 Operation을 생성하세요.",
+              });
+              return;
+            }
+            const parameters = mapSandboxOperationToRunParameters(
+              sandboxOperationController.getCommittedDocument(),
+            );
+            fixture = "milling";
+            millingConfiguration = parameters.millingConfiguration;
+            millingOperation = {
+              cuttingFeedMmPerMin: parameters.feedMmPerMin,
+              spindleSpeedRpm: parameters.spindleSpeedRpm,
+              depthOfCutMm: parameters.depthOfCutMm,
+            };
+            setSelectedPipelineFixture("milling");
+            if (fixtureSelectRef.current) {
+              fixtureSelectRef.current.value = "milling";
+            }
+            if (stockPresetSelectRef.current) {
+              stockPresetSelectRef.current.value = millingConfiguration.stockPreset;
+            }
+            if (cutDirectionSelectRef.current) {
+              cutDirectionSelectRef.current.value = millingConfiguration.cutDirection;
+            }
+          }
           const lesson =
             activeAreaRef.current === "learn"
               ? activeLessonControllerRef.current
@@ -910,6 +1075,7 @@ export function MachineWorkspace() {
               executionMode: "realtime",
               playbackSpeed: WORKSPACE_PLAYBACK_SPEED,
               millingConfiguration,
+              millingOperation,
             });
             updatePipelineSummary(
               workspace,
@@ -947,6 +1113,8 @@ export function MachineWorkspace() {
         window.__CNC_RENDER_M10__ = {
           getLessonState: () =>
             activeLessonControllerRef.current.getSnapshot(),
+          getSandboxState: () =>
+            sandboxOperationController.getSnapshot(),
         };
         setLessonPipelineReady(true);
         publishLessonSnapshot();
@@ -960,14 +1128,52 @@ export function MachineWorkspace() {
           window.__CNC_RENDER_M8__ = persistenceBinding.harness;
           viewport.dataset.persistenceState = "ready";
           persistenceHarnessRef.current = persistenceBinding.harness;
+          setSandboxPersistenceReady(true);
           saveWorkspaceRef.current = async () => {
-            const fixture = selectedFixture();
-            await persistenceBinding!.harness.saveFixture(
-              fixture === "collision-stop" ? "milling" : fixture,
-              selectedMillingConfiguration(),
-            );
+            let fixture = selectedFixture();
+            if (activeAreaRef.current === "sandbox") {
+              const snapshot = sandboxOperationController.getSnapshot();
+              if (snapshot.status !== "ready") {
+                const message = "먼저 평면 밀링 Operation을 생성하세요.";
+                setSandboxNotice({ kind: "error", text: message });
+                throw new Error(message);
+              }
+              if (
+                !sameSandboxForm(
+                  sandboxFormRef.current,
+                  sandboxFormFromSnapshot(snapshot),
+                )
+              ) {
+                const message =
+                  "변경 적용 후 Worker/WASM 실행 또는 저장을 진행하세요.";
+                setSandboxNotice({ kind: "error", text: message });
+                throw new Error(message);
+              }
+              fixture = "milling";
+              setSelectedPipelineFixture(fixture);
+              if (fixtureSelectRef.current) {
+                fixtureSelectRef.current.value = fixture;
+              }
+              const document =
+                sandboxOperationController.getCommittedDocument();
+              const report =
+                await persistenceBinding!.harness.saveSandboxOperation(
+                  document,
+                  sandboxOperationController.serializeJournal(),
+                );
+              setSandboxNotice({
+                kind: "success",
+                text: `저장 완료 · revision ${sandboxOperationController.getSnapshot().revision ?? 0} · ${report.operationSemanticHashSha256.slice(0, 12)}`,
+              });
+            } else {
+              await persistenceBinding!.harness.saveFixture(
+                fixture === "collision-stop" ? "milling" : fixture,
+                selectedMillingConfiguration(),
+              );
+            }
             const pipelineSnapshot = pipeline.getPipelineState();
             const summary = pipelineSnapshot.summary;
+            fixture = pipelineSnapshot.fixture ?? fixture;
             if (summary) {
               updatePipelineSummary(
                 workspace,
@@ -986,6 +1192,7 @@ export function MachineWorkspace() {
             readonly diagnosticCode?: unknown;
           };
           viewport.dataset.persistenceState = "unavailable";
+          setSandboxPersistenceReady(false);
           viewport.dataset.persistenceDiagnostic =
             typeof diagnostic.diagnosticCode === "string"
               ? diagnostic.diagnosticCode
@@ -1040,6 +1247,8 @@ export function MachineWorkspace() {
     faceMillingLessonController,
     odTurningLessonController,
     publishLessonSnapshot,
+    publishSandboxSnapshot,
+    sandboxOperationController,
   ]);
 
   const setView = (view: CameraPresetId) => {
@@ -1144,6 +1353,20 @@ export function MachineWorkspace() {
     publishLessonSnapshot();
   };
 
+  const showAuthoredSetupFailure = () => {
+    if (
+      activeLessonIdRef.current !== "face-milling" ||
+      faceMillingLessonController.getSnapshot().controller.currentStep.phase !== "setup"
+    ) {
+      return;
+    }
+    faceMillingLessonController.setup({
+      toolId: "tool.ball-end-mill-12",
+    });
+    setLessonActionError(null);
+    publishLessonSnapshot();
+  };
+
   const handleLessonPrimaryAction = async () => {
     const lesson = activeLessonControllerRef.current;
     const before = lesson.getSnapshot();
@@ -1224,6 +1447,195 @@ export function MachineWorkspace() {
     }
   };
 
+  const updateSandboxForm = (patch: Partial<SandboxFormState>) => {
+    const next = { ...sandboxFormRef.current, ...patch };
+    sandboxFormRef.current = next;
+    setSandboxForm(next);
+    if (sandboxOperationController.getSnapshot().status === "ready") {
+      setSandboxNotice({
+        kind: "idle",
+        text: "변경 적용 후 실행·저장할 수 있습니다.",
+      });
+    }
+  };
+
+  const handleSandboxCreate = () => {
+    setSandboxNotice({ kind: "idle", text: "Operation을 생성하고 있습니다." });
+    try {
+      const snapshot = sandboxOperationController.createFaceMilling({
+        name: sandboxFormRef.current.name,
+        stockPreset: sandboxFormRef.current.stockPreset,
+        cutDirection: sandboxFormRef.current.cutDirection,
+      });
+      publishSandboxSnapshot(snapshot);
+      setSandboxNotice({
+        kind: "success",
+        text: `Operation 생성 완료 · revision ${snapshot.revision ?? 0}`,
+      });
+    } catch (error) {
+      setSandboxNotice({
+        kind: "error",
+        text: sandboxFailureText(error, "Operation을 생성하지 못했습니다."),
+      });
+    }
+  };
+
+  const handleSandboxApply = () => {
+    setSandboxNotice({ kind: "idle", text: "변경사항을 검증하고 있습니다." });
+    try {
+      sandboxOperationController.edit({
+        name: sandboxFormRef.current.name,
+        stockPreset: sandboxFormRef.current.stockPreset,
+        cutDirection: sandboxFormRef.current.cutDirection,
+        feedMmPerMin: Number(sandboxFormRef.current.feedMmPerMin),
+        spindleSpeedRpm: Number(sandboxFormRef.current.spindleSpeedRpm),
+        depthOfCutMm: Number(sandboxFormRef.current.depthOfCutMm),
+        widthOfCutMm: Number(sandboxFormRef.current.widthOfCutMm),
+      });
+      const snapshot = sandboxOperationController.commit();
+      publishSandboxSnapshot(snapshot);
+      setSandboxNotice({
+        kind: "success",
+        text: `변경 적용 완료 · revision ${snapshot.revision ?? 0}`,
+      });
+    } catch (error) {
+      setSandboxNotice({
+        kind: "error",
+        text: sandboxFailureText(
+          error,
+          "Operation 변경값이 유효하지 않습니다.",
+        ),
+      });
+    }
+  };
+
+  const handleSandboxHistory = (direction: "undo" | "redo") => {
+    const snapshot =
+      direction === "undo"
+        ? sandboxOperationController.undo()
+        : sandboxOperationController.redo();
+    publishSandboxSnapshot(snapshot);
+    setSandboxNotice({
+      kind: "success",
+      text: `${direction === "undo" ? "실행 취소" : "다시 실행"} · revision ${snapshot.revision ?? 0}`,
+    });
+  };
+
+  const handleSandboxRun = async () => {
+    setSandboxActionPending(true);
+    setSandboxNotice({
+      kind: "idle",
+      text: "전용 Worker와 Rust/WASM 코어에서 실행하고 있습니다.",
+    });
+    try {
+      const pipeline = pipelineHarnessRef.current;
+      if (!pipeline) {
+        throw new Error("Worker/WASM 파이프라인을 준비하고 있습니다.");
+      }
+      const before = pipeline.getPipelineState();
+      const previousRunId = before.activeRunId ?? before.summary?.runId ?? null;
+      if (
+        before.status === "starting" ||
+        before.status === "running" ||
+        before.status === "paused"
+      ) {
+        await pipeline.cancelPipeline();
+      }
+      await playToggleRef.current();
+      const completed = pipeline.getPipelineState();
+      const summary = completed.summary;
+      if (
+        !summary?.completed ||
+        summary.runId === previousRunId ||
+        completed.fixture !== "milling"
+      ) {
+        throw new Error(
+          "새 샌드박스 Worker/WASM 실행이 완료되지 않았습니다.",
+        );
+      }
+      setSandboxNotice({
+        kind: "success",
+        text: `실행 완료 · ${summary.currentStep} 단계 · ${summary.stateSemanticHashSha256.slice(0, 12)}`,
+      });
+    } catch (error) {
+      setSandboxNotice({
+        kind: "error",
+        text: sandboxFailureText(
+          error,
+          "샌드박스 실행을 완료하지 못했습니다.",
+        ),
+      });
+    } finally {
+      setSandboxActionPending(false);
+    }
+  };
+
+  const handleSandboxSave = async () => {
+    setSandboxActionPending(true);
+    setSandboxNotice({ kind: "idle", text: "프로젝트를 저장하고 있습니다." });
+    try {
+      await saveWorkspaceRef.current();
+    } catch (error) {
+      setSandboxNotice({
+        kind: "error",
+        text: sandboxFailureText(
+          error,
+          "샌드박스 프로젝트를 저장하지 못했습니다.",
+        ),
+      });
+    } finally {
+      setSandboxActionPending(false);
+    }
+  };
+
+  const handleSandboxLoad = async () => {
+    const persistence = persistenceHarnessRef.current;
+    if (!persistence) {
+      setSandboxNotice({
+        kind: "error",
+        text: "브라우저 저장소가 아직 준비되지 않았습니다.",
+      });
+      return;
+    }
+    setSandboxActionPending(true);
+    setSandboxNotice({ kind: "idle", text: "저장된 Operation을 불러오고 있습니다." });
+    try {
+      const report = await persistence.loadSandboxOperation();
+      const snapshot = sandboxOperationController.restoreJournal(
+        report.operationJournal,
+      );
+      publishSandboxSnapshot(snapshot);
+      setSelectedPipelineFixture("milling");
+      if (fixtureSelectRef.current) fixtureSelectRef.current.value = "milling";
+      if (stockPresetSelectRef.current) {
+        stockPresetSelectRef.current.value =
+          report.operationDocument.configuration.stockPreset;
+      }
+      if (cutDirectionSelectRef.current) {
+        cutDirectionSelectRef.current.value =
+          report.operationDocument.configuration.cutDirection;
+      }
+      setSandboxNotice({
+        kind: "success",
+        text: `불러오기 완료 · revision ${snapshot.revision ?? 0} · ${report.componentHashes.operationSha256.slice(0, 12)}`,
+      });
+    } catch (error) {
+      setSandboxNotice({
+        kind: "error",
+        text: sandboxFailureText(
+          error,
+          "저장된 Operation을 불러오지 못했습니다.",
+        ),
+      });
+    } finally {
+      setSandboxActionPending(false);
+    }
+  };
+
+  const sandboxFormDirty =
+    sandboxSnapshot.status === "ready" &&
+    !sameSandboxForm(sandboxForm, sandboxFormFromSnapshot(sandboxSnapshot));
+
   const lessonStep = activeLesson.controller.currentStep;
   const lessonPrimaryLabel = activeLesson.running
     ? "Worker/WASM 실행 중…"
@@ -1289,6 +1701,16 @@ export function MachineWorkspace() {
         >
           {workspaceIcon("learn")}
           <span>학습</span>
+        </button>
+        <button
+          aria-current={activeArea === "sandbox" ? "page" : undefined}
+          className={`activity-button ${activeArea === "sandbox" ? "is-active" : ""}`}
+          data-testid="workspace-area-sandbox"
+          onClick={() => selectWorkspaceArea("sandbox")}
+          type="button"
+        >
+          {workspaceIcon("sandbox")}
+          <span>샌드박스</span>
         </button>
         <button
           aria-current={activeArea === "results" ? "page" : undefined}
@@ -1370,7 +1792,9 @@ export function MachineWorkspace() {
                   ? "코드"
                   : activeArea === "learn"
                     ? "학습"
-                    : "결과"}
+                    : activeArea === "sandbox"
+                      ? "샌드박스"
+                      : "결과"}
               </h2>
             </div>
             <span className="panel-count">E2</span>
@@ -1470,6 +1894,26 @@ export function MachineWorkspace() {
                 </p>
                 <h4>{lessonStep.title}</h4>
                 <p>{lessonStep.instruction}</p>
+                {activeLesson.controller.status !== "active" ? (
+                  <div
+                    className="lesson-outcome"
+                    data-outcome={activeLesson.controller.status}
+                    data-testid="lesson-outcome"
+                    role="status"
+                  >
+                    <span className="lesson-outcome-icon" aria-hidden="true">
+                      {activeLesson.controller.status === "completed" ? "\u2713" : "!"}
+                    </span>
+                    <div>
+                      <strong>{activeLesson.controller.status === "completed" ? "Lesson 완료" : "단계 복구 필요"}</strong>
+                      <p>
+                        {activeLesson.controller.status === "completed"
+                          ? "결정론적 평가를 통과했으며 마지막 3D 가공 결과를 유지합니다."
+                          : "실패 이유를 확인하고 단계 체크포인트로 복구하세요."}
+                      </p>
+                    </div>
+                  </div>
+                ) : null}
                 {activeLesson.controller.guidance ? (
                   <div className="lesson-guidance" role="alert">
                     <p>{activeLesson.controller.guidance.reason}</p>
@@ -1551,6 +1995,18 @@ export function MachineWorkspace() {
                     </small>
                   </div>
                 ) : null}
+                {activeLessonId === "face-milling" &&
+                lessonStep.phase === "setup" &&
+                activeLesson.controller.status === "active" ? (
+                  <button
+                    className="context-secondary lesson-failure-fixture"
+                    data-testid="lesson-failure-fixture"
+                    onClick={showAuthoredSetupFailure}
+                    type="button"
+                  >
+                    잘못된 공구 실패 예시
+                  </button>
+                ) : null}
               </section>
               <button
                 className="context-primary"
@@ -1566,6 +2022,246 @@ export function MachineWorkspace() {
                   (limitation) => <li key={limitation}>{limitation}</li>,
                 )}
               </ul>
+            </div>
+          ) : activeArea === "sandbox" ? (
+            <div
+              className="context-content sandbox-workspace"
+              data-revision={sandboxSnapshot.revision ?? 0}
+              data-state={sandboxSnapshot.status}
+              data-testid="sandbox-workspace"
+            >
+              <p className="context-kicker">OPERATION SANDBOX · E2</p>
+              <h3>평면 밀링 Operation</h3>
+              <fieldset
+                className="sandbox-fieldset"
+                disabled={sandboxActionPending}
+              >
+                <legend>가공 자원</legend>
+                <label className="sandbox-field">
+                  <span>기계</span>
+                  <select
+                    data-testid="sandbox-machine"
+                    defaultValue="83000000-0000-4000-8000-000000000002"
+                  >
+                    <option value="83000000-0000-4000-8000-000000000002">
+                      Training VMC
+                    </option>
+                  </select>
+                </label>
+                <label className="sandbox-field">
+                  <span>소재 형상</span>
+                  <select
+                    data-testid="sandbox-stock-preset"
+                    onChange={(event) => updateSandboxForm({
+                      stockPreset: event.currentTarget.value as
+                        | "standard"
+                        | "compact",
+                    })}
+                    value={sandboxForm.stockPreset}
+                  >
+                    <option value="standard">표준 · 360 × 200 × 88 mm</option>
+                    <option value="compact">소형 · 280 × 160 × 72 mm</option>
+                  </select>
+                </label>
+                <label className="sandbox-field">
+                  <span>재질</span>
+                  <select
+                    data-testid="sandbox-material"
+                    defaultValue="83000000-0000-4000-8000-000000000005"
+                  >
+                    <option value="83000000-0000-4000-8000-000000000005">
+                      Aluminum 6061
+                    </option>
+                  </select>
+                </label>
+                <label className="sandbox-field">
+                  <span>공구</span>
+                  <select
+                    data-testid="sandbox-tool"
+                    defaultValue="83000000-0000-4000-8000-000000000007"
+                  >
+                    <option value="83000000-0000-4000-8000-000000000007">
+                      Ø20 mm flat end mill
+                    </option>
+                  </select>
+                </label>
+                <label className="sandbox-field">
+                  <span>절삭 방향</span>
+                  <select
+                    data-testid="sandbox-cut-direction"
+                    onChange={(event) => updateSandboxForm({
+                      cutDirection: event.currentTarget.value as "x" | "y",
+                    })}
+                    value={sandboxForm.cutDirection}
+                  >
+                    <option value="x">X축 왕복</option>
+                    <option value="y">Y축 왕복</option>
+                  </select>
+                </label>
+              </fieldset>
+
+              {sandboxSnapshot.status === "empty" ? (
+                <button
+                  className="context-primary"
+                  data-testid="sandbox-operation-create"
+                  disabled={sandboxActionPending}
+                  onClick={handleSandboxCreate}
+                  type="button"
+                >
+                  Operation 생성
+                </button>
+              ) : (
+                <>
+                  <fieldset
+                    className="sandbox-fieldset sandbox-operation-fields"
+                    disabled={sandboxActionPending}
+                  >
+                    <legend>Operation 편집</legend>
+                    <label className="sandbox-field">
+                      <span>이름</span>
+                      <input
+                        data-testid="sandbox-operation-name"
+                        onChange={(event) => updateSandboxForm({
+                          name: event.currentTarget.value,
+                        })}
+                        value={sandboxForm.name}
+                      />
+                    </label>
+                    <label className="sandbox-field">
+                      <span>이송 속도 <b>mm/min</b></span>
+                      <input
+                        data-testid="sandbox-feed-mm-per-min"
+                        inputMode="decimal"
+                        max="12000"
+                        min="0.001"
+                        onChange={(event) => updateSandboxForm({
+                          feedMmPerMin: event.currentTarget.value,
+                        })}
+                        step="0.1"
+                        type="number"
+                        value={sandboxForm.feedMmPerMin}
+                      />
+                    </label>
+                    <label className="sandbox-field">
+                      <span>주축 속도 <b>rpm</b></span>
+                      <input
+                        data-testid="sandbox-spindle-rpm"
+                        inputMode="decimal"
+                        max="12000"
+                        min="1"
+                        onChange={(event) => updateSandboxForm({
+                          spindleSpeedRpm: event.currentTarget.value,
+                        })}
+                        step="1"
+                        type="number"
+                        value={sandboxForm.spindleSpeedRpm}
+                      />
+                    </label>
+                    <label className="sandbox-field">
+                      <span>절입 깊이 <b>mm</b></span>
+                      <input
+                        data-testid="sandbox-depth-of-cut-mm"
+                        inputMode="decimal"
+                        max="5"
+                        min="4"
+                        onChange={(event) => updateSandboxForm({
+                          depthOfCutMm: event.currentTarget.value,
+                        })}
+                        step="0.1"
+                        type="number"
+                        value={sandboxForm.depthOfCutMm}
+                      />
+                    </label>
+                    <label className="sandbox-field">
+                      <span>절삭 폭 <b>mm</b></span>
+                      <input
+                        data-testid="sandbox-width-of-cut-mm"
+                        inputMode="decimal"
+                        max="20"
+                        min="0.001"
+                        onChange={(event) => updateSandboxForm({
+                          widthOfCutMm: event.currentTarget.value,
+                        })}
+                        step="0.1"
+                        type="number"
+                        value={sandboxForm.widthOfCutMm}
+                      />
+                    </label>
+                  </fieldset>
+                  <button
+                    className="context-primary"
+                    data-testid="sandbox-operation-apply"
+                    disabled={sandboxActionPending || !sandboxFormDirty}
+                    onClick={handleSandboxApply}
+                    type="button"
+                  >
+                    변경 적용
+                  </button>
+                  <div className="sandbox-history-actions">
+                    <button
+                      className="context-secondary"
+                      data-testid="sandbox-operation-undo"
+                      disabled={sandboxActionPending || sandboxFormDirty || !sandboxSnapshot.canUndo}
+                      onClick={() => handleSandboxHistory("undo")}
+                      type="button"
+                    >
+                      실행 취소
+                    </button>
+                    <button
+                      className="context-secondary"
+                      data-testid="sandbox-operation-redo"
+                      disabled={sandboxActionPending || sandboxFormDirty || !sandboxSnapshot.canRedo}
+                      onClick={() => handleSandboxHistory("redo")}
+                      type="button"
+                    >
+                      다시 실행
+                    </button>
+                  </div>
+                  <div className="sandbox-run-actions">
+                    <button
+                      className="context-primary"
+                      data-testid="sandbox-operation-run"
+                      disabled={sandboxActionPending || sandboxFormDirty || !lessonPipelineReady}
+                      onClick={() => void handleSandboxRun()}
+                      type="button"
+                    >
+                      Worker/WASM 실행
+                    </button>
+                    <button
+                      className="context-secondary"
+                      data-testid="sandbox-operation-save"
+                      disabled={sandboxActionPending || sandboxFormDirty || !sandboxPersistenceReady}
+                      onClick={() => void handleSandboxSave()}
+                      type="button"
+                    >
+                      로컬 저장
+                    </button>
+                  </div>
+                </>
+              )}
+              <button
+                className="context-secondary sandbox-load-action"
+                data-testid="sandbox-operation-load"
+                disabled={sandboxActionPending || sandboxFormDirty || !sandboxPersistenceReady}
+                onClick={() => void handleSandboxLoad()}
+                type="button"
+              >
+                저장본 불러오기
+              </button>
+              <p
+                className="sandbox-operation-status"
+                data-kind={sandboxNotice.kind}
+                data-testid="sandbox-operation-status"
+                role={sandboxNotice.kind === "error" ? "alert" : "status"}
+              >
+                {sandboxNotice.text}
+              </p>
+              <p className="context-note sandbox-limit-note">
+                E2 교육 preset이며 balanced 8 mm 덱셀 격자를 사용합니다. 절입
+                깊이는 4–5 mm로 제한되며 Stock·방향·이송·회전수·절입은 실제
+                Worker/WASM 실행에 반영됩니다. 절삭 폭은 operation provenance에
+                저장하며 현재 20 mm 공구의 lane 간격은 preset으로 고정됩니다.
+              </p>
             </div>
           ) : (
             <div className="context-content" aria-live="polite">

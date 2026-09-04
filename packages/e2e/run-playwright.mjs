@@ -14,12 +14,17 @@ const suiteFiles = {
     "tests/workspace-configuration.spec.ts",
     "tests/workspace-ui.spec.ts",
     "tests/tutorial-face.spec.ts",
+    "tests/sandbox-operation.spec.ts",
   ],
   pages: ["tests/pages-deployment.spec.ts"],
   a11y: ["tests/accessibility.spec.ts"],
-  visual: ["tests/machine-scene.visual.spec.ts"],
+  visual: [
+    "tests/machine-scene.visual.spec.ts",
+    "tests/tutorial-states.visual.spec.ts",
+  ],
 };
 const selectedSuiteFiles = suiteFiles[suiteName];
+const suiteArguments = suiteName === "visual" ? ["--project=visual"] : [];
 
 if (!selectedSuiteFiles) {
   console.error(
@@ -46,6 +51,7 @@ const result = spawnSync(
     "test",
     "--config",
     configPath,
+    ...suiteArguments,
     ...selectedSuiteFiles,
     ...process.argv.slice(3),
   ],

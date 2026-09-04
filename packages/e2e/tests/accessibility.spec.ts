@@ -67,6 +67,20 @@ test.describe("M9 accessibility", () => {
       ),
     ).toEqual([]);
 
+
+    await page.getByTestId("workspace-area-sandbox").click();
+    await expect(page.getByTestId("sandbox-workspace")).toBeVisible();
+    await page.getByTestId("sandbox-operation-create").click();
+    const sandboxScan = await new AxeBuilder({ page })
+      .include('[data-testid="sandbox-workspace"]')
+      .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+      .analyze();
+    expect(
+      sandboxScan.violations.filter(
+        (violation) =>
+          violation.impact === "critical" || violation.impact === "serious",
+      ),
+    ).toEqual([]);
     await page.getByTestId("open-help").click();
     await expect(page.getByTestId("help-dialog")).toBeVisible();
     const dialogScan = await new AxeBuilder({ page })
