@@ -25,6 +25,28 @@ const scope = globalThis as unknown as WorkerScope;
 const ASSET_BASE_URL = new URL(import.meta.env.BASE_URL, scope.location.origin);
 const CORE_URL = new URL("wasm/cnc_render_wasm.wasm", ASSET_BASE_URL);
 const BASE_DISPLAY_STEP_MS = 20;
+const MAX_RUNTIME_DIAGNOSTICS = 10_000;
+
+type RuntimeDiagnostics = NonNullable<CoordinatorCoreSummary["runtimeDiagnostics"]>;
+
+/** Keep terminal evidence when the core's warning buffer already fills the wire limit. */
+export function boundRuntimeDiagnostics(diagnostics: RuntimeDiagnostics): RuntimeDiagnostics {
+  if (diagnostics.length <= MAX_RUNTIME_DIAGNOSTICS) return diagnostics;
+  const isTerminalEvidence = (diagnostic: RuntimeDiagnostics[number]) =>
+    diagnostic.origin !== "machining-warning" || diagnostic.severity === "error";
+  const terminalCount = diagnostics.reduce((count, diagnostic) => count + (isTerminalEvidence(diagnostic) ? 1 : 0), 0);
+  if (terminalCount > MAX_RUNTIME_DIAGNOSTICS) {
+    // No valid current core run can emit this many fatal records. Never silently lose them.
+    throw new CncRenderWasmError("coordinator.diagnostics.resource-limit", "Terminal diagnostic evidence exceeds the protocol limit.");
+  }
+  let warningSlots = MAX_RUNTIME_DIAGNOSTICS - terminalCount;
+  return diagnostics.filter((diagnostic) => {
+    if (isTerminalEvidence(diagnostic)) return true;
+    if (warningSlots === 0) return false;
+    warningSlots -= 1;
+    return true;
+  });
+}
 
 let runtimePromise: Promise<CncRenderWasmRuntime> | null = null;
 let activeRunId: string | null = null;
@@ -34,6 +56,10 @@ let eventSequence = 0;
 let generation = 0;
 let timer: ReturnType<typeof setTimeout> | null = null;
 let paused = false;
+let pauseReason: CoordinatorCoreSummary["pauseReason"] = null;
+let breakpoints = new Set<number>();
+let breakpointPassLine: number | null = null;
+let lastSummary: CoordinatorCoreSummary | null = null;
 let lastCommandSequence = 0;
 
 function runtime(): Promise<CncRenderWasmRuntime> {
@@ -104,7 +130,15 @@ function postInvocation(
   invocation: WasmCoreInvocation,
   replyTo: string | null,
 ): void {
-  const summary = invocation.summary;
+  const summary = {
+    ...invocation.summary,
+    ...(invocation.summary.runtimeDiagnostics ? {
+      runtimeDiagnostics: boundRuntimeDiagnostics(invocation.summary.runtimeDiagnostics),
+    } : {}),
+    paused: paused && !invocation.summary.completed && !invocation.summary.stopped,
+    pauseReason: invocation.summary.completed || invocation.summary.stopped ? null : pauseReason,
+  };
+  lastSummary = summary;
   if (summary.runId !== activeRunId) {
     return;
   }
@@ -172,9 +206,24 @@ async function runStep(expectedGeneration: number): Promise<void> {
     if (expectedGeneration !== generation || paused || activeRunId === null) {
       return;
     }
-    const invocation = wasm.step();
+    const nextLine = lastSummary?.nextSourceLine ?? null;
+    if (breakpointPassLine !== null && nextLine !== breakpointPassLine) {
+      breakpointPassLine = null;
+    }
+    if (nextLine !== null && nextLine !== lastSummary?.currentSourceLine
+      && breakpoints.has(nextLine) && breakpointPassLine !== nextLine) {
+      paused = true;
+      pauseReason = "breakpoint";
+      postInvocation(wasm.snapshot(), null);
+      return;
+    }
+    const invocation = wasm.sourceTick();
     if (expectedGeneration !== generation || invocation.summary.runId !== activeRunId) {
       return;
+    }
+    if (invocation.summary.programPause && !invocation.summary.completed && !invocation.summary.stopped) {
+      paused = true;
+      pauseReason = "program-control";
     }
     postInvocation(invocation, null);
     if (!invocation.summary.completed && !invocation.summary.stopped) {
@@ -230,7 +279,11 @@ async function handleCommand(command: CoordinatorCommand): Promise<void> {
       executionMode = command.payload.executionMode;
       eventSequence = 0;
       lastCommandSequence = command.sequence;
-      paused = false;
+      paused = command.payload.startPaused ?? false;
+      pauseReason = paused ? "user" : null;
+      breakpoints = new Set(command.payload.breakpoints ?? []);
+      breakpointPassLine = null;
+      lastSummary = null;
       try {
         const wasm = await runtime();
         if (currentGeneration !== generation) {
@@ -251,6 +304,7 @@ async function handleCommand(command: CoordinatorCommand): Promise<void> {
         return;
       }
       paused = true;
+      pauseReason = "user";
       clearScheduledStep();
       try {
         postInvocation((await runtime()).snapshot(), command.messageId);
@@ -264,8 +318,37 @@ async function handleCommand(command: CoordinatorCommand): Promise<void> {
         return;
       }
       playbackSpeed = command.payload.playbackSpeed;
+      if (pauseReason === "breakpoint") {
+        breakpointPassLine = lastSummary?.nextSourceLine ?? null;
+      }
       paused = false;
+      pauseReason = null;
       scheduleStep(generation);
+      return;
+    }
+    case "simulation.breakpoints": {
+      if (!acceptRunCommand(command)) return;
+      breakpoints = new Set(command.payload.lines);
+      try {
+        postInvocation((await runtime()).snapshot(), command.messageId);
+      } catch (error) {
+        postError(error, command.messageId, true);
+      }
+      return;
+    }
+    case "simulation.step-source-line": {
+      if (!acceptRunCommand(command)) return;
+      clearScheduledStep();
+      paused = true;
+      pauseReason = "step";
+      breakpointPassLine = null;
+      try {
+        const invocation = (await runtime()).stepSourceLine();
+        if (invocation.summary.programPause) pauseReason = "program-control";
+        postInvocation(invocation, command.messageId);
+      } catch (error) {
+        postError(error, command.messageId, true);
+      }
       return;
     }
     case "simulation.snapshot": {

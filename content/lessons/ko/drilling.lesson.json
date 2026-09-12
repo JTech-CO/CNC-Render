@@ -1,0 +1,292 @@
+{
+  "schemaVersion": 1,
+  "id": "tutorial.drilling",
+  "locale": "ko-KR",
+  "title": "선반 센터 드릴링 기초",
+  "process": "drilling",
+  "accuracy": {
+    "grade": "E2",
+    "limitations": [
+      "드릴은 회전축과 동축인 이상화된 원통 홀로 표현하며 드릴 포인트와 버는 모델링하지 않습니다.",
+      "가공 시간은 Toolpath IR의 결정론적 논리 시간으로 평가합니다.",
+      "홀 비교는 1 mm 축 셀과 1 mm 반경 layer를 사용하므로 1 mm 미만 깊이와 2 mm 미만 직경 변화는 평가하지 않습니다."
+    ]
+  },
+  "prerequisites": [],
+  "estimatedDurationMin": 10,
+  "scoring": {
+    "maximumScore": 100,
+    "passingScore": 80,
+    "precisionDigits": 2,
+    "criteria": [
+      {
+        "id": "score.shape-deviation",
+        "metric": "maxDeviationMm",
+        "weight": 30,
+        "fullPointsAtOrBelow": 0.5,
+        "zeroPointsAtOrAbove": 2
+      },
+      {
+        "id": "score.collision",
+        "metric": "collisionCount",
+        "weight": 25,
+        "fullPointsAtOrBelow": 0,
+        "zeroPointsAtOrAbove": 1
+      },
+      {
+        "id": "score.logical-time",
+        "metric": "logicalTimeS",
+        "weight": 15,
+        "fullPointsAtOrBelow": 16,
+        "zeroPointsAtOrAbove": 32
+      },
+      {
+        "id": "score.tool-count",
+        "metric": "toolCount",
+        "weight": 10,
+        "fullPointsAtOrBelow": 1,
+        "zeroPointsAtOrAbove": 3
+      },
+      {
+        "id": "score.overcut",
+        "metric": "overcutVolumeMm3",
+        "weight": 10,
+        "fullPointsAtOrBelow": 0,
+        "zeroPointsAtOrAbove": 1608.5
+      },
+      {
+        "id": "score.undercut",
+        "metric": "undercutVolumeMm3",
+        "weight": 10,
+        "fullPointsAtOrBelow": 0,
+        "zeroPointsAtOrAbove": 1608.5
+      }
+    ]
+  },
+  "steps": [
+    {
+      "id": "prepare-drilling-stock",
+      "phase": "prepare",
+      "title": "선반과 원통 소재 준비",
+      "instruction": "2축 교육용 CNC 선반과 지름 80 mm, 길이 120 mm 원통 소재를 선택하세요.",
+      "allowedActions": [
+        "machine.select",
+        "stock.configure",
+        "material.select"
+      ],
+      "offSequenceGuidance": {
+        "reason": "선반과 원통 소재가 확정되기 전에 실행하면 회전축과 홀 깊이를 비교할 수 없습니다.",
+        "recovery": {
+          "kind": "restore-step-checkpoint",
+          "label": "준비 단계 체크포인트로 되돌리기"
+        }
+      },
+      "successRules": [
+        {
+          "id": "prepare.machine",
+          "kind": "selection.matches",
+          "field": "machineId",
+          "operator": "equals",
+          "expectedId": "machine.cnc-lathe-2x-edu",
+          "message": "교육용 2축 CNC 선반을 선택해야 합니다."
+        },
+        {
+          "id": "prepare.stock",
+          "kind": "selection.matches",
+          "field": "stockId",
+          "operator": "equals",
+          "expectedId": "stock.turning-cylinder-80x120",
+          "message": "지름 80 mm, 길이 120 mm 대표 원통 소재를 선택해야 합니다."
+        },
+        {
+          "id": "prepare.material",
+          "kind": "selection.matches",
+          "field": "materialId",
+          "operator": "equals",
+          "expectedId": "material.aluminum-6061",
+          "message": "Aluminum 6061 교육용 재료 프로필을 선택해야 합니다."
+        }
+      ],
+      "failureRules": []
+    },
+    {
+      "id": "setup-drilling",
+      "phase": "setup",
+      "title": "척과 드릴 설정",
+      "instruction": "3조 척, 16 mm 트위스트 드릴과 깊이 80 mm 대표 드릴링 공정을 확정하세요.",
+      "allowedActions": [
+        "fixture.select",
+        "tool.select",
+        "operation.configure"
+      ],
+      "offSequenceGuidance": {
+        "reason": "설정 확정 전 실행은 잘못된 드릴 지름이나 과도한 홀 깊이를 놓칠 수 있습니다.",
+        "recovery": {
+          "kind": "restore-step-checkpoint",
+          "label": "설정 단계 체크포인트로 되돌리기"
+        }
+      },
+      "successRules": [
+        {
+          "id": "setup.fixture",
+          "kind": "selection.matches",
+          "field": "fixtureId",
+          "operator": "equals",
+          "expectedId": "fixture.three-jaw-chuck",
+          "message": "대표 3조 척을 선택해야 합니다."
+        },
+        {
+          "id": "setup.tool",
+          "kind": "selection.matches",
+          "field": "toolId",
+          "operator": "equals",
+          "expectedId": "tool.twist-drill-16",
+          "message": "16 mm 트위스트 드릴을 선택해야 합니다."
+        },
+        {
+          "id": "setup.operation",
+          "kind": "selection.matches",
+          "field": "operationId",
+          "operator": "equals",
+          "expectedId": "operation.drilling-16x80",
+          "message": "대표 16 × 80 mm 드릴링 공정을 선택해야 합니다."
+        },
+        {
+          "id": "setup.confirmed",
+          "kind": "event.occurred",
+          "event": "setup.completed",
+          "message": "설정 검토를 완료해야 합니다."
+        }
+      ],
+      "failureRules": [
+        {
+          "id": "setup.wrong-tool",
+          "kind": "selection.matches",
+          "field": "toolId",
+          "operator": "not-equals",
+          "expectedId": "tool.twist-drill-16",
+          "message": "이 실습에는 16 mm 트위스트 드릴이 필요합니다."
+        },
+        {
+          "id": "setup.excessive-depth",
+          "kind": "metric.range",
+          "metric": "cutDepthMm",
+          "minimum": 90.01,
+          "message": "홀 깊이가 교육용 안전 범위 90 mm를 초과했습니다."
+        }
+      ]
+    },
+    {
+      "id": "execute-drilling-cut",
+      "phase": "execute",
+      "title": "단계별 드릴링 실행",
+      "instruction": "Worker/WASM 드릴 공정을 실행하고 20 mm씩 깊어지는 홀과 안전 복귀를 관찰하세요.",
+      "allowedActions": [
+        "simulation.run"
+      ],
+      "offSequenceGuidance": {
+        "reason": "현재 단계에서는 확정된 드릴 공정을 실행해 inner radius field 증거를 만들어야 합니다.",
+        "recovery": {
+          "kind": "restore-step-checkpoint",
+          "label": "실행 단계 체크포인트로 되돌리기"
+        }
+      },
+      "successRules": [
+        {
+          "id": "execute.completed",
+          "kind": "event.occurred",
+          "event": "simulation.completed",
+          "message": "대표 드릴링 공정을 끝까지 실행해야 합니다."
+        },
+        {
+          "id": "execute.removal",
+          "kind": "metric.range",
+          "metric": "removedVolumeMm3",
+          "minimum": 1,
+          "message": "원통 소재의 홀 제거 결과가 확인되어야 합니다."
+        }
+      ],
+      "failureRules": [
+        {
+          "id": "execute.collision",
+          "kind": "metric.range",
+          "metric": "collisionCount",
+          "minimum": 1,
+          "message": "척 또는 회전축 제한 충돌이 감지되어 실행 단계가 실패했습니다."
+        }
+      ]
+    },
+    {
+      "id": "measure-drilled-hole",
+      "phase": "measure",
+      "title": "홀 직경과 깊이 측정",
+      "instruction": "완료 checkpoint의 inner radius를 목표 지름 16 mm, 깊이 80 mm와 비교해 기록하세요.",
+      "allowedActions": [
+        "measurement.record"
+      ],
+      "offSequenceGuidance": {
+        "reason": "평가 전에 실제 홀 직경과 깊이 측정 증거를 기록해야 결과를 재현할 수 있습니다.",
+        "recovery": {
+          "kind": "restore-step-checkpoint",
+          "label": "측정 단계 체크포인트로 되돌리기"
+        }
+      },
+      "successRules": [
+        {
+          "id": "measure.recorded",
+          "kind": "event.occurred",
+          "event": "measurement.recorded",
+          "message": "홀 직경과 깊이 측정 결과를 기록해야 합니다."
+        },
+        {
+          "id": "measure.deviation",
+          "kind": "metric.range",
+          "metric": "maxDeviationMm",
+          "maximum": 1,
+          "message": "최대 반경 편차가 E2 표현 해상도 1 mm 이하여야 합니다."
+        }
+      ],
+      "failureRules": [
+        {
+          "id": "measure.overcut",
+          "kind": "metric.range",
+          "metric": "overcutVolumeMm3",
+          "minimum": 0.01,
+          "message": "목표 홀보다 더 제거된 과절삭 체적이 확인됐습니다."
+        }
+      ]
+    },
+    {
+      "id": "assess-drilling-result",
+      "phase": "assess",
+      "title": "드릴링 결과 평가",
+      "instruction": "최종 회전 Stock을 유지한 채 홀 직경, 깊이, 충돌과 E2 제한을 검토하세요.",
+      "allowedActions": [
+        "result.review"
+      ],
+      "offSequenceGuidance": {
+        "reason": "최종 평가는 실행과 홀 측정이 끝난 뒤 기록해야 합니다.",
+        "recovery": {
+          "kind": "restore-step-checkpoint",
+          "label": "평가 단계 체크포인트로 되돌리기"
+        }
+      },
+      "successRules": [
+        {
+          "id": "assess.reviewed",
+          "kind": "event.occurred",
+          "event": "result.reviewed",
+          "message": "최종 홀 결과와 제한 사항을 검토해야 합니다."
+        },
+        {
+          "id": "assess.no-collision",
+          "kind": "metric.range",
+          "metric": "collisionCount",
+          "maximum": 0,
+          "message": "척과 회전축 제한 충돌 없이 공정을 완료해야 합니다."
+        }
+      ],
+      "failureRules": []
+    }
+  ]
+}

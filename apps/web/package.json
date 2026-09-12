@@ -11,6 +11,8 @@
     }
   },
   "dependencies": {
+    "@cnc-render/contracts": "workspace:*",
+    "@cnc-render/lesson-engine": "workspace:*",
     "@cnc-render/renderer": "workspace:*",
     "@cnc-render/simulation": "workspace:*",
     "@cnc-render/storage": "workspace:*",

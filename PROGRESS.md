@@ -1,11 +1,678 @@
 ﻿# CNC Render Progress
 
-- Current phase: M9 공개 릴리스 안정화
-- Status: 재생 경과·가공 추정 시간 분리 구현·범위 검증 완료 — 전체 E2E WebGL 2 성능 게이트 안정성 확인 필요
-- Last completed: 실제 브라우저 재생 경과와 결정론적 G-code 가공 추정 시간을 별도 단위 필드로 표시
-- Next task: M10 튜토리얼·샌드박스 MVP(E2)
-- Open questions: 없음
-- Known regressions: 기능 회귀는 확인되지 않았으나 전체 E2E 연속 실행의 WebGL 2 장기 작업 성능 게이트가 간헐 실패함; 공개 URL은 현재 변경이 병합·배포될 때까지 기존 시간 표기를 제공함
+- Current phase: M12 성능·폴백·보안·CI·릴리스 게이트 진행 중
+- Status: 회전 소재 최적화 후 로컬 전체 회귀·실장비/메모리/LCP 재검증 통과; 원격 CI 대기, 병합 보류
+- Last completed: 전체 회귀·실장비 24조합·메모리 8조합·broadband LCP 3회
+- Next task: 커밋·푸시·PR → 원격 CI → 병합·Pages 릴리스 검증
+- Open questions: 없음 — 사용자가 브라우저 고정 비용 제외 앱 사용량(Worker/WASM/GPU 포함) 산정을 승인
+- Known regressions: 이전 CI software handler 초과는 로컬 수정 검증 통과; Linux 통합 CI 재판정 필요
+
+## M12 회전 소재 최적화 후 최종 로컬 증거 (2026-09-13)
+
+- 기준 장비 성능 24/24 및 모든 backend/browser 가공 결과 동등성 통과.
+  최저 FPS balanced 119.784 / precision 119.665, cold shell 최대 1513.8 ms,
+  main handler 최대 23.4 ms, long task 0, 실행 중 React commit 증가 0.
+- 메모리 유효 결과 8/8 확보: 각 60초 이상, 26–37 samples, 332–355회 세 공정 반복.
+  Chrome GPU/GL2 balanced 441.11/310.82 MB, precision 470.30/311.33 MB;
+  Edge GPU/GL2 balanced 445.85/351.79 MB, precision 475.80/341.54 MB.
+  MB=1,000,000 bytes이며 승인 산식·600 MB/1.5 GB 한도는 변경하지 않았다.
+- 재측정 7개 통과 후 마지막 Edge/WebGL 2 precision은 속성 캡처 도중 종료된
+  프로세스로 차단됐다. 캡처 전후 HasExited 검사로 실제 종료만 목록 갱신 오류로
+  분류한 뒤 해당 조합을 새 브라우저에서 재측정해 통과했다. 값이 있는 샘플은 제외하지
+  않았으며 예산 실패를 재시도하지 않았다. 모든 취득 실패 로그는 로컬에 보존한다.
+- Lighthouse 새 Chrome 3회 LCP 835.9/795.6/807.4 ms 통과(10 Mbps/40 ms·CPU×1).
+  로컬 production Pages 측정이며 CI 보고서도 기준 장비와 구분해 환경을 표기한다.
+- 런타임 지문 189 files / `702e06a7a60ced9f1d4889dd0ad2bedcbf0844f3013d999932e1f97067e291d8`.
+  새 압축 증거의 산술·예산·동등성·지문 검증 통과. 원격 CI·릴리스 검증 전 병합 금지.
+
+## M12 CI software 회전 소재 성능 후속
+
+- 최적화 후 로컬 verify 310 unit/64 contracts/69 parity, 전체 E2E 88 passed/2 opt-in
+  soak skipped, visual 5·a11y 6·Pages 2·bundle 통과. software 12/12 통과,
+  최대 handler 밀링 5.7 / 선삭 34.9 / 드릴링 29.9 ms, long task 0.
+- 동일 reset 20회 진단은 14.38 ms로 줄었으며 법선·경계 재계산은 0회다.
+  이 수치를 원격 CI 또는 실장비 gate의 대체 증거로 사용하지 않는다.
+- 재측정 중 8개 메모리 조합 중 7개 통과, Edge/WebGL 2 balanced는 유효하지 않은
+  process private bytes로 차단됐다. 원본 incomplete 보고서를 별도 보존했다.
+  계측기가 느린 WDDM 조회 후 살아 있는 Process 객체의 속성을 다시 읽던 경로를
+  제거하고 한 번의 스냅샷을 사용한다. 추가된 전체 PID 일치 검사에서 navigation으로
+  종료된 renderer 목록 경쟁이 확인되어, 이 취득 오류만 최대 2회 CDP 목록을 갱신한다.
+  실제 측정 값·예산 초과·GPU 카운터 오류는 재시도하거나 제외하지 않는다.
+  갱신 횟수는 보고서에, PID 포함 원본은 ignored 로컬 JSONL에 남긴다. 전체 8개 재측정 예정.
+- `8ecf61d` / CI `34698346169`: visual·전체 E2E·a11y·bundle 통과.
+  software matrix 7 passed/5 failed, 모든 기능·Stock 동등성 통과.
+  선삭/드릴링의 handler 55.3–101.1 ms와 일부 long task 2–3회가 기존 한도를 넘었다.
+  보고서는 `artifacts/ci-34698346169/benchmark-report.json`에 보존하며 병합하지 않는다.
+- 회전 소재 reset 20회 로컬 진단: 총 138.18 ms 중 법선 50.33 ms, 경계 상자 20.56 ms,
+  경계 구 45.14 ms. 계측 진단은 성능 gate가 아니다.
+- 동일 full profile의 법선·경계를 재사용하고 다른 profile일 때만 재계산한다.
+  각도 삼각함수는 격자별로 한 번 계산하고 정점 임시 배열을 제거한다.
+  이전 정점·winding·퇴화 반경·잘린 끝 셀의 완전 일치와 변경 profile 재계산을 검증한다.
+  런타임 변경이므로 기준 장비 증거는 다시 측정하며 기존 한도를 유지한다.
+
+## M12 학습 레이아웃 수정 후 최종 증거
+
+- `5874e50` / CI `34697679929`: Linux visual 4개 통과, 새 성공 baseline 부재 1개 차단.
+  실제 캡처에서 수치·단위·항목명의 가로 표시와 겹침 방지 검사를 확인해
+  `tutorial-success-linux.png`를 등록했다. Windows/Linux 기준과 1% 허용치는 분리·유지한다.
+- 로컬 최종 verify 306/64/69, visual 5, a11y 6, Pages 2 통과.
+- CSS 수정 후 메모리 8/8 재통과(각 60초 이상, 39–41 samples, 126–290회 반복):
+  Chrome GPU/GL2 balanced 438.58/304.66 MB, precision 457.40/361.59 MB;
+  Edge GPU/GL2 balanced 489.05/363.63 MB, precision 521.24/378.08 MB.
+  수치 변화는 실행 변동을 포함하며 CSS 수정에 따른 메모리 개선율로 해석하지 않는다.
+- 실장비 성능 24/24 재통과. 최저 FPS balanced 119.289, precision 109.684,
+  cold shell 최대 1175.3 ms, main handler 최대 21.7 ms, long task 0.
+- 새 런타임 지문 189 files / `c164223c566b2aa1529ce4d0228a78644e82b8fe9372d412d2f4cd52e20b9066`.
+  체크인 증거를 새 보고서로 갱신했고 검증기 통과. 이전 증거는 Git과 별도 로컬 파일에 보존한다.
+  전체 원격 CI·clean release·공개 배포 확인 전 M12 전체 완료로 취급하지 않는다.
+
+## M12 두 번째 CI — 시각 기준 환경 분리
+
+- `5e489b8` / CI `34696796080`: WebGPU 합성 수정 후 전체 E2E 88 passed/2 skipped.
+  시각 회귀에서 G-code 오류·튜토리얼 성공/실패의 Windows/Linux system font 차이를 확인했다.
+  machine-scene/heatmap은 통과했다. 실패 원본은 `artifacts/ci-34696796080`에 보존한다.
+- Playwright 권고대로 OS별로 동일 환경의 기준 이미지와 비교한다. 기존 Windows 기준은
+  유지하며 Linux 글꼴 기준은 별도 이름으로 검토한다. 1% pixel 허용치는 변경하지 않는다.
+  참고: https://playwright.dev/docs/test-snapshots.
+- 비교 중 기존 좁은 학습 측정 행이 긴 값 때문에 항목명을 한 글자씩 줄바꾸는 문제를 확인했다.
+  항목명/값을 별도 행에 배치하고, 세로 순서 및 가로 넘침을 검사한다. 성공 baseline은
+  의도된 레이아웃 변경만 갱신하며, CSS 런타임 변경에 따라 성능/메모리 증거도 재측정한다.
+- 수정 후 Windows visual 5/5, a11y 6/6(별도 visual project 3 skipped), Pages 2/2 통과.
+  새 성공 이미지를 직접 검토해 측정 항목의 세로 찢김이 없어졌음을 확인했다.
+  G-code/실패 상태의 Linux CI 생성 이미지도 직접 검토하여 별도 Linux 기준으로 등록한다.
+  새 레이아웃의 Linux 성공 이미지는 다음 CI에서 검토한다. CI의 visual 순서를 앞으로
+  옮겨 OS 기준 문제를 빠르게 검출하며, 전체 E2E/성능 gate는 모두 유지한다.
+  기존 성능/메모리 원본은 `*-before-lesson-layout.json`으로도 보존했다.
+- 수정 후 `pnpm verify` 재통과: 306 unit/64 contracts/69 parity, lint·typecheck·build.
+  기준 장비 메모리/성능은 재측정 중이다. 체크인된 이전 evidence는 의도적으로 보존하며
+  현재 CSS 지문과의 불일치를 통과 처리하지 않는다. 새 증거와 Linux 성공 기준 검토 전 병합 금지.
+
+## M12 PR #13 첫 CI 후속
+
+- `b8ed28a` 커밋·푸시와 PR #13 생성 완료. clean Pages 빌드의 version/SHA/WASM 검증 통과.
+- CI run `34696170428`: verify·보안·60초 fuzz·Rust fmt/clippy/test 통과,
+  전체 E2E 87 passed/2 skipped/1 failed. WebGPU 레이어 toggle의 전후 캔버스가 같았다.
+  원본 screenshot/trace를 `artifacts/ci-34696170428`에 보존했다.
+- 실패 이미지에는 3개 완료 프레임 신호에도 캔버스 전체가 비어 있었다. Linux headless의
+  Dawn/ANGLE 합성 문제와 일치하는 재현 사례를 참고하여 Linux software WebGPU만
+  enable-gpu/use-vulkan=swiftshader 및 Xvfb를 적용한다. Windows 기준 장비 설정은 그대로다.
+  참고: https://github.com/visgl/luma.gl/issues/2874 및 https://playwright.dev/docs/ci.
+- 이미지 비교를 삭제하지 않는다. 고정 120 ms sleep을 완료 프레임·실제 픽셀 변경 검사로
+  교체하고 전후 이미지를 CI Artifact에 남긴다. 앱 런타임·기준값·visual baseline 변경 없음.
+  재실행 CI 통과 전 M12 완료·병합으로 취급하지 않는다.
+- CI 진단 다운로드 후 lint가 생성된 Playwright trace viewer 번들까지 검사하는 문제도
+  발견했다. git 제외 산출물(.cache/artifacts/playwright-report/test-results)만 lint 제외에
+  맞췄으며 앱·스크립트·테스트 소스 검사 범위는 유지한다.
+- 후속 로컬 typecheck/lint·런타임 증거 검사 통과, WebGPU/WebGL 2 레이어 toggle
+  각각 3회(총 6회) 통과. Linux 합성 수정의 최종 판정은 재실행 CI에서 수행한다.
+
+## M12 최종 로컬 검증 (2026-09-12)
+
+- `pnpm verify`: unit 306/41 files, contracts 64/16, parity 69/10, lint·경계
+  151 modules/353 dependencies·typecheck·Cargo check·production build 통과.
+  Rust fmt/clippy/test도 통과했다.
+- 전체 WebGPU/WebGL 2 E2E 88 passed/2 opt-in soak skipped, visual 5 passed,
+  a11y 및 Pages 전체 suite passed, bundle gate passed. 시각 기준 이미지는 변경하지 않았다.
+- `benchmark-reference-final.json`: Chrome/Edge × 두 backend × 세 공정 × 두 프리셋
+  24/24 통과. 최저 FPS balanced 119.028, precision 112.013; cold shell 최대
+  1585.8 ms, handler 최대 21.7 ms, long task 0, React commit 증가 0.
+  모든 브라우저/backend 간 같은 프리셋의 기능·Stock 결과가 일치했다.
+- `lighthouse-final.json`: 새 Chrome 3회 LCP 925.0/948.5/979.1 ms, 모두 2500 ms 이내.
+  로컬 production Pages·10 Mbps/40 ms 조건이며 공개 CDN 네트워크 측정은 아니다.
+- `docs/verification/m12-reference-evidence.json`은 로컬 측정의 PID를 제거한 압축 증거다.
+  `node scripts/check-reference-evidence.mjs`가 압축을 풀고 24개 성능 결과, 8개 메모리
+  산술·한도 및 런타임 지문을 재검증한다. 현재 통과. CI가 원본 envelope와 읽기 쉬운
+  JSON을 함께 보존한다. 이는 독립 하드웨어 인증/서명이 아니며 sourceDirty 원출처를 유지한다.
+- 원격 CI는 software benchmark·Lighthouse·핵심 Fixture/visual baseline 보존까지 수행한다.
+  런타임 파일 변경 시 기준 장비 증거를 다시 측정해야 한다. clean commit의 Pages
+  버전·SHA·WASM 검사는 커밋 이후 수행하며, DoD 10/11 확인 전 완료로 올리지 않는다.
+- 잔여 범위 제한: Firefox/Safari 미인증, 60초 대표 공정 외 장시간·대형 임의 프로젝트 미보증,
+  binary STL만 수용, telemetry/SAB 비활성. 사용자 승인 배포 대상은 GitHub Pages다.
+
+## M12 앱 귀속 메모리·소프트웨어 성능 재개
+
+- 사용자 승인: 600 MB/1.5 GB 기준은 유지하고 브라우저 고정 비용을 제외한 앱 귀속 사용량을 산정한다.
+  CPU private commit 합과 WDDM GPU 보고값 각각의 양의 증가량을 합하며 서로 상쇄하지 않는다.
+  기준값은 빈 브라우저 3회 최솟값이고 잘못된 값/미측정은 실패한다. 산정 단위 테스트 5개 통과.
+- cold blank 기준 Chrome WebGPU balanced는 815.841 MB, 버퍼 재사용 후 818.778 MB,
+  탐지 컨텍스트 정리 후 819.073 MB로 미통과했다. 이전 보고서를 각기 다른 이름으로 보존했다.
+- Stock은 동일 격자에서 geometry/material/버퍼를 재사용한다. 밀링/선삭 각 한 개만 보관하고,
+  비활성 Stock의 선택/patch를 금지하며 최종 폐기와 격자 변경 시 교체 폐기를 테스트한다.
+  형상·revision 초기화 포함 5개 테스트 통과. 해상도·재료 제거 계산을 변경하지 않았다.
+- 기능 탐지용 WebGL 컨텍스트는 실제 렌더러와 같은 high-performance 선호도를 사용하고 즉시 해제한다.
+  지원 여부/폴백 불변식 테스트 2개 통과.
+- `benchmark-software-v5.json`: WebGPU/WebGL 2 × 3공정 × 2프리셋 12/12 통과,
+  최대 handler 42.5 ms, long task 최대 0, 모든 기능/Stock 동등성 통과. v3/v4 실패도 보존한다.
+- `profile-reference.mjs`는 새 작업용 브라우저의 memory-infra/CPU 진단 추적만 로컬 저장한다.
+  계측된 실행은 성능 gate로 사용하지 않는다. GPU 프로세스 native malloc이 큰 비중이며,
+  JS heap만으로 전체 사용량을 대체하지 않는다. 원시 추적의 환경 메타데이터는 공개하지 않는다.
+- CNC 코드/자산이 없는 1×1 vanilla GPU 컨텍스트를 초기화·폐기한 뒤 빈 브라우저 고정 비용을
+  분리했다. cold blank 단계 중에도 native GPU 초기화가 진행되는 것을 관측했다.
+  최초 자산 요청 0 검사에서 브라우저 자동 favicon 요청을 발견해 빈 data icon으로 차단했다.
+  검사 자체를 완화하지 않았으며 매 case 새 browser로 이전 앱 캐시를 배제했다.
+- 최종 메모리 8/8 통과: Chrome GPU/GL2 balanced 476.05/356.00 MB,
+  precision 454.59/354.24 MB; Edge GPU/GL2 balanced 504.30/368.85 MB,
+  precision 526.73/421.54 MB. 각 60초 이상, 30–40 samples, 127–363회 세 공정 반복.
+  총 브라우저 메모리가 아니라 초기화된 브라우저 고정 비용을 제외한 앱 귀속 관측값이다.
+- 측정 런타임 지문: git-normalized-source-sha256-v1 / 189 files /
+  `de53d7d17126ea552dff880efb90d119d36c66e37e8e4db97f88a4e3bb8e6e76`.
+  최종 실장비 FPS 재측정 후 sanitized evidence를 CI Artifact로 보존하고 코드 불일치를 차단한다.
+- 아직 커밋·푸시·PR·원격 CI·병합·배포는 진행하지 않았다.
+
+## M12 완료 작업 재개 (2026-09-12)
+
+### 추가 검증과 발견
+
+- Medium/High를 실제 balanced/precision WASM 계약으로 연결했다. `benchmark-reference-v2.json`
+  Chrome/Edge × WebGPU/WebGL 2 × 3공정 × 2프리셋 24 passed. 최저 FPS Medium 119.706,
+  High 119.086; cold localhost shell 최대 1341.1 ms. 이 측정은 아래 리소스 수명 수정 전이다.
+- Lighthouse 13.4.1, 새 Chrome 프로필 3회, 1440×900/DPR1, 10 Mbps/40 ms, CPU×1:
+  LCP 814.9/795.3/820.4 ms 모두 2500 ms 이내. CLI 임시 프로필 정리 EPERM은
+  작업 전용 Playwright 프로필 소유 방식으로 해결했다. `.cache/lighthouse-*`는 git 제외 로컬 프로필이다.
+- 60초 반복 공정에서 이전 Stock이 selectableObjects와 WebGPU material/shadow 캐시에
+  남는 경로를 확인했다. 선택 참조 해제, 동적 material 소유/폐기, 공정별 Mesh 2개 재사용을 구현했고
+  교체 60회·폐기·식별자 재사용 단위 테스트 3개를 통과했다.
+- 현재 메모리식은 모든 CDP 브라우저 프로세스의 max(privateCommit, workingSet) 합 +
+  WDDM dedicated/shared GPU 값이다. 고정 브라우저 비용과 공유 메모리 중복 가능성이 있으므로
+  실제 앱 메모리라고 표현하지 않는다. 기존 600 MB/1.5 GB 기준은 변경하지 않았다.
+- Chrome WebGPU 보수적 관측 상한: 선택 참조 수정 전 2.797 GB/126회,
+  선택 참조만 수정 5.286 GB/338회, material 폐기 추가 4.990 GB/331회,
+  Mesh 식별자 재사용 후 1.560 GB/318회(시작 1.341→종료 1.465 GB).
+  고정 60초 동안의 반복 횟수가 달라 비율을 직접 비교하지 않으며 누수 완전 해소로 선언하지 않는다.
+- Chrome WebGL 2: 빈 브라우저 보수적 기준 약 580 MB, 328회 반복 상한 1.273 GB.
+  memory JSON 원본과 수정 단계별 복사본을 artifacts에 보존했다. 아직 메모리 gate는 실패다.
+- M12 메모리 기준을 앱 사용량(Worker/WASM/GPU 포함)으로 산정할지 브라우저 전체로
+  산정할지 사용자 확인을 요청했다. 응답 전 산정식을 바꿔 통과 처리하지 않는다.
+- 전체 CI를 두 backend 전체 E2E·전체 visual·a11y·Lighthouse로 강화했다.
+  Worker 충돌 수신 프레임과 반영 프레임 차이 1을 검사하도록 보강했다. 원격 CI/병합은 미실행이다.
+- `pnpm verify` 통과: unit 288/37 files, contracts 64/16 files, parity 69/10 files,
+  lint·경계 150 modules/351 dependencies·typecheck·Cargo check·production build.
+  최초 테스트 Three 타입 참조 오류는 렌더러 공개 타입 참조로 수정했다.
+- 전체 WebGPU/WebGL 2 E2E 88 passed/2 opt-in soak skipped, visual 5 passed,
+  a11y 6 passed/3 별도 visual project skipped, Pages 2 passed.
+  Stock patch 없는 충돌 이벤트에서도 marker를 다음 렌더 프레임에 반영하도록 수정했고,
+  실제 충돌 위치와 수신→반영 정확히 1프레임 차이를 검증했다.
+  카메라 invalidation 검사는 동기 호출 병합 대신 10개 실제 완료 프레임에서 기존 불변식을 검사한다.
+- 리소스 수명 수정 후 전체 성능 v3는 34/36 통과, 모든 기능/Stock 동등성 통과.
+  software Chromium High 밀링의 handler 57.9/51.4 ms가 50 ms 미만 기준을 넘었다.
+  셀별 임시 배열 생성을 제거한 후 기존 모든 정점·winding·경계 셀·patch 동일성 테스트 3개와
+  typecheck를 통과했다.
+- 최종 `benchmark-reference-v4.json`: 27 passed/9 failed. 실장비 Chrome/Edge 24조합과
+  모든 기능/Stock 동등성은 통과했지만 software Chromium의 handler/long task 예산은
+  9조합에서 실패했다. 최대 handler 994.7 ms, 공정당 long task 최대 85회.
+  v3 실패가 해결되었다고 선언하지 않으며 v3/v4 원본을 함께 보존한다.
+  실장비 cold shell 최대 1536.9 ms. 최종 geometry 변경은 정점 동일성 테스트로 검증했고,
+  전체 E2E/visual 결과는 그 직전 리소스·충돌 수정 상태의 결과다.
+  원격 CI·커밋·푸시·PR·병합·재배포는 아직 수행하지 않았다.
+- 마지막 코드 기준 `pnpm lint`, `pnpm test:unit` 289/37 files, `pnpm check:bundle` 통과.
+  CSS gzip 21420/81920 B, WOFF2 0/409600 B; G-code Lab lazy 경계 통과.
+  WASM은 857623 B 및 기존 SHA-256을 유지했다. 메모리 산정 범위 회신과 software 성능
+  프로파일링이 남아 있으므로 완료·병합으로 승격하지 않는다.
+
+- 사용자가 M12 완료 후 커밋·푸시·병합을 승인했다. 현재 브랜치의 미병합 M10/M11 선행 변경도 전체 CI 대상으로 포함한다.
+- 기준 장비로 현재 PC(i7-13620H, 64GB RAM, Chrome/NVIDIA RTX 4060 Laptop 및 Edge/Intel UHD, 1440×900·DPR 1)를 사용자 승인받았다. 승인과 실제 gate 통과는 별개다.
+- 업로드 크기·확장자·MIME 사전 검사, binary STL 삼각형/구조/비유한 수 검사, ZIP 폭탄/손상 회귀를 보강했다. 현재 모델 경계는 binary STL만 수용하며 OBJ/glTF/CAD 디코딩·UI 업로드는 제공하지 않는다.
+- Pages CSP는 외부 연결/스크립트/프레임을 차단하고 same-origin WASM/Worker를 허용한다. Pages E2E에서 Monaco·WASM·실행·내보내기와 외부 HTTP 요청 0을 확인했다. 실제 배포 검증은 아직 남았다.
+- 검증: `pnpm security:test-uploads` 9+11 tests, `pnpm test:pages` 2 tests 통과. M12 전체 완료 아님.
+
+## M12 커밋·푸시 인계 (2026-09-12)
+
+- 사용자 승인에 따라 릴리스 출처 검증과 benchmark/browser matrix 두 로컬 단위를
+  `origin/codex/m12-release-gates`의 커밋·푸시 대상으로 확정했다. 저장소는
+  `JTech-CO/CNC-Render`이며 force push, PR 생성, 병합, 공개 배포는 수행 범위가 아니다.
+- 커밋 직전 release-metadata 26 tests, benchmark-contract 16 tests,
+  `check:versions`, `check:doc-terms`, `git diff --check`를 재통과했다.
+  전체 verify 273/64/69와 최종 browser matrix 18 passed 증거는 아래 기록을 유지한다.
+- 생성된 두 벤치마크 JSON과 dist 산출물은 로컬 증거로 보존하되 커밋에 포함하지 않는다.
+  기존 산출물의 SHA/dirty 표시는 당시 측정 출처이며, 새 clean commit의 릴리스 검증은
+  별도 재빌드가 필요하다. M11 선행 브랜치 병합·기준 정리와 M12 나머지 gate는 남아 있다.
+
+## M12 기준 benchmark·브라우저 matrix (2026-09-12, 로컬 단위 완료)
+
+- 기존 Node `bench`를 유지하면서 `--report=artifacts/<name>.json --matrix=software|reference|all`
+  경로를 추가했다. 전체 Node gate 후 production Pages에서 실제 Worker/WASM 공정과
+  renderer를 직렬 측정한다. CPU benchmark도 파일 단위 직렬화했으며 임계값은 유지했다.
+- bundled Chromium/SwiftShader, 설치된 Chrome, 설치된 Edge 각각 WebGPU/WebGL 2에서
+  밀링·외경 선삭·드릴링을 실행한다. fallback을 요청 backend의 성공으로 치환하지 않는다.
+- balanced·seed 7·1440×900·DPR 1·fast-forward 1회 warmup·최소 8초 realtime 100배속,
+  wall-clock 15°/s orbit으로 workload v1을 정의했다. 완료 프레임/경과 시간 FPS와
+  관찰된 frame interval P95, 셸 준비 ms·main handler ms·long task·React commit을 기록한다.
+- OS/CPU/RAM·브라우저 실제 버전·GPU probe·canvas 크기·버전/SHA/WASM 출처를 남긴다.
+  page JS heap은 참고값이며 총 메모리로 판정하지 않는다. 원본 G-code/프로젝트명/hostname은 없다.
+- 모든 요청 조합의 semantic/Stock hash·XYZ mm·진단·제거 체적·단계 수를 정확히 비교한다.
+  기능·메인 스레드 gate·개별 FPS·전체 release 상태를 분리해 과대 통과를 막는다.
+- CI에 software benchmark와 성공/실패 JSON 30일 보존을 연결했다. 원격 실행은 하지 않았다.
+  생성 파일은 `artifacts/`에만 허용하고 git에서 제외한다. 시작 시 incomplete marker로
+  과거 성공 결과의 오인 재사용을 방지한다. README 등 소스 경로 덮어쓰기 거부도 확인했다.
+- ADR-0017과 `docs/browser-support-matrix.md`에 방법·제한·관찰 버전을 기록했다.
+
+### 최종 검증
+
+| Gate | Result |
+|---|---|
+| `pnpm verify` | 통과 — unit 273/36 files, contracts 64/16 files, parity 69/10 files, lint·typecheck·Cargo check·production build |
+| benchmark 판정 단위 | 16 tests 통과(전체 unit 포함); 누락/중복/backend mismatch/소프트웨어/비정상 수치/60 FPS 기준 |
+| 기존 Node benchmark | 5 files / 8 tests 통과, 기준 완화 없음 |
+| `pnpm bench -- --report=artifacts/benchmark-reference-v1.json --matrix=all` | 최종 18 passed; 3공정 전체 cross-backend/browser parity 통과 |
+| Chrome·Edge 후보 GPU FPS | 최종 118.80–119.85 FPS; 12조합 모두 60 FPS 이상 |
+| React·메인 스레드 | 최종 18조합 commit 증가 0, handler < 50 ms, long task 0 |
+| localhost cold-context shell | 최종 약 515–2,268 ms; 공개 LCP 검증 아님 |
+| release identity client/Pages | 둘 다 재통과, WASM 해시·크기 이전 단위와 동일 |
+| dependency boundary | 147 modules / 338 dependencies, 위반 0 |
+| `git diff --check` | 통과 |
+
+- 초기 매개변수화 테스트 배열의 타입/인자 매핑 오류를 수정하고, 최종 전체 verify를 통과했다.
+- 최초 조사(프레임당 고정각 orbit)는 16 passed / 2 failed: Chrome WebGPU drilling
+  handler 66.9 ms, Chrome WebGL 2 milling long task 5회. `artifacts/benchmark-report.json`에
+  보존했다. 카메라를 시간 기준으로 정규화한 최종 결과는 별도 `benchmark-reference-v1.json`이다.
+- 초기 예산 초과는 최종 실행에서 재현되지 않았으나 원인을 해결했다고 선언하지 않는다.
+  엔진·UI 성능 기준을 바꾸지 않았으며, 반복 cold/전원/GPU cache 조건 검증이 남는다.
+- Chrome 152.0.7977.83은 NVIDIA, Edge 153.0.4234.32는 Intel GPU가 관찰됐다.
+  같은 GPU 기준 브라우저 비교가 아니다. Chromium 140.0.7339.16/SwiftShader의 FPS는
+  실장비 판정에서 제외했다. High·총 메모리·LCP·Firefox/Safari·기준 장비 승인도 미완료다.
+- 브랜치는 `codex/m12-release-gates`이며 이전 릴리스 출처 변경을 보존했다.
+  커밋·푸시·PR·병합·공개 배포는 수행하지 않았다. 기존 stash도 변경하지 않았다.
+
+## M12 첫 단위 — 릴리스 출처·WASM 무결성 (2026-09-12, 로컬 gate 완료)
+
+- `codex/m12-release-gates`를 아직 병합 전인 M11의 `2f48a6f`에서 분기했다.
+  M11 PR·병합과 공개 배포는 이번 요청에서 수행하지 않는다. 장기 기준과 배포 대상은
+  `main` 및 사용자 지정 GitHub Pages를 유지한다. ADR-0016에 임시 stacked 경계를 기록했다.
+- Vinext client와 Pages 산출물에 `release.json`을 생성한다. 제품·엔진·프로젝트 스키마·
+  Worker protocol 버전, 실제 HEAD 전체 SHA, 로컬 변경 여부, 대상, WASM 크기·SHA-256을
+  기록한다. 기존 버전 0.9.0과 schema/protocol 1은 변경하지 않는다.
+- 잘못된 `GITHUB_SHA`, 누락/추가/변조 metadata, 변경된 배포 WASM을 거부한다.
+  GitHub Actions 및 `--require-clean` 검사는 미커밋/새 소스가 있으면 게시를 차단한다.
+- JSON에 시간·사용자명·브랜치명·로컬 경로·프로젝트명·G-code 원문을 넣지 않는다.
+  UI·Worker 실행 주기와 기존 성능·시각 임계값은 변경하지 않았다.
+- Pages E2E는 `/CNC-Render/release.json`과 같은 배포의 WASM을 HTTP로 받아 대조한다.
+  CI는 Pages smoke 다음, artifact 업로드 전에 `check:release --require-clean`을 실행한다.
+
+### 검증
+
+| Gate | Result |
+|---|---|
+| `pnpm test:unit --filter release-metadata` | 26 tests 통과 — SHA/dirty/변조/누락/결정론적 JSON |
+| `pnpm verify` | 최종 통과 — unit 257/35 files, contracts 64/16 files, parity 69/10 files; lint·typecheck·Cargo check·production build |
+| dependency boundary | 통과 — 142 modules, 327 dependencies, 위반 0 |
+| `pnpm check:release --target=client` | 통과 — 실제 Vinext client metadata와 WASM SHA 일치 |
+| `pnpm test:pages` | 2 passed — metadata HTTP 응답/WASM 해시, UI·Monaco·분석/비교 Worker·절삭·JSON 내보내기 회귀 |
+| `pnpm check:release --target=pages` | 통과 — 실제 Pages metadata와 WASM SHA 일치 |
+| `check-release.mjs --target=pages --require-clean` negative gate | 예상대로 실패 — 미커밋 worktree의 게시 차단, 오류 원인까지 확인 |
+| `git diff --check` | 통과 |
+
+- 초기 타입 검사에서 테스트 환경 객체의 필수 `NODE_ENV` 누락을 수정했고, 이후
+  전체 표준 검증을 처음부터 재통과했다. 기존 500 kB lazy chunk 안내 경고는 남는다.
+- client/Pages 모두 제품·엔진 0.9.0, schema/protocol 1, 기반 SHA `2f48a6f…`,
+  `sourceDirty: true`를 기록한다. WASM은 857,623 B, SHA-256
+  `9f588d8fb523d98cf79ec86b9b1f6f775dc30efc9c7d146cebb45bf4468ffccf`로 이전과 같다.
+- 이번 결과는 Windows 로컬 Chromium/SwiftShader 검증이다. 원격 CI 실행·커밋·푸시·
+  PR·병합·공개 Pages 재배포는 수행하지 않았다. 기존 M10 stash는 변경하지 않았다.
+
+### 남은 M12 범위
+
+- DoD 1–3: 기준 실장비/브라우저/해상도 명시, LCP·cold shell·Medium/High FPS·메모리.
+- DoD 4–6: 1프레임 충돌 경고·WebGPU/WebGL 2 parity의 릴리스 matrix, Chrome/Edge
+  필수 결과와 Safari/Firefox 통과 또는 제약 문서. 기존 SwiftShader 테스트를 실장비로 간주하지 않는다.
+- DoD 7–9: 업로드 형식·크기·구조·과도한 메시·압축 폭탄 방어, SAB 사용 여부와 실배포
+  COOP/COEP/외부 리소스 정책, 익명 telemetry의 수집 범위/개인정보 검증.
+- DoD 10: 전체 CI matrix와 bench-smoke·Lighthouse·보안 검사·결과 artifact 보존.
+- DoD 11: 산출물 식별·로컬 gate 구현은 완료했다. clean commit의 원격 CI 및 실제
+  공개 배포 산출물 확인은 별도 승인 후 진행한다. 로컬 미커밋 SHA를 공개 릴리스로 간주하지 않는다.
+- M12 전체 완료와 공개 릴리스는 위 gate 및 알려진 P0/P1/P2 검토 이전에 선언하지 않는다.
+
+## M11 G-code Lab·진단·측정·결과 비교 (2026-09-08 검증 완료, 2026-09-12 기록 정리)
+
+### 구현과 DoD 대응
+
+- Monaco·분석 Worker/WASM을 Code 탭의 lazy 경계로 분리했다. Rust parser-only ABI와
+  strict versioned 계약이 원본 SHA-256, end-exclusive source range, 지원 수준,
+  결정론적 진단 ID를 반환한다. 편집은 150 ms debounce/세대 검사로 오래된 응답을 버린다.
+- 편집한 실제 source를 전용 Coordinator→Rust/WASM 경로에서 실행한다. 현재 줄,
+  원본 줄 단위 실행, 첫 motion 전 breakpoint, modal-only 0초 step, M0/M1 pause와
+  M2/M30 종료를 지원한다. 같은 줄의 cycle 확장은 한 step으로 묶고 기존 motion ABI와
+  Golden semantic/Stock hash는 유지한다. 현재 줄·오류·중단점은 문자·모양·레이블로 구분한다.
+- 파서 오류는 editor↔목록, 실제 축 한계·충돌·비절삭 feed 경고는 editor↔목록↔3D
+  객체·좌표를 같은 ID로 연결한다. 파서에 가짜 공간 위치를 부여하지 않는다. G41/G42는
+  지원 수준과 자동 대체 불가, 직접 공구 중심 경로를 작성하는 도움말을 표시한다.
+- UI는 실행 중 편집을 잠그고 정지 후 다시 편집할 수 있다. 다른 source의 이전 진단,
+  현재 줄과 3D 마커는 새 draft에 연결하지 않는다. Lab만 최대 10 Hz 실행 요약을 구독하고
+  source map·program-control 배열·Stock/편차 TypedArray는 React/Zustand에 넣지 않는다.
+- 거리·직경·반경·각도·깊이·벽 두께를 좌표 입력과 실제 Stock 표면 sampling으로 측정한다.
+  canonical mm/rad를 보존하고 inch/degree와 반올림은 표시 경계에서만 적용한다.
+- 완료/진단 중단 Stock과 독립 작성한 목표를 comparison Worker에서 비교한다.
+  Overlay/Split/Heatmap은 동일 Float64 편차 field와 max/mean/P95·과절삭·미절삭 통계를 쓴다.
+  JSON/CSV/인쇄 HTML은 같은 metric 정의를 공유하고 HTML escaping·CSV formula 방어를 한다.
+- 보고서에 run/fixture·state/Stock hash·target ID·추정 시간·완료/중단·진단 개수를 남긴다.
+  새 run은 이전 보고서·내보내기를 무효화한다. M8 renderer-only 복원은 엔진 세션과
+  혼합 비교하지 못하게 재실행을 요구하며 snapshot 전후 run ID와 terminal 상태를 검증한다.
+- 결과 Loader만 `M11ResultBridge`의 안정된 scalar snapshot을 구독하며 같은 run summary는
+  알림을 만들지 않는다. 실행 중 작업실 React commit 수는 증가하지 않는다.
+- Code 탭 헤더 저장은 편집 Stock을 대표 공정 재실행으로 교체하지 않도록 명시적으로
+  거부한다. 편집 source·run ID·Stock hash를 보존하고 복사/리포트 저장을 안내한다.
+  README·도움말도 현재 기능과 공개 데모 배포 시점을 구분하도록 갱신했다.
+- 대량 진단은 목록 50개/페이지, 장면 256개 한도에서도 선택한 ID를 우선 보존한다.
+  전송 10,000개 한도를 채운 경고가 있어도 마지막 축 한계·충돌 증거를 보존한다.
+  비교 지도는 실제 표본 최대 4,096개만 렌더·정렬·pick하며 생략을 알리고 전체 통계는 유지한다.
+- 데스크톱 shell을 화면 높이에 고정하고 패널 내부 스크롤로 3D 클릭이 화면 밖으로 나가는
+  문제를 해결했다. 모바일 결과 화면을 노출하고, 헤더 primary 실행 버튼을 덮던 레거시
+  CSS를 제한해 기본·hover 4.5:1 이상 대비를 검증한다.
+- ADR-0015와 CI에 M11 분석·실행·측정·내보내기·visual·접근성·lazy bundle gate를 연결했다.
+  Pages 산출물은 다른 검증용 build가 끝난 뒤 마지막에 생성한다.
+
+### 검증
+
+아래는 2026-09-08 실행에서 확인한 최종 결과다. 완료 기록과 커밋 직전 실행 승인 서비스의
+사용량 제한으로 중단되었고, 2026-09-12에 동일 브랜치에서 기록·커밋·푸시를 재개했다.
+2026-09-12 재실행한 `pnpm verify`도 unit 231, contracts 64, parity 69와 production
+build까지 모두 통과했다. WASM 크기와 SHA-256도 아래 2026-09-08 결과와 동일하다.
+
+| Gate | Result |
+|---|---|
+| `pnpm verify` | 통과 — unit 231/34 files, contracts 64/16 files, parity 69/10 files, lint·typecheck·Cargo check·production build |
+| M11 공식 E2E (`gcode-lab`, `diagnostic-link`, `measurement`, `result-compare`) | 최종 통과 — WebGPU·WebGL 2 28 passed, visual 중복 14 skipped; 저장 보호 포함 |
+| `pnpm test:contracts --filter report` | 통과 — 1 file, 5 tests |
+| `pnpm test:visual` | 통과 — 5 passed; 공식 gcode-error·heatmap 포함 |
+| `pnpm check:bundle` | 통과 — 초기 10개/lazy 6개 manifest 경계, CSS gzip 21,420 B / 81,920 B; 기준 완화 없음 |
+| `pnpm test:e2e` 전체 회귀 | 통과 — 97 passed, 기존 visual 중복·opt-in soak 35 skipped; 이후 저장 보호는 최종 M11 공식 gate로 추가 검증 |
+| `pnpm test:a11y` | 최종 통과 — WebGPU·WebGL 2 6 passed, visual 중복 3 skipped; Code 준비/오류·결과 3모드 포함 |
+| `pnpm test:pages` | 통과 — 1 passed; `/CNC-Render/` 실제 Monaco/분석·비교 Worker, Stock 비교·JSON provenance·브라우저 오류 0 |
+| Rust fmt·clippy·`pnpm cargo:test` | 통과 — 전체 workspace, WASM ABI 실행 테스트 12개 포함 |
+| dependency boundary | 통과 — 139 modules, 318 dependencies, 위반 0 |
+| `git diff --check` | 통과 |
+| production WASM | 857,623 bytes, SHA-256 `9f588d8fb523d98cf79ec86b9b1f6f775dc30efc9c7d146cebb45bf4468ffccf` |
+| visual assets | gcode-error 66,995 B; heatmap 98,348 B; 수정된 machine-scene 35,514 B |
+
+- 초기 검증에서 화면 밖 진단 클릭, 대량 진단의 선택/terminal 상한, 오래된 결과 출처,
+  빈 코드 alert 선택과 nullable 공간 타입, 작업실 React commit 증가를 확인해 수정했다.
+  최종 M7 gate는 양쪽 backend에서 commit 불변, `maximumMainHandlerMs < 50`,
+  `longTasksOver50Ms <= 1`을 그대로 통과했다. 테스트와 성능 임계값을 낮추지 않았다.
+- 기존 machine-scene의 923×883 캔버스는 900 px 화면을 벗어나 있었다. 높이 교정 후
+  923×625 화면을 직접 검토해 해당 baseline만 갱신했다. 새 오류·히트맵 baseline도
+  직접 확인하고 snapshot 업데이트 없이 전체 visual gate를 재통과했다.
+- Monaco lazy chunk의 500 kB 안내 경고는 남지만 초기 entry 유입은 없다.
+  Windows 로컬 Chromium/SwiftShader 기능 검증이며 opt-in 장기 soak와 기준 실장비
+  성능·메모리·다중 브라우저 릴리스 판정은 M12 범위다.
+
+### 제한과 다음 경계
+
+- M11은 S1 기능의 기초이며 정확도는 계속 E2 교육용 근사다. 밀링 balanced 8 mm dexel,
+  회전 1 mm layer보다 작은 형상과 산업용 검증·표면조도·열변형을 보증하지 않는다.
+- 목표는 대표 밀링·외경 선삭·센터 드릴링의 독립 작성 형상이다. 임의 CAD 목표 import,
+  feature 자동 인식·최소 벽 두께 탐색은 없다. 직경/반경의 중심과 깊이/벽 두께의 기준면
+  법선은 사용자가 지정한다. M1은 optional-stop 토글 없이 항상 멈춘다.
+- 10,000개를 넘는 경고는 생략할 수 있으므로 보고서 개수는 보존된 실행 진단의 개수다.
+  화면 LOD는 측정 가능한 표본을 줄일 뿐 전체 원본 field·통계의 정밀도를 낮추지 않는다.
+- M8에서 불러온 Stock은 새 실행 후 비교한다. 임의 checkpoint에서 엔진을 재개하는 기능과
+  프로젝트 공유·클라우드 동기화는 이번 단위의 범위가 아니다.
+- 편집 G-code는 세션 한정이며 프로젝트 영속화는 제공하지 않는다. Code 탭 헤더 저장은
+  거부하며 다른 영역의 대표 공정 저장과 결과 리포트 내보내기를 구분한다.
+- 다음 계획은 M12 성능·폴백·보안·CI·릴리스 게이트다. 기준 장비 성능/메모리,
+  브라우저 매트릭스, 업로드 보안, COOP/COEP, 개인정보, 릴리스 식별 검증은 별도 진행한다.
+- 이번 요청은 feature 브랜치 커밋·푸시까지이며 PR 생성·병합·공개 배포는 수행하지 않는다.
+  대상은 `origin/codex/m11-gcode-lab`이며 사용자 지정 저장소 `JTech-CO/CNC-Render`를
+  유지한다. 기존 M10 stash는 수정하지 않았다.
+
+
+## M10 성공·실패 visual baseline·샌드박스 Operation (2026-09-04, 완료)
+
+### 구현
+
+- 평면 밀링 Lesson의 성공과 작성된 잘못된 공구 실패를 전용 WebGL 2 visual
+  baseline으로 고정했다. 성공 상태는 실제 Worker/WASM 제거·Stock 갱신·독립 측정·
+  `100 / 100` 판정과 마지막 3D 결과를 유지하며 전체 화면 축하 효과를 만들지 않는다.
+  실패 상태는 `setup.wrong-tool` 이유와 설정 단계 checkpoint 복구를 함께 검증한다.
+- `Operation` strict schema를 사용하는 샌드박스 controller를 추가했다. 대표 E2
+  평면 밀링을 생성·편집하고 commit/discard하며 최대 50개 revision을 durable
+  undo/redo journal로 직렬화한다. operation identity, revision 순서, cursor와
+  configuration이 일치하지 않는 journal은 복원을 거부한다.
+- Training VMC, Aluminum 6061, Ø20 mm 평엔드밀, 표준/소형 직육면체 Stock과
+  X/Y 왕복을 선택할 수 있다. 이송, 회전수, 절입 깊이와 Stock/방향은 기존
+  G-code→전용 Worker→Rust/WASM→renderer 전체 경로에 실제 반영한다.
+- balanced 8 mm 격자에서 0 체적 절삭이 되는 하위 해상도 입력을 숨기지 않도록
+  이 E2 preset의 절입 깊이를 4–5 mm로 제한하고 UI에 표시한다. feed·rpm·절삭 폭도
+  유한값과 기계/preset 상한을 controller에서 검증하며 단위를 입력 옆에 표시한다.
+- 미적용 form draft가 stale committed Operation으로 실행·저장되지 않게 하고,
+  active/paused 이전 run을 취소한 뒤 새 run ID의 완료 summary만 성공으로 인정한다.
+  undo/redo/load도 미적용 draft가 있는 동안 비활성화하고 검증 원인을 alert로 노출한다.
+- 저장은 활성 Operation과 journal cursor의 canonical 일치, 완료/non-stopped terminal,
+  terminal/checkpoint provenance를 확인한 뒤 Project·G-code·진단·측정·Stock checkpoint·
+  journal을 하나의 immutable generation에 기록한다. 불러오기는 entity link, component
+  hash, G-code resource와 Stock payload/checkpoint 결속을 모두 재검증한 뒤 렌더한다.
+- 실제 wall-clock `maximumMainHandlerMs < 50` 기준은 유지했다. unit 파일 병렬 실행이
+  OS scheduling pause를 handler 비용으로 오인하던 문제만 `fileParallelism: false`로
+  격리했으며 coordinator metric과 임계값은 변경하지 않았다.
+- ADR 0013·0014에 visual 판정, 샌드박스 controller, 실제 엔진 전달과 저장 무결성
+  결정을 후속 구현 기록으로 추가했다.
+
+### 검증
+
+| Gate | Result |
+|---|---|
+| `git diff --check` | 통과 |
+| `pnpm test:unit --filter sandbox-operation-controller` | 통과 — 1 file, 15 tests |
+| `pnpm test:unit --filter persistence` | 통과 — 3 files, 11 tests |
+| `pnpm test:parity --filter scoring` | 통과 — 실제 Rust/WASM 4 tests |
+| `pnpm test:e2e --grep "tutorial-face\|tutorial-turning\|tutorial-drilling\|sandbox"` | 통과 — WebGPU·WebGL 2 8 passed, visual 중복 4 skipped |
+| `pnpm test:visual --grep "tutorial-success\|tutorial-failure"` | 통과 — WebGL 2 2 passed |
+| `pnpm test:a11y` | 통과 — WebGPU·WebGL 2 2 passed, visual 중복 1 skipped |
+| coordinator 성능 gate 단독 반복 | 통과 — 15/15, `< 50 ms` 기준 유지 |
+| `pnpm verify` (Node 24.18.0, pnpm 11.5.3) | 통과 — unit 190, contracts 51, parity 67, Cargo check, production build |
+| dependency boundary | 통과 — 111 modules, 248 dependencies, 위반 0 |
+| production WASM | 793,536 bytes, SHA-256 `d788f5b38bc27cd0429f5500e63ad6523fc1b9dce07574c2983a78b444bd9fec` |
+| visual assets | success 23,390 bytes `8f18ef8be574…`; failure 20,629 bytes `578ac84f9667…` |
+
+### 남은 위험과 M11 경계
+
+- 이번 샌드박스는 M10 E2 수직 절편이므로 기계·재료·공구는 각 1개다. 기술 백서의
+  다축 기계, 원통/튜브/사용자 모델, 재료·공구·고정구 전체 라이브러리, 조그/MDI와
+  자유 공구경로 생성기는 후속 샌드박스 확장 범위다.
+- 절삭 폭은 Operation provenance에 저장되지만 Ø20 mm 공구의 lane 간격은 대표
+  fixture에 고정되어 있다. width 기반 stepover와 임의 toolpath 편집은 후속 범위다.
+- 저장은 브라우저 OPFS/IndexedDB의 로컬 generation이다. 복제·공유·클라우드 동기화는
+  아직 제공하지 않는다.
+- balanced 8 mm 밀링 격자와 1 mm 회전 layer보다 작은 형상, 공구 접촉·표면 조도·
+  열 변형은 평가하지 않는다. 화면의 E2 표기를 산업용 검증으로 해석하면 안 된다.
+- 목표/결과 heatmap, 측정 도구, 진단 양방향 이동과 JSON/CSV/인쇄 리포트는 M11에서
+  구현한다.
+
+## M10 외경 선삭·드릴링 측정/Controller (2026-08-14, 완료)
+
+### 구현
+
+- `packages/simulation`에 `turning-full` Stock 반경 field와 별도 작성한 외경·홀
+  목표 cut field를 1 mm 축방향 layer에서 비교하는 순수 측정 어댑터를 추가했다.
+  목표는 실제 배열이나 제거 체적에서 역산하지 않으며 외경/내경 반경, Stock 경계,
+  cut 구간이 일치하지 않거나 비유한 값이 있으면 측정을 거부한다.
+- 외경 선삭은 초기 Ø80 mm 원통의 Z 250–350 mm 구간을 Ø64 mm로 만드는 목표를
+  사용한다. 실제/목표 외경, 최대·평균 반경 편차, 과절삭·미절삭, 환형 제거 체적을
+  반환하며 대표 Worker/WASM 결과는 120 layer 중 목표 절삭 101 layer와 약
+  `182,765.294 mm³` 제거에 일치한다.
+- 센터 드릴링은 positive-Z 자유단에서 Ø16 × 80 mm 홀을 만드는 네 번의 점진
+  진입(Z 340→320→300→280 mm)과 안전 복귀 fixture를 추가했다. 측정 summary는
+  실제/목표 홀 지름과 연속 홀 깊이, 80개 목표 절삭 layer와 약
+  `16,084.954 mm³` 제거 체적을 제공한다.
+- 외경 선삭 대표 공정은 네 종방향 pass를 유지하면서 작성된 18초 만점 기준을
+  임계값 완화 없이 충족하도록 종방향 feed를 `2,400 mm/min`으로 조정했다.
+- 외경 선삭·드릴링 각각에 strict 한국어 E2 5단계 Lesson과 Web foundation
+  controller를 추가했다. controller는 선택 ID, terminal fixture/process,
+  제거 체적, target/process/feature가 일치할 때만 측정·평가를 허용한다.
+- 학습 탭에 평면 밀링·외경 선삭·센터 드릴링 선택기를 연결했다. 실행 중 선택을
+  잠그고 완료 checkpoint에서만 측정하며 React에는 배열 없이 scalar summary와
+  점수만 저장한다. 외경/구멍 지름과 홀 깊이를 단위와 함께 표시한다.
+- 드릴링을 M7 Worker/WASM·turning renderer presentation과 M8 프로젝트
+  생성·저장·checkpoint 복원 경로에 연결했다. 저장 프로젝트는 drill 공구,
+  drilling operation과 peck-drilling strategy를 별도로 보존한다.
+- ADR 0013·0014에 공정별 controller, 반경 field 비교 방식, 목표 체적, 시간 기준과
+  E2 한계를 후속 구현 기록으로 추가했다.
+
+### 검증
+
+| Gate | Result |
+|---|---|
+| `git diff --check` | 통과 |
+| `pnpm typecheck` | 통과 |
+| `pnpm test:unit --filter turning-target-measurement` | 통과 — 1 file, 7 tests |
+| `pnpm test:unit --filter tutorial-rules` | 통과 — 1 file, 18 tests |
+| `pnpm test:unit --filter coordinator-fixtures-configuration` | 통과 — 1 file, 4 tests |
+| `pnpm test:parity --filter scoring` | 통과 — 실제 Rust/WASM 밀링·충돌·외경 선삭·드릴링 4 tests |
+| `pnpm test:e2e --grep "radius field"` | 통과 — WebGPU·WebGL 2 외경/드릴 4 passed, visual 중복 2 skipped |
+| 드릴링 M8 저장·복원 E2E | 통과 — WebGPU·WebGL 2 2 passed, visual 중복 1 skipped |
+| `pnpm test:a11y` | 통과 — WebGPU·WebGL 2 2 passed, visual 중복 1 skipped |
+| `pnpm verify` (Node 24.18.0, pnpm 11.5.3) | 통과 — unit 173, contracts 51, parity 67, Cargo check, production build |
+| dependency boundary | 통과 — 108 modules, 243 dependencies, 위반 0 |
+| production WASM | 793,536 bytes, SHA-256 `d788f5b38bc27cd0429f5500e63ad6523fc1b9dce07574c2983a78b444bd9fec` |
+
+### 남은 위험과 다음 M10 단위
+
+- 회전 Stock은 1 mm 축방향/radial layer를 쓰므로 외경은 2 mm 단위로 양자화된다.
+  실제 공구 nose/드릴 point·버·표면 조도·열 변형은 평가하지 않으며 Lesson에서
+  E2 교육용 한계로 노출한다.
+- 목표 형상 heatmap, 측정 리포트 내보내기와 성공·실패 visual baseline은 남아 있다.
+- 샌드박스 operation 생성·편집·저장과 durable undo/redo를 아직 제공하지 않으므로
+  M10 전체 완료로 기록하지 않는다.
+- 현재 엔진은 첫 충돌에서 정지하므로 충돌 횟수는 계속 `0` 또는 `1`인 E2 값이다.
+## M10 실제 Stock 측정·평면 밀링 Lesson controller (2026-08-13, 완료)
+
+### 구현
+
+- `packages/simulation`에 실제 `milling-full` Stock surface와 별도 작성된 목표
+  sweep을 비교하는 순수 측정 어댑터를 추가했다. 대표 fixture의 Stock 경계,
+  20 mm 평엔드밀과 5패스 경로가 목표 형상을 정의하며 실제 surface 배열에서
+  목표를 역산하지 않는다.
+- 각 덱셀 셀 중심에서 목표 높이를 계산하고 실제 높이가 더 낮으면 과절삭, 더
+  높으면 미절삭으로 판정한다. 가장자리 셀 면적을 반영해 실제·목표 제거 체적,
+  과절삭·미절삭 체적을 `mm³`로 적분하고 최대·평균 절대 편차를 `mm`로 반환한다.
+  비유한 값, 잘못된 grid 크기, 범위 밖 높이와 다른 Stock용 목표는 거부한다.
+- 대표 표준/X방향 Worker/WASM 결과는 Stock `1,125`셀 중 목표 절삭 대상
+  `699`셀, 실제·목표 제거 체적 각 `357,888 mm³`, 최대 편차·과절삭·미절삭
+  모두 0으로 측정된다. standard/compact와 X/Y방향 조합도 결정론적으로
+  동일 목표에 수렴한다.
+- `packages/lesson-engine`의 일반 controller가 준비→설정→실행→측정→평가 전이,
+  허용 행동, 순서 밖 행동 이유, 체크포인트 복구, 실패와 최종 점수를 관리한다.
+  Web foundation의 평면 밀링 controller는 실제 Worker/WASM terminal summary와
+  측정 summary만 결합하고 대형 `Float32Array`를 Lesson 또는 React에 저장하지 않는다.
+- 학습 탭은 5단계 상태와 현재 지시, 오순서 복구, 측정값, 최종 `100 / 100` 판정을
+  노출한다. 실행 단계는 기존 실시간 Worker/WASM 파이프라인을 사용하고 측정 단계는
+  완료된 run의 full checkpoint를 읽는다. 단계 행동과 terminal 시점에만 React를
+  갱신하며 렌더 프레임별 commit은 추가하지 않았다.
+- 측정용 `simulation.snapshot` reply가 renderer 구독자에게 전체 Stock을 다시
+  방송해 부분 buffer update 진단을 초기화하던 경로를 분리했다. checkpoint는
+  호출자에게만 반환하고 명시적 복원 API를 호출할 때만 렌더한다.
+- E2 제한에 `8 mm` 덱셀 셀 중심·양자화 높이 측정임을 추가했다. `8 mm` 미만의
+  국부 형상은 평가하지 않으며 산업용 공차 판정으로 표현하지 않는다.
+
+### 검증
+
+| Gate | Result |
+|---|---|
+| `git diff --check` | 통과 |
+| `pnpm test:unit --filter milling-target-measurement` | 통과 — 1 file, 6 tests |
+| `pnpm test:unit --filter tutorial-rules` | 통과 — 1 file, 12 tests |
+| `pnpm test:unit --filter simulation-coordinator` | 통과 — 1 file, 3 tests; snapshot 렌더 비방송 포함 |
+| `pnpm test:parity --filter scoring` | 통과 — 실제 WASM Stock 측정·충돌 정지 2 tests |
+| `pnpm test:e2e --grep tutorial-face` | 통과 — WebGPU·WebGL 2 2 passed, visual 중복 1 skipped |
+| `pnpm test:a11y` | 통과 — WebGPU·WebGL 2 2 passed, visual 중복 1 skipped |
+| `pnpm verify` | 통과 — unit 158, contracts 51, parity 65, Cargo check, production build |
+| dependency boundary | 통과 — 104 modules, 234 dependencies, 위반 0 |
+| production WASM | 793,536 bytes, SHA-256 `d788f5b38bc27cd0429f5500e63ad6523fc1b9dce07574c2983a78b444bd9fec` |
+
+### 남은 위험과 다음 M10 단위
+
+- 정식 UI Lesson은 아직 평면 밀링 1개다. 외경 선삭·드릴링은 공정별 목표 형상
+  측정 어댑터와 5단계 controller 연결이 필요하다.
+- 현재 측정 어댑터는 평엔드밀 sweep과 dexel 상면 비교 범위다. 회전 반경 field,
+  드릴 구멍 형상, 측정 heatmap과 리포트 내보내기는 후속 단위다.
+- 성공·실패 visual baseline과 샌드박스 operation 생성·저장은 남아 있으므로 M10
+  전체 완료로 기록하지 않는다.
+- 현재 엔진은 첫 충돌에서 정지하므로 충돌 횟수는 계속 `0` 또는 `1`인 E2 값이다.
+
+## M10 Lesson 규칙·Worker/WASM 증거·점수 계약 (2026-08-13, 완료)
+
+### 구현
+
+- `content/lessons/ko/face-milling.lesson.json`에 E2 평면 밀링의 준비→설정→실행→
+  측정→평가 5단계, 허용 행동, 순서 밖 행동의 이유·체크포인트 복구 경로와
+  성공·실패 규칙을 선언했다. 잘못된 공구, `5 mm` 초과 절입과 충돌은 작성 순서에
+  따라 서로 다른 실패 이유를 반환한다.
+- `packages/lesson-engine`은 strict Zod schema와 순수 단계 판정 계층으로 두었다.
+  알 수 없는 필드, 비유한 수치, 중복 ID·행동·점수 metric, 역행 단계와 100점이
+  아닌 배점 합계를 거부한다.
+- Worker/WASM Coordinator 완료 요약 또는 실제 충돌 정지만 Lesson evidence로
+  변환한다. `logicalTimeS`, 제거 체적, 첫 충돌 유무를 엔진 소유 metric으로 쓰고
+  run·fixture·공정 ID와 최종 semantic/Stock hash를 provenance로 보존한다.
+  렌더 프레임과 실제 재생 경과는 판정·점수에 사용하지 않는다.
+- 형상 편차 30점, 충돌 25점, 논리 시간 15점, 공구 수 10점, 과절삭·미절삭 각
+  10점인 100점 정책을 fixture에 선언했다. 만점/0점 경계 사이를 선형 감점하고
+  항목별·총점을 소수 둘째 자리로 반올림한다. 통과 기준은 `80 / 100`이며 필요한
+  metric 누락은 `lesson.score.metric-missing`으로 거부한다.
+- ADR 0013에 강의 규칙 경계를, ADR 0014에 실제 엔진 증거와 점수 공식·단위·
+  평면 밀링 임계값을 기록했다.
+
+### 검증
+
+| Gate | Result |
+|---|---|
+| `git diff --check` | 통과 |
+| 변경 소스·테스트 ESLint | 통과 |
+| `pnpm test:unit --filter tutorial-rules` | 통과 — 1 file, 10 tests |
+| `pnpm test:parity --filter scoring` | 통과 — 실제 WASM 독립 재실행·충돌 정지 2 tests |
+| `pnpm typecheck` | 통과 |
+| `pnpm check:boundaries` | 통과 — 98 modules, 215 dependencies, 위반 0 |
+| `pnpm verify` | 통과 — unit 149, contracts 51, parity 65, Cargo check, production build |
+| production WASM | 793,536 bytes, SHA-256 `d788f5b38bc27cd0429f5500e63ad6523fc1b9dce07574c2983a78b444bd9fec` |
+
+### 남은 위험과 다음 M10 단위
+
+- 현재 정식 Lesson 콘텐츠는 평면 밀링 1개다. 외경 선삭·드릴링 Lesson,
+  샌드박스 operation 생성·저장, Tutorial UI와 M10 E2E·visual gate는 남아 있다.
+- Worker/WASM가 직접 제공하는 점수 값은 논리 시간, 제거 체적과 첫 충돌 유무다.
+  최대 형상 편차·과절삭·미절삭은 아직 명시적 측정 입력이며 실제 Stock과 목표
+  형상을 비교하는 measurement adapter에 연결해야 한다.
+- 현재 엔진은 첫 충돌에서 정지하므로 충돌 횟수는 `0` 또는 `1`인 E2 값이다.
+  다중 충돌 누적은 Coordinator 계약 확장 전까지 지원하지 않는다.
+
+## 작업실 탭·공정 재생·밀링 설정 안정화 (2026-08-13, 완료)
+
+### 원인과 수정
+
+- 장면 패널과 코드·학습·결과 Context 패널이 같은 grid cell에 동시에 렌더링되어
+  겹쳤다. Activity에 따라 두 패널을 상호 배타적으로 렌더링하도록 수정했다.
+- 공개 외경 선삭 fixture는 모션이 3개뿐이어서 약 `0.6 s` 만에 끝났고 VMC
+  장면에 선삭 좌표를 적용해 공구가 소재를 관통하는 것처럼 보였다. 선삭 전용
+  척·holder·insert·toolpath를 분리하고 controller X 지름을 장면 반경 `X / 2`로
+  변환했다.
+- 외경 선삭을 지름 `80 mm`, 길이 `120 mm` 소재의 4개 종방향 패스와 안전
+  복귀를 포함한 18단계 fixture로 교체했다. 회전 Stock이 선삭 presentation을
+  자동 선택하며 실행 시작 후 소재 범위에 camera focus를 맞춘다.
+- 3축 밀링에 표준 블록 `360 × 200 × 88 mm`, 소형 블록
+  `280 × 160 × 72 mm`와 X축·Y축 왕복 절삭 방향을 추가했다. 설정은 결정론적
+  G-code, toolpath guide, Worker/WASM 실행, Stock 교체와 M8 저장 프로젝트에
+  같은 값으로 전달된다. 선삭·충돌 정지에서는 밀링 전용 설정을 비활성화한다.
+- 전체 E2E에서 M8 저장 후 이전 run ID를 기준으로 다음 실행을 기다리던 테스트
+  경합을 발견했다. 저장 직후 활성 run ID를 기준으로 수정하고 WebGPU 3회 반복과
+  전체 순서를 다시 통과했다.
+
+### 검증
+
+| Gate | Result |
+|---|---|
+| `git diff --check` | 통과 |
+| `pnpm verify` | 통과 — unit 139, contract 51, parity 63, dependency 위반 0, Cargo check, production build |
+| `pnpm test:a11y` | 통과 — WebGPU·WebGL 2 2 passed, visual 중복 1 skipped |
+| 탭·선삭·소재/방향 핵심 E2E | 통과 — WebGPU·WebGL 2 6 passed, visual 중복 3 skipped |
+| WebGPU 소재/방향/저장 반복 | 통과 — 3/3 passed |
+| `pnpm test:e2e` | 통과 — WebGPU·WebGL 2 63 passed, 조건부 visual 18 skipped, 실패 0 |
+| production WASM | 793,536 bytes, SHA-256 `d788f5b38bc27cd0429f5500e63ad6523fc1b9dce07574c2983a78b444bd9fec` |
+
+### 남은 위험과 M10 경계
+
+- 공개 선삭 선택기는 현재 외경 선삭 대표 공정 하나다. 단면·테이퍼 fixture와
+  드릴링을 준비→설정→실행→측정→판정의 정식 lesson으로 노출하는 작업은 M10 범위다.
+- 밀링 소재는 두 개의 검증된 박스 preset이다. 임의 치수·재료·공구·절삭 조건과
+  저장 후 UI control 재구성은 M10 sandbox project model에서 완성한다.
+- 선삭 장면과 segment 끝점 단위 재생은 E2 교육용 표현이다. 실제 선반 기구학,
+  서보 보간, 공구 보정 또는 산업용 검증과 동일하지 않다.
 
 ## M9 공개 릴리스 안정화 (2026-08-09)
 
@@ -86,7 +753,45 @@ SHA-256은 `d788f5b38bc27cd0429f5500e63ad6523fc1b9dce07574c2983a78b444bd9fec`다
   `maximumMainHandlerMs = 213.3 ms`, `longTasksOver50Ms = 2`로 간헐 실패했다.
   단독 실행은 통과했지만 전체 gate가 안정적으로 통과하기 전에는 이 작업을
   완전 완료로 기록하지 않는다. 성능 기준은 변경하거나 완화하지 않았다.
-- 공개 URL은 이 브랜치가 커밋·병합·재배포되기 전까지 기존 `시간` 표기를 제공한다.
+- PR #12는 CI run `31475757460` 통과 후 `main`에 병합됐고, main run
+  `31476057436`의 Pages smoke와 배포가 merge SHA `3bf41dd4b11ae032f9f834e55588afb8b999c9d9`로 완료됐다.
+
+## WebGL 2 전체 E2E 성능 게이트 안정화 (2026-08-12, 완료)
+
+### 원인과 수정
+
+- `SimulationCoordinator.maximumMainHandlerMs`가 첫 대표 재생 전 Worker handshake와
+  초기화 처리 시간까지 누적해 실제 재생 성능 gate를 오염시켰다. 첫 대표 재생에서
+  handler 계측 창을 명시적으로 시작하되 50 ms 기준은 변경하지 않았다.
+- Long Task observer가 첫 재생 이후 계속 열린 채 테스트 assertion과 재생 사이 유휴
+  작업까지 누적했다. 각 재생의 시작·종료 시각을 별도 창으로 기록하고 entry 시작
+  시각이 실제 재생 창 안에 있을 때만 집계하며, `takeRecords()`로 지연 전달도 비운다.
+- E2E는 재생 창 밖에서 의도적으로 60 ms 작업 두 개를 만들고 누적치가 변하지 않는지
+  검증한다. 이 검사는 기준 완화가 아니라 gate가 대표 재생 비용만 측정하는지 확인한다.
+- 렌더 업데이트를 별도 프레임 큐로 옮기거나 Worker 처리를 microtask로 미루는 실험은
+  현재 머신의 Long Task 수를 줄이지 못해 최종 변경에서 제외했다. 렌더·파서·UI 샘플링
+  순서와 결정론 계약은 기존 경로를 유지한다.
+
+### 검증
+
+| Gate | Result |
+|---|---|
+| `git diff --check` | 통과 |
+| TypeScript·변경 파일 ESLint | 통과 |
+| `pnpm test:unit --filter simulation-coordinator` | 통과 — 1 file, 2 tests |
+| 고정 Node 24.18.0 `pnpm verify` | 통과 — unit 136, contract 51, parity 63, dependency 위반 0, Cargo check, production build |
+| WebGL 2 결정론 성능 시나리오 10회 | 통과 — 10/10, 1.0 min; 50 ms handler·Long Task 기준 유지 |
+| WebGL 2 전체 프로젝트 | 통과 — 23 passed, 조건부 1 skipped, 43.5 s |
+| 전체 `pnpm test:e2e` 순서 | 통과 — WebGPU·WebGL 2 57 passed, 조건부 visual 15 skipped, 1.9 min |
+| 외부 Vite 우선순위 복원 | 통과 — 각 검증 종료 후 `Idle`에서 원래 `Normal`로 복원 |
+
+### 남은 위험
+
+- Playwright는 SwiftShader software renderer를 사용하므로 실제 GPU 기기별 frame-time은
+  별도 benchmark 범위다. 이 gate는 Worker handler와 Long Task 회귀를 검출한다.
+- 동일 머신의 별도 고CPU 작업과 동시에 실행하면 scheduler 경합이 실제 Long Task를
+  만들 수 있다. 완료 검증은 승인된 외부 Vite 우선순위 조정 조건에서 수행했고, 테스트
+  임계값·retry·fixture 복잡도는 변경하지 않았다.
 
 ## 3축 밀링 재생·절삭 표시 결함 수정 (2026-08-10)
 

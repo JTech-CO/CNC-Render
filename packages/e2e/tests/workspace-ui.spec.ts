@@ -27,6 +27,40 @@ async function openWorkspace(page: Page, testInfo: TestInfo) {
 }
 
 test.describe("M9 workspace UI", () => {
+  test("workspace-layout header primary button preserves readable default and hover colors", async ({ page }, testInfo) => {
+    await openWorkspace(page, testInfo);
+    const button = page.locator(".command-actions .ui-button--primary");
+    await expect(button).toBeEnabled();
+    await expect(button).toHaveText("실행");
+    const readPaint = () => button.evaluate((element) => {
+      const style = getComputedStyle(element);
+      const luminance = (color: string) => {
+        const channels = color.match(/[\d.]+/gu)?.slice(0, 3).map(Number);
+        if (!channels || channels.length !== 3) throw new Error(`Unexpected computed color: ${color}`);
+        const linear = channels.map((channel) => {
+          const normalized = channel / 255;
+          return normalized <= 0.04045 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4;
+        });
+        return linear[0] * 0.2126 + linear[1] * 0.7152 + linear[2] * 0.0722;
+      };
+      const foreground = luminance(style.color);
+      const background = luminance(style.backgroundColor);
+      return {
+        color: style.color,
+        background: style.backgroundColor,
+        opacity: Number.parseFloat(style.opacity),
+        contrast: (Math.max(foreground, background) + 0.05) / (Math.min(foreground, background) + 0.05),
+      };
+    });
+    const normal = await readPaint();
+    expect(normal).toMatchObject({ color: "rgb(255, 255, 255)", background: "rgb(40, 89, 197)", opacity: 1 });
+    expect(normal.contrast).toBeGreaterThanOrEqual(4.5);
+    await button.hover();
+    const hovered = await readPaint();
+    expect(hovered).toMatchObject({ color: "rgb(255, 255, 255)", background: "rgb(32, 73, 165)", opacity: 1 });
+    expect(hovered.contrast).toBeGreaterThanOrEqual(4.5);
+  });
+
   test("workspace-layout keeps controls visible at all nine target resolutions", async ({
     page,
   }, testInfo) => {
@@ -177,6 +211,23 @@ test.describe("M9 workspace UI", () => {
     await expect(page.getByRole("tabpanel", { name: /Diagnostics/u })).toBeVisible();
   });
 
+  test("activity contexts replace the scene panel without sharing its grid cell", async ({
+    page,
+  }, testInfo) => {
+    await openWorkspace(page, testInfo);
+    await page.setViewportSize({ width: 1_440, height: 900 });
+
+    for (const area of ["code", "learn", "results"] as const) {
+      await page.getByTestId(`workspace-area-${area}`).click();
+      await expect(page.locator(".context-panel")).toBeVisible();
+      await expect(page.locator(".scene-panel")).toBeHidden();
+    }
+
+    await page.getByTestId("workspace-area-scene").click();
+    await expect(page.locator(".scene-panel")).toBeVisible();
+    await expect(page.locator(".context-panel")).toHaveCount(0);
+  });
+
   test("zoom-200 preserves help, activity navigation, and simulation commands", async ({
     page,
   }, testInfo) => {
@@ -206,9 +257,10 @@ test.describe("M9 workspace UI", () => {
     await page.setViewportSize({ width: 1_440, height: 900 });
 
     await page.getByTestId("workspace-area-code").click();
-    await expect(page.getByText("대표 밀링 Fixture")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "실행 프로그램 편집" })).toBeVisible();
+    await expect(page.getByTestId("gcode-editor")).toHaveAttribute("data-analysis-state", "ready");
     await page.getByTestId("workspace-area-learn").click();
-    await expect(page.getByRole("button", { name: "기본 절삭 실행" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "준비 확인" })).toBeVisible();
     await page.getByTestId("workspace-area-scene").click();
 
     const viewport = page.getByTestId("machine-viewport");
@@ -296,5 +348,63 @@ test.describe("M9 workspace UI", () => {
     await expect(page.locator(".context-panel")).toContainText("재생 경과");
     await expect(page.locator(".context-panel")).toContainText("가공 추정");
     await expect(page.locator(".context-panel")).toContainText("mm³");
+  });
+
+  test("turning playback stays progressive and uses a turning presentation", async ({
+    page,
+  }, testInfo) => {
+    await openWorkspace(page, testInfo);
+    await page.setViewportSize({ width: 1_440, height: 900 });
+
+    await page.getByTestId("pipeline-fixture").selectOption("turning");
+    await page.getByTestId("pipeline-play").click();
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const state = window.__CNC_RENDER_M7__?.getPipelineState();
+          const summary = state?.summary;
+          return (
+            state?.status === "running" &&
+            (summary?.currentStep ?? 0) > 0 &&
+            (summary?.currentStep ?? 0) < (summary?.totalSteps ?? 0) &&
+            (summary?.stockRevision ?? 0) > 0
+          );
+        }),
+      )
+      .toBe(true);
+
+    const progressive = await page.evaluate(() => {
+      const pipeline = window.__CNC_RENDER_M7__?.getPipelineState();
+      const diagnostics = window.__CNC_RENDER_M3__?.getDiagnostics() as unknown as
+        | {
+            presentationMode?: string;
+            rotationalStockSurface?: { partialBufferUpdates: number } | null;
+          }
+        | undefined;
+      return {
+        currentStep: pipeline?.summary?.currentStep ?? 0,
+        presentationMode: diagnostics?.presentationMode,
+        rotationalStock: diagnostics?.rotationalStockSurface,
+        stockRevision: pipeline?.summary?.stockRevision ?? 0,
+        totalSteps: pipeline?.summary?.totalSteps ?? 0,
+      };
+    });
+    expect(progressive.currentStep).toBeGreaterThan(0);
+    expect(progressive.currentStep).toBeLessThan(progressive.totalSteps);
+    expect(progressive.totalSteps).toBeGreaterThanOrEqual(10);
+    expect(progressive.stockRevision).toBeGreaterThan(0);
+    expect(progressive.presentationMode).toBe("turning");
+    expect(progressive.rotationalStock?.partialBufferUpdates).toBeGreaterThan(0);
+
+    await expect
+      .poll(() =>
+        page.evaluate(() => window.__CNC_RENDER_M7__?.getPipelineState().status),
+      )
+      .toBe("completed");
+    const completed = await page.evaluate(() =>
+      window.__CNC_RENDER_M7__?.getPipelineState(),
+    );
+    expect(completed?.playbackElapsedS).toBeGreaterThan(1.5);
+    expect(completed?.summary?.removedVolumeMm3).toBeGreaterThan(0);
   });
 });

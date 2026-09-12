@@ -33,6 +33,7 @@ node_modules/
 /storybook-static/
 
 # Test output
+/artifacts/
 /coverage/
 /playwright-report/
 /test-results/

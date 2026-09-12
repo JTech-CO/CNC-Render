@@ -17,7 +17,12 @@ export interface WorkspaceStatus {
     | "stopped"
     | "cancelled"
     | "error";
-  readonly fixture: "milling" | "turning" | "collision-stop" | null;
+  readonly fixture:
+    | "milling"
+    | "turning"
+    | "drilling"
+    | "collision-stop"
+    | null;
   readonly saved?: boolean;
 }
 

@@ -2,6 +2,17 @@
 
 import type { CoordinatorCoreSummary } from "@cnc-render/contracts";
 import {
+  DrillingLessonController,
+  FaceMillingLessonController,
+  OdTurningLessonController,
+  SandboxOperationController,
+  SandboxOperationControllerError,
+  mapSandboxOperationToRunParameters,
+  type FaceMillingLessonSnapshot,
+  type SandboxOperationSnapshot,
+  type TurningProfileLessonSnapshot,
+} from "@cnc-render/web/foundation";
+import {
   CAMERA_PRESETS,
   SCENE_LAYERS,
   type CameraPresetId,
@@ -17,17 +28,31 @@ import type {
 import {
   createM5MillingDemoSession,
   createM6TurningDemoSession,
+  createM7DrillingTarget,
+  createM7FaceMillingTarget,
+  createM7OdTurningTarget,
+  createM7PipelineFixture,
+  measureMillingStockAgainstTarget,
+  measureTurningStockAgainstTarget,
   runM4CollisionStopDemo,
   type CollisionEvent,
   type LatheRadiusFieldEngine,
+  type M7MillingOperationParametersInput,
   type M5MillingDemoOperation,
   type M6TurningDemoOperation,
+  type M7MillingConfiguration,
+  type M7MillingCutDirection,
+  type M7MillingStockPreset,
   type M7PipelineFixture,
   type MillingMaterialRemovalDiagnostics,
   type SparseDexelMillingEngine,
   type TurningMaterialRemovalDiagnostics,
 } from "@cnc-render/simulation";
+import drillingLessonDocument from "../../content/lessons/ko/drilling.lesson.json";
+import faceMillingLessonDocument from "../../content/lessons/ko/face-milling.lesson.json";
+import odTurningLessonDocument from "../../content/lessons/ko/od-turning.lesson.json";
 import {
+  useCallback,
   useEffect,
   useRef,
   useState,
@@ -38,6 +63,11 @@ import {
   type M7PipelineHarness,
 } from "./m7-pipeline-adapter";
 import { attachM8Persistence } from "./m8-persistence-adapter";
+import { GcodeLabLoader } from "./gcode-lab-loader";
+import { M11LabBridge, selectSpatialDiagnostics } from "./m11-lab-bridge";
+import { ResultComparisonLoader } from "./result-comparison-loader";
+import { M11ResultBridge } from "./m11-result-bridge";
+import type { ResultComparisonInput } from "../../packages/simulation/src/result-comparison";
 import {
   WORKSPACE_COMMAND_EVENT,
   WORKSPACE_STATUS_EVENT,
@@ -46,6 +76,7 @@ import {
 } from "./workspace-events";
 
 interface CncRenderM3Harness {
+  getDiagnosticScreenPosition(id: string): readonly [number, number] | null;
   getDiagnostics(): WorkcellRendererDiagnostics;
   getReactCommitCount(): number;
   setView(view: CameraPresetId): void;
@@ -107,12 +138,27 @@ interface CncRenderM6Harness extends CncRenderM5Harness {
   getTurningState(): M6TurningBrowserRun | null;
 }
 
+type M10LessonId = "face-milling" | "od-turning" | "drilling";
+type M10LessonController =
+  | DrillingLessonController
+  | FaceMillingLessonController
+  | OdTurningLessonController;
+type M10LessonSnapshot =
+  | FaceMillingLessonSnapshot
+  | TurningProfileLessonSnapshot;
+
+interface CncRenderM10Harness {
+  getLessonState(): M10LessonSnapshot;
+  getSandboxState(): SandboxOperationSnapshot;
+}
+
 declare global {
   interface Window {
     __CNC_RENDER_M3__?: CncRenderM3Harness;
     __CNC_RENDER_M4__?: CncRenderM4Harness;
     __CNC_RENDER_M5__?: CncRenderM5Harness;
     __CNC_RENDER_M6__?: CncRenderM6Harness;
+    __CNC_RENDER_M10__?: CncRenderM10Harness;
   }
 }
 
@@ -131,7 +177,9 @@ function viewLabel(view: WorkcellRendererStatus["cameraView"]): string {
   return view === "custom" ? "사용자 시점" : CAMERA_PRESETS[view].label;
 }
 
-function workspaceIcon(kind: "scene" | "code" | "learn" | "report") {
+function workspaceIcon(
+  kind: "scene" | "code" | "learn" | "sandbox" | "report",
+) {
   const paths = {
     scene: (
       <>
@@ -150,6 +198,11 @@ function workspaceIcon(kind: "scene" | "code" | "learn" | "report") {
         <path d="M20 5.5A3.5 3.5 0 0 0 16.5 2H12v18h4.5a3.5 3.5 0 0 1 3.5 3.5z" />
       </>
     ),
+    sandbox: (
+      <>
+        <path d="M4 4h16v16H4zM8 4v16M16 4v16M4 9h16M4 15h16" />
+      </>
+    ),
     report: (
       <>
         <path d="M5 3h14v18H5zM8 8h8M8 12h8M8 16h5" />
@@ -163,8 +216,78 @@ function workspaceIcon(kind: "scene" | "code" | "learn" | "report") {
     </svg>
   );
 }
-type WorkspaceArea = "scene" | "code" | "learn" | "results";
+type WorkspaceArea = "scene" | "code" | "learn" | "sandbox" | "results";
 type DockTab = "gcode" | "diagnostics";
+
+
+interface SandboxFormState {
+  readonly name: string;
+  readonly stockPreset: "standard" | "compact";
+  readonly cutDirection: "x" | "y";
+  readonly feedMmPerMin: string;
+  readonly spindleSpeedRpm: string;
+  readonly depthOfCutMm: string;
+  readonly widthOfCutMm: string;
+}
+
+interface SandboxNotice {
+  readonly kind: "idle" | "success" | "error";
+  readonly text: string;
+}
+
+const DEFAULT_SANDBOX_FORM: SandboxFormState = {
+  name: "E2 평면 밀링",
+  stockPreset: "standard",
+  cutDirection: "x",
+  feedMmPerMin: "2400",
+  spindleSpeedRpm: "6000",
+  depthOfCutMm: "4",
+  widthOfCutMm: "20",
+};
+
+function sandboxFormFromSnapshot(
+  snapshot: SandboxOperationSnapshot,
+): SandboxFormState {
+  const operation = snapshot.operation;
+  const configuration = snapshot.configuration;
+  if (!operation || !configuration || operation.feed.mode !== "per-minute") {
+    return DEFAULT_SANDBOX_FORM;
+  }
+  return {
+    name: operation.name,
+    stockPreset: configuration.stockPreset,
+    cutDirection: configuration.cutDirection,
+    feedMmPerMin: String(operation.feed.feedMmPerMin),
+    spindleSpeedRpm: String(operation.spindleSpeedRpm),
+    depthOfCutMm: String(operation.depthOfCutMm),
+    widthOfCutMm: String(operation.widthOfCutMm),
+  };
+}
+
+function sameSandboxForm(
+  left: SandboxFormState,
+  right: SandboxFormState,
+): boolean {
+  return (
+    left.name === right.name &&
+    left.stockPreset === right.stockPreset &&
+    left.cutDirection === right.cutDirection &&
+    left.feedMmPerMin === right.feedMmPerMin &&
+    left.spindleSpeedRpm === right.spindleSpeedRpm &&
+    left.depthOfCutMm === right.depthOfCutMm &&
+    left.widthOfCutMm === right.widthOfCutMm
+  );
+}
+
+function sandboxFailureText(error: unknown, fallback: string): string {
+  if (
+    error instanceof SandboxOperationControllerError &&
+    error.issues.length > 0
+  ) {
+    return error.issues.join(" · ");
+  }
+  return error instanceof Error ? error.message : fallback;
+}
 
 const WORKSPACE_PLAYBACK_SPEED = 0.1;
 
@@ -177,6 +300,8 @@ function pipelineState(
   if (summary.completed) {
     return "completed";
   }
+  if (summary.paused) return "paused";
+  if (summary.phase === "cancelled") return "cancelled";
   return summary.phase === "initialized" ? "starting" : "running";
 }
 
@@ -210,7 +335,11 @@ function updatePipelineSummary(
     state === "completed"
       ? "완료"
       : state === "stopped"
-        ? "충돌 정지"
+        ? (summary.collision ? "충돌 정지" : "진단 정지")
+        : state === "paused"
+          ? "일시정지"
+          : state === "cancelled"
+            ? "정지"
         : state === "starting"
           ? "준비 중"
           : "절삭 중";
@@ -265,11 +394,13 @@ function updatePipelineSummary(
   dispatchWorkspaceStatus({
     state,
     fixture:
-      summary.fixtureId.includes("turning")
-        ? "turning"
-        : summary.fixtureId.includes("collision")
-          ? "collision-stop"
-          : "milling",
+      summary.fixtureId.includes("drilling")
+        ? "drilling"
+        : summary.fixtureId.includes("turning")
+          ? "turning"
+          : summary.fixtureId.includes("collision")
+            ? "collision-stop"
+            : "milling",
   });
 }
 
@@ -288,20 +419,126 @@ function updateAxisSummary(
 }
 
 export function MachineWorkspace() {
+  const [resultBridge] = useState(() => new M11ResultBridge());
+  const [labBridge] = useState(() => new M11LabBridge());
+  const [labSource, setLabSource] = useState(() => createM7PipelineFixture("milling", "00000000-0000-4000-8000-000000000011").source);
+  const labSourceRef = useRef(labSource);
+  const labSourceDirtyRef = useRef(false);
+  const [labSourceVersion, setLabSourceVersion] = useState(0);
+  const [labBreakpoints, setLabBreakpoints] = useState<number[]>([]);
+  const labBreakpointsRef = useRef<number[]>([]);
+  const [selectedLabDiagnostic, setSelectedLabDiagnostic] = useState<string | null>(null);
+  const selectedLabDiagnosticRef = useRef<string | null>(null);
+  const [labActionError, setLabActionError] = useState<string | null>(null);
+  const labRunRef = useRef<(source: string, step: boolean) => Promise<void>>(async () => undefined);
+  const labDiagnosticSignatureRef = useRef("");
+  const [faceMillingLessonController] = useState(
+    () => new FaceMillingLessonController(faceMillingLessonDocument),
+  );
+  const [odTurningLessonController] = useState(
+    () => new OdTurningLessonController(odTurningLessonDocument),
+  );
+  const [drillingLessonController] = useState(
+    () => new DrillingLessonController(drillingLessonDocument),
+  );
+  const [sandboxOperationController] = useState(
+    () =>
+      new SandboxOperationController({
+        createUuid: () => crypto.randomUUID(),
+        nowUtc: () => new Date().toISOString(),
+      }),
+  );
   const [activeArea, setActiveArea] = useState<WorkspaceArea>("scene");
   const [dockTab, setDockTab] = useState<DockTab>("gcode");
+  const [selectedPipelineFixture, setSelectedPipelineFixture] =
+    useState<M7PipelineFixture>("milling");
+  const [activeLessonId, setActiveLessonId] =
+    useState<M10LessonId>("face-milling");
+  const [activeLesson, setActiveLesson] =
+    useState<M10LessonSnapshot>(() =>
+      faceMillingLessonController.getSnapshot(),
+    );
+  const [lessonPipelineReady, setLessonPipelineReady] = useState(false);
+  const [lessonActionPending, setLessonActionPending] = useState(false);
+  const [lessonActionError, setLessonActionError] = useState<string | null>(
+    null,
+  );
+  const [sandboxSnapshot, setSandboxSnapshot] =
+    useState<SandboxOperationSnapshot>(() =>
+      sandboxOperationController.getSnapshot(),
+    );
+  const [sandboxForm, setSandboxForm] =
+    useState<SandboxFormState>(DEFAULT_SANDBOX_FORM);
+  const sandboxFormRef = useRef<SandboxFormState>(DEFAULT_SANDBOX_FORM);
+  const [sandboxActionPending, setSandboxActionPending] = useState(false);
+  const [sandboxPersistenceReady, setSandboxPersistenceReady] = useState(false);
+  const [sandboxNotice, setSandboxNotice] = useState<SandboxNotice>({
+    kind: "idle",
+    text: "Operation을 생성하거나 저장본을 불러오세요.",
+  });
+  const activeAreaRef = useRef<WorkspaceArea>("scene");
+  const activeLessonIdRef = useRef<M10LessonId>("face-milling");
+  const activeLessonControllerRef = useRef<M10LessonController>(
+    faceMillingLessonController,
+  );
   const workspaceRef = useRef<HTMLDivElement>(null);
   const fixtureSelectRef = useRef<HTMLSelectElement>(null);
+  const stockPresetSelectRef = useRef<HTMLSelectElement>(null);
+  const cutDirectionSelectRef = useRef<HTMLSelectElement>(null);
   const pipelineHarnessRef = useRef<M7PipelineHarness | null>(null);
   const persistenceHarnessRef = useRef<
     ReturnType<typeof attachM8Persistence>["harness"] | null
   >(null);
   const playToggleRef = useRef<() => Promise<void>>(async () => undefined);
+  const publishLessonSnapshot = useCallback(() => {
+    setActiveLesson(activeLessonControllerRef.current.getSnapshot());
+  }, []);
   const stopPipelineRef = useRef<() => Promise<void>>(async () => undefined);
+  const publishSandboxSnapshot = useCallback(
+    (snapshot = sandboxOperationController.getSnapshot()) => {
+      setSandboxSnapshot(snapshot);
+      if (snapshot.status === "ready") {
+        const form = sandboxFormFromSnapshot(snapshot);
+        sandboxFormRef.current = form;
+        setSandboxForm(form);
+      }
+    },
+    [sandboxOperationController],
+  );
   const saveWorkspaceRef = useRef<() => Promise<void>>(async () => undefined);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<WorkcellRenderer | null>(null);
+  const captureResultComparison = useCallback(async (): Promise<ResultComparisonInput> => {
+    const pipeline = pipelineHarnessRef.current;
+    if (pipeline?.isRestoredCheckpointVisible()) throw new Error("불러온 Stock과 실행 세션이 다릅니다. 재실행 후 결과를 비교하세요.");
+    const before = pipeline?.getPipelineState();
+    if (!pipeline || !before?.summary || (!before.summary.completed && !before.summary.stopped)) {
+      throw new Error("공정이 완료되거나 진단으로 중단된 뒤 Stock을 측정하세요.");
+    }
+    const checkpoint = await pipeline.capturePipelineCheckpoint();
+    const after = pipeline.getPipelineState();
+    if (pipeline.isRestoredCheckpointVisible()) throw new Error("측정 중 Stock을 불러왔습니다. 재실행 후 결과를 비교하세요.");
+    if (checkpoint.summary.runId !== before.summary.runId || after.summary?.runId !== before.summary.runId || (!checkpoint.summary.completed && !checkpoint.summary.stopped) || (!after.summary.completed && !after.summary.stopped)) {
+      throw new Error("측정 중 실행이 변경되었습니다. 새 결과를 다시 측정하세요.");
+    }
+    const provenance = {
+      runId: checkpoint.summary.runId,
+      fixtureId: checkpoint.summary.fixtureId,
+      stateHash: checkpoint.summary.stateSemanticHashSha256,
+      stockHash: checkpoint.summary.stockHashSha256,
+      logicalTimeS: checkpoint.summary.logicalTimeS,
+      outcome: checkpoint.summary.stopped ? "stopped" as const : "completed" as const,
+      collisionCount: checkpoint.summary.collision ? 1 : 0,
+      warningCount: (checkpoint.summary.runtimeDiagnostics ?? []).filter((item) => item.severity === "warning").length,
+      diagnosticCount: (checkpoint.summary.runtimeDiagnostics ?? []).length,
+    };
+    if (checkpoint.render.renderType === "milling-full") {
+      return { surface: checkpoint.render, target: createM7FaceMillingTarget(before.millingConfiguration, before.millingOperation), provenance };
+    }
+    if (before.fixture !== "turning" && before.fixture !== "drilling") throw new Error("이 공정의 목표 형상이 정의되지 않았습니다.");
+    return { surface: checkpoint.render, target: before.fixture === "drilling" ? createM7DrillingTarget() : createM7OdTurningTarget(), provenance };
+  }, []);
   const commitCountRef = useRef(0);
   const modeBadgeRef = useRef<HTMLSpanElement>(null);
   const backendDetailRef = useRef<HTMLParagraphElement>(null);
@@ -547,6 +784,17 @@ export function MachineWorkspace() {
           preference: requestedRendererPreference(),
           onStatus: updateStatus,
           onTelemetry: updateTelemetry,
+          onDiagnosticSelect: (id) => {
+            const executionSource = pipelineHarnessRef.current?.getPipelineSource();
+            if (executionSource && !labSourceDirtyRef.current) labSourceRef.current = executionSource;
+            if (executionSource !== labSourceRef.current) return;
+            setLabSource(labSourceRef.current);
+            selectedLabDiagnosticRef.current = id;
+            setSelectedLabDiagnostic(id);
+            activeAreaRef.current = "code";
+            setActiveArea("code");
+            setDockTab("gcode");
+          },
         });
         rendererRef.current = renderer;
 
@@ -718,6 +966,7 @@ export function MachineWorkspace() {
           getReactCommitCount: () => commitCountRef.current,
           setView: (view) => renderer.setCameraPreset(view),
           fit: () => renderer.fit(),
+          getDiagnosticScreenPosition: (id) => renderer.getDiagnosticScreenPosition(id),
           focusLayer: (layerId) => renderer.focusLayer(layerId),
           orbit: (azimuthDegrees, polarDegrees) =>
             renderer.orbitByDegrees(azimuthDegrees, polarDegrees),
@@ -754,57 +1003,244 @@ export function MachineWorkspace() {
           getTurningState: () => lastTurningRunRef.current,
         };
         pipelineBinding = attachM7Pipeline(renderer, viewport, {
-          onGeneralSummary: (summary, playbackElapsedS) =>
-            updatePipelineSummary(workspace, summary, playbackElapsedS),
+          onCheckpointRestored: () => {
+            resultBridge.restored();
+            renderer.setDiagnosticMarkers([]);
+            labDiagnosticSignatureRef.current = "";
+          },
+          onStatusChange: (status) => {
+            if (status === "starting") resultBridge.started();
+            labBridge.publishStatus(status);
+            if (activeAreaRef.current === "code") {
+              dispatchWorkspaceStatus({ state: status === "error" ? "error" : status === "cancelled" ? "cancelled" : status === "paused" ? "paused" : status === "completed" ? "completed" : status === "stopped" ? "stopped" : status === "starting" ? "starting" : "running", fixture: pipelineHarnessRef.current?.getPipelineState().fixture ?? null });
+            }
+          },
+          onGeneralSummary: (summary, playbackElapsedS) => {
+            resultBridge.publishRun(summary.runId);
+            updatePipelineSummary(workspace, summary, playbackElapsedS);
+            const executionStatus = summary.paused ? "paused" : summary.stopped ? "stopped" : summary.completed ? "completed" : summary.phase === "cancelled" ? "cancelled" : "running";
+            const executionSource = pipelineHarnessRef.current?.getPipelineSource() ?? null;
+            labBridge.publish(summary, executionStatus, executionSource);
+            const spatial = selectSpatialDiagnostics(!labSourceDirtyRef.current || executionSource === labSourceRef.current ? summary.runtimeDiagnostics ?? [] : [], selectedLabDiagnosticRef.current);
+            const signature = JSON.stringify([selectedLabDiagnosticRef.current, spatial]);
+            if (signature !== labDiagnosticSignatureRef.current) {
+              labDiagnosticSignatureRef.current = signature;
+              renderer.setDiagnosticMarkers(spatial, selectedLabDiagnosticRef.current);
+            }
+          },
           onAxisSummary: (summary) => updateAxisSummary(workspace, summary),
         });
         const pipeline = pipelineBinding.harness;
         pipelineHarnessRef.current = pipeline;
+        labRunRef.current = async (source, step) => {
+          setLabActionError(null);
+          const state = pipeline.getPipelineState();
+          const sameProgram = pipeline.getPipelineSource() === source;
+          if (sameProgram && state.status === "paused") {
+            if (step) await pipeline.stepPipelineSourceLine();
+            else pipeline.resumePipeline(WORKSPACE_PLAYBACK_SPEED);
+            return;
+          }
+          if (state.activeRunId !== null && (state.status === "running" || state.status === "starting")) {
+            throw new Error("실행 중입니다. 일시정지 또는 정지 후 코드를 실행하세요.");
+          }
+          if (state.status === "paused") await pipeline.cancelPipeline();
+          await pipeline.startPipelineFixture(selectedFixture(), {
+            source,
+            playbackSpeed: WORKSPACE_PLAYBACK_SPEED,
+            millingConfiguration: selectedMillingConfiguration(),
+            startPaused: step,
+            breakpoints: labBreakpointsRef.current,
+          });
+          if (step) await pipeline.stepPipelineSourceLine();
+        };
 
         const selectedFixture = (): M7PipelineFixture => {
           const value = fixtureSelectRef.current?.value;
-          return value === "turning" || value === "collision-stop"
-            ? value
-            : "milling";
+          return (
+            value === "turning" ||
+            value === "drilling" ||
+            value === "collision-stop"
+              ? value
+              : "milling"
+          );
+        };
+        const selectedMillingConfiguration = (): M7MillingConfiguration => {
+          const stockPreset: M7MillingStockPreset =
+            stockPresetSelectRef.current?.value === "compact"
+              ? "compact"
+              : "standard";
+          const cutDirection: M7MillingCutDirection =
+            cutDirectionSelectRef.current?.value === "y" ? "y" : "x";
+          return { stockPreset, cutDirection };
         };
 
         playToggleRef.current = async () => {
-          const snapshot = pipeline.getPipelineState();
-          const fixture = selectedFixture();
-          if (
-            (snapshot.status === "running" || snapshot.status === "starting") &&
-            snapshot.fixture !== null
-          ) {
-            await pipeline.pausePipeline();
-            dispatchWorkspaceStatus({ state: "paused", fixture });
+          const pipelineSnapshot = pipeline.getPipelineState();
+          const selected = selectedFixture();
+          if (activeAreaRef.current === "code") {
+            try {
+              if (pipelineSnapshot.status === "running" || pipelineSnapshot.status === "starting") await pipeline.pausePipeline();
+              else await labRunRef.current(labSourceRef.current, false);
+            } catch (error) {
+              setLabActionError(error instanceof Error ? error.message : String(error));
+              throw error;
+            }
             return;
           }
-          if (snapshot.status === "paused") {
+          if (activeAreaRef.current === "sandbox") {
+            const snapshot = sandboxOperationController.getSnapshot();
+            if (snapshot.status !== "ready") {
+              const message = "먼저 평면 밀링 Operation을 생성하세요.";
+              setSandboxNotice({ kind: "error", text: message });
+              throw new Error(message);
+            }
+            if (
+              !sameSandboxForm(
+                sandboxFormRef.current,
+                sandboxFormFromSnapshot(snapshot),
+              )
+            ) {
+              const message =
+                "변경 적용 후 Worker/WASM 실행 또는 저장을 진행하세요.";
+              setSandboxNotice({ kind: "error", text: message });
+              throw new Error(message);
+            }
+          }
+
+          if (
+            (pipelineSnapshot.status === "running" ||
+              pipelineSnapshot.status === "starting") &&
+            pipelineSnapshot.fixture !== null
+          ) {
+            await pipeline.pausePipeline();
+            dispatchWorkspaceStatus({ state: "paused", fixture: selected });
+            return;
+          }
+          if (pipelineSnapshot.status === "paused") {
             pipeline.resumePipeline(WORKSPACE_PLAYBACK_SPEED);
-            dispatchWorkspaceStatus({ state: "running", fixture });
+            dispatchWorkspaceStatus({ state: "running", fixture: selected });
             return;
           }
 
+          let fixture = selected;
+          let millingConfiguration = selectedMillingConfiguration();
+          let millingOperation: M7MillingOperationParametersInput | undefined;
+          if (activeAreaRef.current === "sandbox") {
+            const snapshot = sandboxOperationController.getSnapshot();
+            if (snapshot.status !== "ready") {
+              setSandboxNotice({
+                kind: "error",
+                text: "먼저 평면 밀링 Operation을 생성하세요.",
+              });
+              return;
+            }
+            const parameters = mapSandboxOperationToRunParameters(
+              sandboxOperationController.getCommittedDocument(),
+            );
+            fixture = "milling";
+            millingConfiguration = parameters.millingConfiguration;
+            millingOperation = {
+              cuttingFeedMmPerMin: parameters.feedMmPerMin,
+              spindleSpeedRpm: parameters.spindleSpeedRpm,
+              depthOfCutMm: parameters.depthOfCutMm,
+            };
+            setSelectedPipelineFixture("milling");
+            if (fixtureSelectRef.current) {
+              fixtureSelectRef.current.value = "milling";
+            }
+            if (stockPresetSelectRef.current) {
+              stockPresetSelectRef.current.value = millingConfiguration.stockPreset;
+            }
+            if (cutDirectionSelectRef.current) {
+              cutDirectionSelectRef.current.value = millingConfiguration.cutDirection;
+            }
+          }
+          const lesson =
+            activeAreaRef.current === "learn"
+              ? activeLessonControllerRef.current
+              : null;
+          let lessonRun = false;
+          if (lesson) {
+            const transition = lesson.beginExecution();
+            publishLessonSnapshot();
+            if (transition.decision.outcome === "guided-warning") {
+              return;
+            }
+            const lessonSnapshot = lesson.getSnapshot();
+            lessonRun = lessonSnapshot.running;
+            if (!lessonRun) {
+              return;
+            }
+            if ("configuration" in lessonSnapshot) {
+              fixture = "milling";
+              millingConfiguration = lessonSnapshot.configuration;
+              if (stockPresetSelectRef.current) {
+                stockPresetSelectRef.current.value =
+                  millingConfiguration.stockPreset;
+              }
+              if (cutDirectionSelectRef.current) {
+                cutDirectionSelectRef.current.value =
+                  millingConfiguration.cutDirection;
+              }
+            } else {
+              fixture = lessonSnapshot.fixture;
+            }
+            setSelectedPipelineFixture(fixture);
+            if (fixtureSelectRef.current) {
+              fixtureSelectRef.current.value = fixture;
+            }
+          }
+
           dispatchWorkspaceStatus({ state: "starting", fixture });
-          const terminal = await pipeline.runPipelineFixture(fixture, {
-            executionMode: "realtime",
-            playbackSpeed: WORKSPACE_PLAYBACK_SPEED,
-          });
-          updatePipelineSummary(
-            workspace,
-            terminal,
-            pipeline.getPipelineState().playbackElapsedS,
-          );
+          try {
+            const terminal = await pipeline.runPipelineFixture(fixture, {
+              executionMode: "realtime",
+              playbackSpeed: WORKSPACE_PLAYBACK_SPEED,
+              millingConfiguration,
+              millingOperation,
+            });
+            updatePipelineSummary(
+              workspace,
+              terminal,
+              pipeline.getPipelineState().playbackElapsedS,
+            );
+            if (lessonRun) {
+              lesson!.completeExecution(terminal);
+            }
+          } catch (error) {
+            if (lessonRun) {
+              lesson!.abortExecution();
+            }
+            throw error;
+          } finally {
+            if (lessonRun) {
+              publishLessonSnapshot();
+            }
+          }
         };
 
         stopPipelineRef.current = async () => {
           await pipeline.cancelPipeline();
+          const lesson = activeLessonControllerRef.current;
+          if (lesson.getSnapshot().running) {
+            lesson.abortExecution();
+            publishLessonSnapshot();
+          }
           dispatchWorkspaceStatus({
             state: "cancelled",
             fixture: selectedFixture(),
           });
         };
         window.__CNC_RENDER_M7__ = pipelineBinding.harness;
+        window.__CNC_RENDER_M10__ = {
+          getLessonState: () =>
+            activeLessonControllerRef.current.getSnapshot(),
+          getSandboxState: () =>
+            sandboxOperationController.getSnapshot(),
+        };
+        setLessonPipelineReady(true);
+        publishLessonSnapshot();
         viewport.dataset.pipelineState = "idle";
         viewport.dataset.pipelineWorker = "dedicated";
         try {
@@ -815,13 +1251,57 @@ export function MachineWorkspace() {
           window.__CNC_RENDER_M8__ = persistenceBinding.harness;
           viewport.dataset.persistenceState = "ready";
           persistenceHarnessRef.current = persistenceBinding.harness;
+          setSandboxPersistenceReady(true);
           saveWorkspaceRef.current = async () => {
-            const fixture = selectedFixture();
-            await persistenceBinding!.harness.saveFixture(
-              fixture === "turning" ? "turning" : "milling",
-            );
+            if (activeAreaRef.current === "code") {
+              const message = "G-code 편집 세션은 프로젝트 저장을 지원하지 않습니다. 코드를 별도로 복사하고 결과 탭에서 리포트를 저장하세요.";
+              setLabActionError(message);
+              throw new Error(message);
+            }
+            let fixture = selectedFixture();
+            if (activeAreaRef.current === "sandbox") {
+              const snapshot = sandboxOperationController.getSnapshot();
+              if (snapshot.status !== "ready") {
+                const message = "먼저 평면 밀링 Operation을 생성하세요.";
+                setSandboxNotice({ kind: "error", text: message });
+                throw new Error(message);
+              }
+              if (
+                !sameSandboxForm(
+                  sandboxFormRef.current,
+                  sandboxFormFromSnapshot(snapshot),
+                )
+              ) {
+                const message =
+                  "변경 적용 후 Worker/WASM 실행 또는 저장을 진행하세요.";
+                setSandboxNotice({ kind: "error", text: message });
+                throw new Error(message);
+              }
+              fixture = "milling";
+              setSelectedPipelineFixture(fixture);
+              if (fixtureSelectRef.current) {
+                fixtureSelectRef.current.value = fixture;
+              }
+              const document =
+                sandboxOperationController.getCommittedDocument();
+              const report =
+                await persistenceBinding!.harness.saveSandboxOperation(
+                  document,
+                  sandboxOperationController.serializeJournal(),
+                );
+              setSandboxNotice({
+                kind: "success",
+                text: `저장 완료 · revision ${sandboxOperationController.getSnapshot().revision ?? 0} · ${report.operationSemanticHashSha256.slice(0, 12)}`,
+              });
+            } else {
+              await persistenceBinding!.harness.saveFixture(
+                fixture === "collision-stop" ? "milling" : fixture,
+                selectedMillingConfiguration(),
+              );
+            }
             const pipelineSnapshot = pipeline.getPipelineState();
             const summary = pipelineSnapshot.summary;
+            fixture = pipelineSnapshot.fixture ?? fixture;
             if (summary) {
               updatePipelineSummary(
                 workspace,
@@ -840,6 +1320,7 @@ export function MachineWorkspace() {
             readonly diagnosticCode?: unknown;
           };
           viewport.dataset.persistenceState = "unavailable";
+          setSandboxPersistenceReady(false);
           viewport.dataset.persistenceDiagnostic =
             typeof diagnostic.diagnosticCode === "string"
               ? diagnostic.diagnosticCode
@@ -887,13 +1368,31 @@ export function MachineWorkspace() {
       delete window.__CNC_RENDER_M6__;
       delete window.__CNC_RENDER_M7__;
       delete window.__CNC_RENDER_M8__;
+      delete window.__CNC_RENDER_M10__;
     };
-  }, []);
+  }, [
+    labBridge,
+    resultBridge,
+    drillingLessonController,
+    faceMillingLessonController,
+    odTurningLessonController,
+    publishLessonSnapshot,
+    publishSandboxSnapshot,
+    sandboxOperationController,
+  ]);
 
   const setView = (view: CameraPresetId) => {
     rendererRef.current?.setCameraPreset(view);
   };
   const selectWorkspaceArea = (area: WorkspaceArea) => {
+    if (area === "code" && !labSourceDirtyRef.current) {
+      labSourceRef.current = pipelineHarnessRef.current?.getPipelineSource() ?? createM7PipelineFixture(selectedPipelineFixture, "00000000-0000-4000-8000-000000000011", {
+        stockPreset: stockPresetSelectRef.current?.value === "compact" ? "compact" : "standard",
+        cutDirection: cutDirectionSelectRef.current?.value === "y" ? "y" : "x",
+      }).source;
+    }
+    if (area === "code") setLabSource(labSourceRef.current);
+    activeAreaRef.current = area;
     setActiveArea(area);
     if (area === "code") {
       setDockTab("gcode");
@@ -950,6 +1449,359 @@ export function MachineWorkspace() {
     nextTab.focus();
     nextTab.click();
   };
+
+  const selectLessonDefaults = (
+    snapshot = activeLessonControllerRef.current.getSnapshot(),
+  ) => {
+    const fixture: Extract<M7PipelineFixture, "drilling" | "milling" | "turning"> =
+      "configuration" in snapshot ? "milling" : snapshot.fixture;
+    setSelectedPipelineFixture(fixture);
+    if (fixtureSelectRef.current) {
+      fixtureSelectRef.current.value = fixture;
+    }
+    if ("configuration" in snapshot) {
+      if (stockPresetSelectRef.current) {
+        stockPresetSelectRef.current.value = snapshot.configuration.stockPreset;
+      }
+      if (cutDirectionSelectRef.current) {
+        cutDirectionSelectRef.current.value = snapshot.configuration.cutDirection;
+      }
+    }
+  };
+
+  const switchLesson = (lessonId: M10LessonId) => {
+    const controller =
+      lessonId === "od-turning"
+        ? odTurningLessonController
+        : lessonId === "drilling"
+          ? drillingLessonController
+          : faceMillingLessonController;
+    activeLessonIdRef.current = lessonId;
+    activeLessonControllerRef.current = controller;
+    setActiveLessonId(lessonId);
+    setActiveLesson(controller.getSnapshot());
+    setLessonActionError(null);
+    selectLessonDefaults(controller.getSnapshot());
+  };
+
+  const restoreLessonStep = () => {
+    activeLessonControllerRef.current.restoreStepCheckpoint();
+    setLessonActionError(null);
+    publishLessonSnapshot();
+  };
+
+  const showAuthoredSetupFailure = () => {
+    if (
+      activeLessonIdRef.current !== "face-milling" ||
+      faceMillingLessonController.getSnapshot().controller.currentStep.phase !== "setup"
+    ) {
+      return;
+    }
+    faceMillingLessonController.setup({
+      toolId: "tool.ball-end-mill-12",
+    });
+    setLessonActionError(null);
+    publishLessonSnapshot();
+  };
+
+  const handleLessonPrimaryAction = async () => {
+    const lesson = activeLessonControllerRef.current;
+    const before = lesson.getSnapshot();
+    setLessonActionError(null);
+    setLessonActionPending(true);
+    try {
+      if (before.controller.status === "completed") {
+        lesson.reset();
+        selectLessonDefaults(lesson.getSnapshot());
+        return;
+      }
+
+      switch (before.controller.currentStep.phase) {
+        case "prepare":
+          selectLessonDefaults(before);
+          lesson.prepare();
+          break;
+        case "setup":
+          selectLessonDefaults(before);
+          lesson.setup();
+          break;
+        case "execute":
+          if (!lessonPipelineReady) {
+            throw new Error("Worker/WASM 파이프라인을 준비하고 있습니다.");
+          }
+          await playToggleRef.current();
+          break;
+        case "measure": {
+          if (!lessonPipelineReady || !pipelineHarnessRef.current) {
+            throw new Error("측정용 Worker/WASM checkpoint를 준비하고 있습니다.");
+          }
+          const checkpoint =
+            await pipelineHarnessRef.current.capturePipelineCheckpoint();
+          if ("configuration" in before) {
+            if (checkpoint.render.renderType !== "milling-full") {
+              throw new Error("평면 밀링 Stock checkpoint가 필요합니다.");
+            }
+            const target = createM7FaceMillingTarget(before.configuration);
+            faceMillingLessonController.recordMeasurement(
+              measureMillingStockAgainstTarget(checkpoint.render, target),
+            );
+            break;
+          }
+          if (checkpoint.render.renderType !== "turning-full") {
+            throw new Error("선삭 반경 필드 Stock checkpoint가 필요합니다.");
+          }
+          const target =
+            activeLessonIdRef.current === "od-turning"
+              ? createM7OdTurningTarget()
+              : createM7DrillingTarget();
+          const measurement = measureTurningStockAgainstTarget(
+            checkpoint.render,
+            target,
+          );
+          if (activeLessonIdRef.current === "od-turning") {
+            odTurningLessonController.recordMeasurement(measurement);
+          } else {
+            drillingLessonController.recordMeasurement(measurement);
+          }
+          break;
+        }
+        case "assess":
+          lesson.assess();
+          break;
+      }
+    } catch (error) {
+      if (lesson.getSnapshot().running) {
+        lesson.abortExecution();
+      }
+      setLessonActionError(
+        error instanceof Error
+          ? error.message
+          : "Lesson 단계를 완료하지 못했습니다.",
+      );
+    } finally {
+      publishLessonSnapshot();
+      setLessonActionPending(false);
+    }
+  };
+
+  const updateSandboxForm = (patch: Partial<SandboxFormState>) => {
+    const next = { ...sandboxFormRef.current, ...patch };
+    sandboxFormRef.current = next;
+    setSandboxForm(next);
+    if (sandboxOperationController.getSnapshot().status === "ready") {
+      setSandboxNotice({
+        kind: "idle",
+        text: "변경 적용 후 실행·저장할 수 있습니다.",
+      });
+    }
+  };
+
+  const handleSandboxCreate = () => {
+    setSandboxNotice({ kind: "idle", text: "Operation을 생성하고 있습니다." });
+    try {
+      const snapshot = sandboxOperationController.createFaceMilling({
+        name: sandboxFormRef.current.name,
+        stockPreset: sandboxFormRef.current.stockPreset,
+        cutDirection: sandboxFormRef.current.cutDirection,
+      });
+      publishSandboxSnapshot(snapshot);
+      setSandboxNotice({
+        kind: "success",
+        text: `Operation 생성 완료 · revision ${snapshot.revision ?? 0}`,
+      });
+    } catch (error) {
+      setSandboxNotice({
+        kind: "error",
+        text: sandboxFailureText(error, "Operation을 생성하지 못했습니다."),
+      });
+    }
+  };
+
+  const handleSandboxApply = () => {
+    setSandboxNotice({ kind: "idle", text: "변경사항을 검증하고 있습니다." });
+    try {
+      sandboxOperationController.edit({
+        name: sandboxFormRef.current.name,
+        stockPreset: sandboxFormRef.current.stockPreset,
+        cutDirection: sandboxFormRef.current.cutDirection,
+        feedMmPerMin: Number(sandboxFormRef.current.feedMmPerMin),
+        spindleSpeedRpm: Number(sandboxFormRef.current.spindleSpeedRpm),
+        depthOfCutMm: Number(sandboxFormRef.current.depthOfCutMm),
+        widthOfCutMm: Number(sandboxFormRef.current.widthOfCutMm),
+      });
+      const snapshot = sandboxOperationController.commit();
+      publishSandboxSnapshot(snapshot);
+      setSandboxNotice({
+        kind: "success",
+        text: `변경 적용 완료 · revision ${snapshot.revision ?? 0}`,
+      });
+    } catch (error) {
+      setSandboxNotice({
+        kind: "error",
+        text: sandboxFailureText(
+          error,
+          "Operation 변경값이 유효하지 않습니다.",
+        ),
+      });
+    }
+  };
+
+  const handleSandboxHistory = (direction: "undo" | "redo") => {
+    const snapshot =
+      direction === "undo"
+        ? sandboxOperationController.undo()
+        : sandboxOperationController.redo();
+    publishSandboxSnapshot(snapshot);
+    setSandboxNotice({
+      kind: "success",
+      text: `${direction === "undo" ? "실행 취소" : "다시 실행"} · revision ${snapshot.revision ?? 0}`,
+    });
+  };
+
+  const handleSandboxRun = async () => {
+    setSandboxActionPending(true);
+    setSandboxNotice({
+      kind: "idle",
+      text: "전용 Worker와 Rust/WASM 코어에서 실행하고 있습니다.",
+    });
+    try {
+      const pipeline = pipelineHarnessRef.current;
+      if (!pipeline) {
+        throw new Error("Worker/WASM 파이프라인을 준비하고 있습니다.");
+      }
+      const before = pipeline.getPipelineState();
+      const previousRunId = before.activeRunId ?? before.summary?.runId ?? null;
+      if (
+        before.status === "starting" ||
+        before.status === "running" ||
+        before.status === "paused"
+      ) {
+        await pipeline.cancelPipeline();
+      }
+      await playToggleRef.current();
+      const completed = pipeline.getPipelineState();
+      const summary = completed.summary;
+      if (
+        !summary?.completed ||
+        summary.runId === previousRunId ||
+        completed.fixture !== "milling"
+      ) {
+        throw new Error(
+          "새 샌드박스 Worker/WASM 실행이 완료되지 않았습니다.",
+        );
+      }
+      setSandboxNotice({
+        kind: "success",
+        text: `실행 완료 · ${summary.currentStep} 단계 · ${summary.stateSemanticHashSha256.slice(0, 12)}`,
+      });
+    } catch (error) {
+      setSandboxNotice({
+        kind: "error",
+        text: sandboxFailureText(
+          error,
+          "샌드박스 실행을 완료하지 못했습니다.",
+        ),
+      });
+    } finally {
+      setSandboxActionPending(false);
+    }
+  };
+
+  const handleSandboxSave = async () => {
+    setSandboxActionPending(true);
+    setSandboxNotice({ kind: "idle", text: "프로젝트를 저장하고 있습니다." });
+    try {
+      await saveWorkspaceRef.current();
+    } catch (error) {
+      setSandboxNotice({
+        kind: "error",
+        text: sandboxFailureText(
+          error,
+          "샌드박스 프로젝트를 저장하지 못했습니다.",
+        ),
+      });
+    } finally {
+      setSandboxActionPending(false);
+    }
+  };
+
+  const handleSandboxLoad = async () => {
+    const persistence = persistenceHarnessRef.current;
+    if (!persistence) {
+      setSandboxNotice({
+        kind: "error",
+        text: "브라우저 저장소가 아직 준비되지 않았습니다.",
+      });
+      return;
+    }
+    setSandboxActionPending(true);
+    setSandboxNotice({ kind: "idle", text: "저장된 Operation을 불러오고 있습니다." });
+    try {
+      const report = await persistence.loadSandboxOperation();
+      const snapshot = sandboxOperationController.restoreJournal(
+        report.operationJournal,
+      );
+      publishSandboxSnapshot(snapshot);
+      setSelectedPipelineFixture("milling");
+      if (fixtureSelectRef.current) fixtureSelectRef.current.value = "milling";
+      if (stockPresetSelectRef.current) {
+        stockPresetSelectRef.current.value =
+          report.operationDocument.configuration.stockPreset;
+      }
+      if (cutDirectionSelectRef.current) {
+        cutDirectionSelectRef.current.value =
+          report.operationDocument.configuration.cutDirection;
+      }
+      setSandboxNotice({
+        kind: "success",
+        text: `불러오기 완료 · revision ${snapshot.revision ?? 0} · ${report.componentHashes.operationSha256.slice(0, 12)}`,
+      });
+    } catch (error) {
+      setSandboxNotice({
+        kind: "error",
+        text: sandboxFailureText(
+          error,
+          "저장된 Operation을 불러오지 못했습니다.",
+        ),
+      });
+    } finally {
+      setSandboxActionPending(false);
+    }
+  };
+
+  const sandboxFormDirty =
+    sandboxSnapshot.status === "ready" &&
+    !sameSandboxForm(sandboxForm, sandboxFormFromSnapshot(sandboxSnapshot));
+
+  const lessonStep = activeLesson.controller.currentStep;
+  const lessonPrimaryLabel = activeLesson.running
+    ? "Worker/WASM 실행 중…"
+    : activeLesson.controller.status === "completed"
+      ? "Lesson 다시 시작"
+      : lessonStep.phase === "prepare"
+        ? "준비 확인"
+        : lessonStep.phase === "setup"
+          ? "설정 확정"
+          : lessonStep.phase === "execute"
+            ? "실제 절삭 실행"
+            : lessonStep.phase === "measure"
+              ? "Stock 측정 기록"
+              : "결과 판정";
+  const lessonNeedsPipeline =
+    lessonStep.phase === "execute" || lessonStep.phase === "measure";
+  const lessonPrimaryDisabled =
+    lessonActionPending ||
+    activeLesson.running ||
+    activeLesson.controller.status === "failed" ||
+    (lessonNeedsPipeline && !lessonPipelineReady);
+  const lessonPhaseLabel = {
+    prepare: "준비",
+    setup: "설정",
+    execute: "실행",
+    measure: "측정",
+    assess: "평가",
+  }[lessonStep.phase];
+
   return (
     <div
       className="workspace-grid"
@@ -988,6 +1840,16 @@ export function MachineWorkspace() {
           <span>학습</span>
         </button>
         <button
+          aria-current={activeArea === "sandbox" ? "page" : undefined}
+          className={`activity-button ${activeArea === "sandbox" ? "is-active" : ""}`}
+          data-testid="workspace-area-sandbox"
+          onClick={() => selectWorkspaceArea("sandbox")}
+          type="button"
+        >
+          {workspaceIcon("sandbox")}
+          <span>샌드박스</span>
+        </button>
+        <button
           aria-current={activeArea === "results" ? "page" : undefined}
           className={`activity-button ${activeArea === "results" ? "is-active" : ""}`}
           data-testid="workspace-area-results"
@@ -999,7 +1861,8 @@ export function MachineWorkspace() {
         </button>
       </nav>
 
-      <aside className="scene-panel" aria-labelledby="scene-heading">
+      {activeArea === "scene" ? (
+        <aside className="scene-panel" aria-labelledby="scene-heading">
         <div className="panel-heading">
           <div>
             <p>SCENE GRAPH</p>
@@ -1054,7 +1917,8 @@ export function MachineWorkspace() {
           <strong>G54 · X/Y/Z · mm</strong>
           <p>렌더 경계는 1 scene unit = 1 mm를 사용합니다.</p>
         </div>
-      </aside>
+        </aside>
+      ) : null}
       {activeArea !== "scene" ? (
         <aside className="context-panel" aria-labelledby="context-heading">
           <div className="panel-heading">
@@ -1065,55 +1929,519 @@ export function MachineWorkspace() {
                   ? "코드"
                   : activeArea === "learn"
                     ? "학습"
-                    : "결과"}
+                    : activeArea === "sandbox"
+                      ? "샌드박스"
+                      : "결과"}
               </h2>
             </div>
             <span className="panel-count">E2</span>
           </div>
 
           {activeArea === "code" ? (
-            <div className="context-content">
-              <p className="context-kicker">CURRENT PROGRAM</p>
-              <h3>대표 밀링 Fixture</h3>
-              <ol className="context-code" aria-label="현재 G-code">
-                <li><code>G21 G90</code></li>
-                <li><code>G0 X-170 Y-80 Z370</code></li>
-                <li><code>G1 Z338 F1200</code></li>
-                <li><code>G1 X170 F2400</code></li>
-                <li><code>G1 Y-40</code></li>
-                <li><code>... 40 mm pitch milling passes ...</code></li>
-                <li><code>G0 Z370</code></li>
-                <li><code>M30</code></li>
-              </ol>
-              <p className="context-note">
-                현재 코드는 실행 문맥을 확인하는 읽기 전용 미리보기입니다. 편집,
-                줄 진단, 브레이크포인트는 아직 제공되지 않습니다.
-              </p>
+            <div className="m11-code-context">
+              <button className="secondary-control" type="button" onClick={() => {
+                const pipeline = pipelineHarnessRef.current;
+                const state = pipeline?.getPipelineState();
+                if (state?.status === "running" || state?.status === "paused") {
+                  setLabActionError("먼저 현재 실행을 정지하세요.");
+                  return;
+                }
+                labSourceRef.current = createM7PipelineFixture(selectedPipelineFixture, "00000000-0000-4000-8000-000000000011", {
+                  stockPreset: stockPresetSelectRef.current?.value === "compact" ? "compact" : "standard",
+                  cutDirection: cutDirectionSelectRef.current?.value === "y" ? "y" : "x",
+                }).source;
+                labBreakpointsRef.current = [];
+                labSourceDirtyRef.current = false;
+                setLabSource(labSourceRef.current);
+                rendererRef.current?.setDiagnosticMarkers([]);
+                labDiagnosticSignatureRef.current = "";
+                setSelectedLabDiagnostic(null);
+                setLabBreakpoints([]);
+                setLabSourceVersion((value) => value + 1);
+                setLabActionError(null);
+              }}>선택한 대표 공정 코드 불러오기</button>
+              {labActionError ? <p role="alert">{labActionError}</p> : null}
+              <GcodeLabLoader
+                key={labSourceVersion}
+                source={labSource}
+                breakpoints={labBreakpoints}
+                selectedDiagnosticId={selectedLabDiagnostic}
+                subscribeExecution={labBridge.subscribe}
+                onSourceChange={(source) => {
+                  labSourceRef.current = source;
+                  labSourceDirtyRef.current = true;
+                  rendererRef.current?.setDiagnosticMarkers([]);
+                  labDiagnosticSignatureRef.current = "";
+                  // Selection changes only when a prior diagnosis exists, not every keystroke.
+                  selectedLabDiagnosticRef.current = null;
+                  setSelectedLabDiagnostic((selected) => selected === null ? selected : null);
+                }}
+                onRun={(source) => labRunRef.current(source, false)}
+                onStep={(source) => labRunRef.current(source, true)}
+                onPause={async () => { await pipelineHarnessRef.current?.pausePipeline(); }}
+                onStop={async () => { await pipelineHarnessRef.current?.cancelPipeline(); }}
+                onToggleBreakpoint={(line) => {
+                  const next = labBreakpointsRef.current.includes(line) ? labBreakpointsRef.current.filter((item) => item !== line) : [...labBreakpointsRef.current, line].sort((a, b) => a - b);
+                  labBreakpointsRef.current = next;
+                  setLabBreakpoints(next);
+                  const state = pipelineHarnessRef.current?.getPipelineState();
+                  if (state?.status === "running" || state?.status === "paused") {
+                    void pipelineHarnessRef.current?.setPipelineBreakpoints(next).catch((error: unknown) => setLabActionError(error instanceof Error ? error.message : String(error)));
+                  }
+                }}
+                onSelectDiagnostic={(id) => {
+                  selectedLabDiagnosticRef.current = id;
+                  setSelectedLabDiagnostic(id);
+                  const execution = labBridge.getState();
+                  const markers = selectSpatialDiagnostics(execution.source === labSourceRef.current ? execution.runtimeDiagnostics : [], id);
+                  labDiagnosticSignatureRef.current = JSON.stringify([id, markers]);
+                  rendererRef.current?.setDiagnosticMarkers(markers, id);
+                }}
+                onFocusDiagnostic={(id) => rendererRef.current?.focusDiagnostic(id)}
+              />
             </div>
           ) : activeArea === "learn" ? (
-            <div className="context-content">
-              <p className="context-kicker">GUIDED PREVIEW</p>
-              <h3>소재 절삭 확인</h3>
-              <ol className="learning-steps">
-                <li><strong>1</strong><span>밀링 대표 공정을 선택합니다.</span></li>
-                <li><strong>2</strong><span>실행 후 공구와 소재 변화를 관찰합니다.</span></li>
-                <li><strong>3</strong><span>결과 영역에서 제거 체적을 확인합니다.</span></li>
+            <div
+              className="context-content"
+              data-testid="tutorial-lesson"
+            >
+              <p className="context-kicker">GUIDED LESSON · E2</p>
+              <label className="fixture-select">
+                <span>Lesson</span>
+                <select
+                  data-testid="lesson-selector"
+                  disabled={activeLesson.running || lessonActionPending}
+                  onChange={(event) =>
+                    switchLesson(event.currentTarget.value as M10LessonId)
+                  }
+                  value={activeLessonId}
+                >
+                  <option value="face-milling">{faceMillingLessonDocument.title}</option>
+                  <option value="od-turning">{odTurningLessonDocument.title}</option>
+                  <option value="drilling">{drillingLessonDocument.title}</option>
+                </select>
+              </label>
+              <h3>{activeLesson.controller.lesson.title}</h3>
+              <ol className="learning-steps" aria-label="Lesson 5단계">
+                {activeLesson.controller.lesson.steps.map(
+                  (step, index) => {
+                    const completed =
+                      activeLesson.controller.completedStepIds.includes(
+                        step.id,
+                      );
+                    const active = lessonStep.id === step.id;
+                    const state = completed
+                      ? "completed"
+                      : active &&
+                          activeLesson.controller.status === "failed"
+                        ? "failed"
+                        : active
+                          ? "active"
+                          : "pending";
+                    return (
+                      <li
+                        className={active ? "is-active" : undefined}
+                        data-lesson-step={step.id}
+                        data-state={state}
+                        key={step.id}
+                      >
+                        <strong aria-hidden="true">{index + 1}</strong>
+                        <span>
+                          <b>{step.title}</b>
+                          <small>
+                            {state === "completed"
+                              ? "완료"
+                              : state === "failed"
+                                ? "복구 필요"
+                                : state === "active"
+                                  ? "현재 단계"
+                                  : "대기"}
+                          </small>
+                        </span>
+                      </li>
+                    );
+                  },
+                )}
               </ol>
+              <section
+                aria-busy={activeLesson.running || lessonActionPending}
+                aria-live="polite"
+                className="lesson-current"
+                data-lesson-phase={lessonStep.phase}
+                data-lesson-status={activeLesson.controller.status}
+              >
+                <p className="lesson-phase">
+                  {lessonPhaseLabel} · {activeLesson.controller.currentStepIndex + 1} / 5
+                </p>
+                <h4>{lessonStep.title}</h4>
+                <p>{lessonStep.instruction}</p>
+                {activeLesson.controller.status !== "active" ? (
+                  <div
+                    className="lesson-outcome"
+                    data-outcome={activeLesson.controller.status}
+                    data-testid="lesson-outcome"
+                    role="status"
+                  >
+                    <span className="lesson-outcome-icon" aria-hidden="true">
+                      {activeLesson.controller.status === "completed" ? "\u2713" : "!"}
+                    </span>
+                    <div>
+                      <strong>{activeLesson.controller.status === "completed" ? "Lesson 완료" : "단계 복구 필요"}</strong>
+                      <p>
+                        {activeLesson.controller.status === "completed"
+                          ? "결정론적 평가를 통과했으며 마지막 3D 가공 결과를 유지합니다."
+                          : "실패 이유를 확인하고 단계 체크포인트로 복구하세요."}
+                      </p>
+                    </div>
+                  </div>
+                ) : null}
+                {activeLesson.controller.guidance ? (
+                  <div className="lesson-guidance" role="alert">
+                    <p>{activeLesson.controller.guidance.reason}</p>
+                    <button
+                      className="context-secondary"
+                      onClick={restoreLessonStep}
+                      type="button"
+                    >
+                      {activeLesson.controller.guidance.recovery.label}
+                    </button>
+                  </div>
+                ) : null}
+                {lessonActionError ? (
+                  <p className="lesson-error" role="alert">
+                    {lessonActionError}
+                  </p>
+                ) : null}
+                {activeLesson.measurement ? (
+                  <dl
+                    className="lesson-measurement"
+                    data-testid="lesson-measurement"
+                  >
+                    <div>
+                      <dt>최대 형상 편차</dt>
+                      <dd>{formattedMetric(activeLesson.measurement.maxDeviationMm, 3)} mm</dd>
+                    </div>
+                    <div>
+                      <dt>과절삭</dt>
+                      <dd>{formattedMetric(activeLesson.measurement.overcutVolumeMm3, 2)} mm³</dd>
+                    </div>
+                    <div>
+                      <dt>미절삭</dt>
+                      <dd>{formattedMetric(activeLesson.measurement.undercutVolumeMm3, 2)} mm³</dd>
+                    </div>
+                    <div>
+                      <dt>실제 / 목표 제거</dt>
+                      <dd>
+                        {formattedMetric(activeLesson.measurement.actualRemovedVolumeMm3, 0)} / {formattedMetric(activeLesson.measurement.targetRemovedVolumeMm3, 0)} mm³
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>표현 해상도</dt>
+                      <dd>{formattedMetric(activeLesson.measurement.representationResolutionMm, 1)} mm</dd>
+                    </div>
+                    {"feature" in activeLesson.measurement ? (
+                      <>
+                        <div>
+                          <dt>
+                            {activeLesson.measurement.feature.kind === "outer-diameter" ? "외경" : "구멍 지름"} (실제 / 목표)
+                          </dt>
+                          <dd>
+                            {formattedMetric(activeLesson.measurement.feature.actualDiameterMm, 2)} /{" "}
+                            {formattedMetric(activeLesson.measurement.feature.targetDiameterMm, 2)} mm
+                          </dd>
+                        </div>
+                        {activeLesson.measurement.feature.kind === "drilled-hole" ? (
+                          <div>
+                            <dt>홀 깊이 (실제 / 목표)</dt>
+                            <dd>
+                              {formattedMetric(activeLesson.measurement.feature.actualDepthMm, 2)} /{" "}
+                              {formattedMetric(activeLesson.measurement.feature.targetDepthMm, 2)} mm
+                            </dd>
+                          </div>
+                        ) : null}
+                      </>
+                    ) : null}
+                  </dl>
+                ) : null}
+                {activeLesson.controller.score ? (
+                  <div className="lesson-score" data-testid="lesson-score">
+                    <span>결정론적 점수</span>
+                    <strong>
+                      {formattedMetric(activeLesson.controller.score.score, 2)} / 100
+                    </strong>
+                    <small>
+                      {activeLesson.controller.score.passed
+                        ? "통과"
+                        : "재학습 필요"}
+                    </small>
+                  </div>
+                ) : null}
+                {activeLessonId === "face-milling" &&
+                lessonStep.phase === "setup" &&
+                activeLesson.controller.status === "active" ? (
+                  <button
+                    className="context-secondary lesson-failure-fixture"
+                    data-testid="lesson-failure-fixture"
+                    onClick={showAuthoredSetupFailure}
+                    type="button"
+                  >
+                    잘못된 공구 실패 예시
+                  </button>
+                ) : null}
+              </section>
               <button
                 className="context-primary"
-                onClick={() => {
-                  if (fixtureSelectRef.current) {
-                    fixtureSelectRef.current.value = "milling";
-                  }
-                  void playToggleRef.current();
-                }}
+                data-testid="lesson-primary-action"
+                disabled={lessonPrimaryDisabled}
+                onClick={() => void handleLessonPrimaryAction()}
                 type="button"
               >
-                기본 절삭 실행
+                {lessonPrimaryLabel}
               </button>
-              <p className="context-note">
-                현재 학습 영역은 대표 절삭 안내만 제공합니다. 단계 검증·힌트·
-                채점과 정식 튜토리얼은 아직 제공되지 않습니다.
+              <ul className="lesson-limitations" aria-label="E2 제한 사항">
+                {activeLesson.controller.lesson.accuracy.limitations.map(
+                  (limitation) => <li key={limitation}>{limitation}</li>,
+                )}
+              </ul>
+            </div>
+          ) : activeArea === "sandbox" ? (
+            <div
+              className="context-content sandbox-workspace"
+              data-revision={sandboxSnapshot.revision ?? 0}
+              data-state={sandboxSnapshot.status}
+              data-testid="sandbox-workspace"
+            >
+              <p className="context-kicker">OPERATION SANDBOX · E2</p>
+              <h3>평면 밀링 Operation</h3>
+              <fieldset
+                className="sandbox-fieldset"
+                disabled={sandboxActionPending}
+              >
+                <legend>가공 자원</legend>
+                <label className="sandbox-field">
+                  <span>기계</span>
+                  <select
+                    data-testid="sandbox-machine"
+                    defaultValue="83000000-0000-4000-8000-000000000002"
+                  >
+                    <option value="83000000-0000-4000-8000-000000000002">
+                      Training VMC
+                    </option>
+                  </select>
+                </label>
+                <label className="sandbox-field">
+                  <span>소재 형상</span>
+                  <select
+                    data-testid="sandbox-stock-preset"
+                    onChange={(event) => updateSandboxForm({
+                      stockPreset: event.currentTarget.value as
+                        | "standard"
+                        | "compact",
+                    })}
+                    value={sandboxForm.stockPreset}
+                  >
+                    <option value="standard">표준 · 360 × 200 × 88 mm</option>
+                    <option value="compact">소형 · 280 × 160 × 72 mm</option>
+                  </select>
+                </label>
+                <label className="sandbox-field">
+                  <span>재질</span>
+                  <select
+                    data-testid="sandbox-material"
+                    defaultValue="83000000-0000-4000-8000-000000000005"
+                  >
+                    <option value="83000000-0000-4000-8000-000000000005">
+                      Aluminum 6061
+                    </option>
+                  </select>
+                </label>
+                <label className="sandbox-field">
+                  <span>공구</span>
+                  <select
+                    data-testid="sandbox-tool"
+                    defaultValue="83000000-0000-4000-8000-000000000007"
+                  >
+                    <option value="83000000-0000-4000-8000-000000000007">
+                      Ø20 mm flat end mill
+                    </option>
+                  </select>
+                </label>
+                <label className="sandbox-field">
+                  <span>절삭 방향</span>
+                  <select
+                    data-testid="sandbox-cut-direction"
+                    onChange={(event) => updateSandboxForm({
+                      cutDirection: event.currentTarget.value as "x" | "y",
+                    })}
+                    value={sandboxForm.cutDirection}
+                  >
+                    <option value="x">X축 왕복</option>
+                    <option value="y">Y축 왕복</option>
+                  </select>
+                </label>
+              </fieldset>
+
+              {sandboxSnapshot.status === "empty" ? (
+                <button
+                  className="context-primary"
+                  data-testid="sandbox-operation-create"
+                  disabled={sandboxActionPending}
+                  onClick={handleSandboxCreate}
+                  type="button"
+                >
+                  Operation 생성
+                </button>
+              ) : (
+                <>
+                  <fieldset
+                    className="sandbox-fieldset sandbox-operation-fields"
+                    disabled={sandboxActionPending}
+                  >
+                    <legend>Operation 편집</legend>
+                    <label className="sandbox-field">
+                      <span>이름</span>
+                      <input
+                        data-testid="sandbox-operation-name"
+                        onChange={(event) => updateSandboxForm({
+                          name: event.currentTarget.value,
+                        })}
+                        value={sandboxForm.name}
+                      />
+                    </label>
+                    <label className="sandbox-field">
+                      <span>이송 속도 <b>mm/min</b></span>
+                      <input
+                        data-testid="sandbox-feed-mm-per-min"
+                        inputMode="decimal"
+                        max="12000"
+                        min="0.001"
+                        onChange={(event) => updateSandboxForm({
+                          feedMmPerMin: event.currentTarget.value,
+                        })}
+                        step="0.1"
+                        type="number"
+                        value={sandboxForm.feedMmPerMin}
+                      />
+                    </label>
+                    <label className="sandbox-field">
+                      <span>주축 속도 <b>rpm</b></span>
+                      <input
+                        data-testid="sandbox-spindle-rpm"
+                        inputMode="decimal"
+                        max="12000"
+                        min="1"
+                        onChange={(event) => updateSandboxForm({
+                          spindleSpeedRpm: event.currentTarget.value,
+                        })}
+                        step="1"
+                        type="number"
+                        value={sandboxForm.spindleSpeedRpm}
+                      />
+                    </label>
+                    <label className="sandbox-field">
+                      <span>절입 깊이 <b>mm</b></span>
+                      <input
+                        data-testid="sandbox-depth-of-cut-mm"
+                        inputMode="decimal"
+                        max="5"
+                        min="4"
+                        onChange={(event) => updateSandboxForm({
+                          depthOfCutMm: event.currentTarget.value,
+                        })}
+                        step="0.1"
+                        type="number"
+                        value={sandboxForm.depthOfCutMm}
+                      />
+                    </label>
+                    <label className="sandbox-field">
+                      <span>절삭 폭 <b>mm</b></span>
+                      <input
+                        data-testid="sandbox-width-of-cut-mm"
+                        inputMode="decimal"
+                        max="20"
+                        min="0.001"
+                        onChange={(event) => updateSandboxForm({
+                          widthOfCutMm: event.currentTarget.value,
+                        })}
+                        step="0.1"
+                        type="number"
+                        value={sandboxForm.widthOfCutMm}
+                      />
+                    </label>
+                  </fieldset>
+                  <button
+                    className="context-primary"
+                    data-testid="sandbox-operation-apply"
+                    disabled={sandboxActionPending || !sandboxFormDirty}
+                    onClick={handleSandboxApply}
+                    type="button"
+                  >
+                    변경 적용
+                  </button>
+                  <div className="sandbox-history-actions">
+                    <button
+                      className="context-secondary"
+                      data-testid="sandbox-operation-undo"
+                      disabled={sandboxActionPending || sandboxFormDirty || !sandboxSnapshot.canUndo}
+                      onClick={() => handleSandboxHistory("undo")}
+                      type="button"
+                    >
+                      실행 취소
+                    </button>
+                    <button
+                      className="context-secondary"
+                      data-testid="sandbox-operation-redo"
+                      disabled={sandboxActionPending || sandboxFormDirty || !sandboxSnapshot.canRedo}
+                      onClick={() => handleSandboxHistory("redo")}
+                      type="button"
+                    >
+                      다시 실행
+                    </button>
+                  </div>
+                  <div className="sandbox-run-actions">
+                    <button
+                      className="context-primary"
+                      data-testid="sandbox-operation-run"
+                      disabled={sandboxActionPending || sandboxFormDirty || !lessonPipelineReady}
+                      onClick={() => void handleSandboxRun()}
+                      type="button"
+                    >
+                      Worker/WASM 실행
+                    </button>
+                    <button
+                      className="context-secondary"
+                      data-testid="sandbox-operation-save"
+                      disabled={sandboxActionPending || sandboxFormDirty || !sandboxPersistenceReady}
+                      onClick={() => void handleSandboxSave()}
+                      type="button"
+                    >
+                      로컬 저장
+                    </button>
+                  </div>
+                </>
+              )}
+              <button
+                className="context-secondary sandbox-load-action"
+                data-testid="sandbox-operation-load"
+                disabled={sandboxActionPending || sandboxFormDirty || !sandboxPersistenceReady}
+                onClick={() => void handleSandboxLoad()}
+                type="button"
+              >
+                저장본 불러오기
+              </button>
+              <p
+                className="sandbox-operation-status"
+                data-kind={sandboxNotice.kind}
+                data-testid="sandbox-operation-status"
+                role={sandboxNotice.kind === "error" ? "alert" : "status"}
+              >
+                {sandboxNotice.text}
+              </p>
+              <p className="context-note sandbox-limit-note">
+                E2 교육 preset이며 balanced 8 mm 덱셀 격자를 사용합니다. 절입
+                깊이는 4–5 mm로 제한되며 Stock·방향·이송·회전수·절입은 실제
+                Worker/WASM 실행에 반영됩니다. 절삭 폭은 operation provenance에
+                저장하며 현재 20 mm 공구의 lane 간격은 preset으로 고정됩니다.
               </p>
             </div>
           ) : (
@@ -1147,8 +2475,8 @@ export function MachineWorkspace() {
                 </div>
               </dl>
               <p className="context-note">
-                목표 형상 비교·측정·Heatmap·리포트 내보내기는 아직 제공되지
-                않습니다.
+                완료된 Stock을 별도로 작성된 대표 목표와 비교합니다. 중앙 결과 도구에서
+                Overlay·Split·Heatmap, 측정과 JSON·CSV·인쇄 HTML을 사용할 수 있습니다.
               </p>
             </div>
           )}
@@ -1205,6 +2533,11 @@ export function MachineWorkspace() {
             ref={canvasRef}
             tabIndex={0}
           />
+          {activeArea === "results" ? (
+            <div className="m11-result-surface" data-testid="result-comparison-surface">
+              <ResultComparisonLoader bridge={resultBridge} enabled={lessonPipelineReady} capture={captureResultComparison} />
+            </div>
+          ) : null}
           <div className="viewport-axis" aria-hidden="true">
             <span className="axis-z">Z</span>
             <span className="axis-x">X</span>
@@ -1309,13 +2642,59 @@ export function MachineWorkspace() {
             <select
               data-testid="pipeline-fixture"
               defaultValue="milling"
+              onChange={(event) => {
+                const value = event.currentTarget.value;
+                setSelectedPipelineFixture(
+                  value === "turning" ||
+                    value === "drilling" ||
+                    value === "collision-stop"
+                      ? value
+                      : "milling",
+                );
+              }}
               ref={fixtureSelectRef}
             >
               <option value="milling">3축 밀링</option>
               <option value="turning">외경 선삭</option>
+              <option value="drilling">센터 드릴링</option>
               <option value="collision-stop">충돌 정지</option>
             </select>
           </label>
+          <div className="simulation-configuration">
+            <label className="fixture-select">
+              <span>소재 규격</span>
+              <select
+                data-testid="pipeline-stock-preset"
+                defaultValue="standard"
+                disabled={selectedPipelineFixture !== "milling"}
+                ref={stockPresetSelectRef}
+              >
+                <option value="standard">
+                  표준 블록 · 360 × 200 × 88 mm
+                </option>
+                <option value="compact">
+                  소형 블록 · 280 × 160 × 72 mm
+                </option>
+              </select>
+            </label>
+            <label className="fixture-select">
+              <span>절삭 방향</span>
+              <select
+                data-testid="pipeline-cut-direction"
+                defaultValue="x"
+                disabled={selectedPipelineFixture !== "milling"}
+                ref={cutDirectionSelectRef}
+              >
+                <option value="x">X축 왕복</option>
+                <option value="y">Y축 왕복</option>
+              </select>
+            </label>
+          </div>
+          <p className="simulation-config-note">
+            {selectedPipelineFixture === "milling"
+              ? "소재와 방향 변경은 다음 실행부터 적용됩니다."
+              : "소재와 방향 설정은 3축 밀링에서 사용합니다."}
+          </p>
           <progress
             aria-label="시뮬레이션 진행"
             data-pipeline-progress

@@ -10,6 +10,9 @@ export default defineConfig({
       "@cnc-render/contracts": fileURLToPath(
         new URL("./packages/contracts/src/index.ts", import.meta.url),
       ),
+      "@cnc-render/lesson-engine": fileURLToPath(
+        new URL("./packages/lesson-engine/src/index.ts", import.meta.url),
+      ),
       "@cnc-render/ui": fileURLToPath(
         new URL("./packages/ui/src/index.ts", import.meta.url),
       ),
@@ -25,6 +28,9 @@ export default defineConfig({
     },
   },
   test: {
+    // This suite contains strict wall-clock main-thread budgets. Running test
+    // files concurrently makes host scheduling pauses look like handler work.
+    fileParallelism: false,
     environment: "node",
     include: ["tests/unit/**/*.test.ts"],
     passWithNoTests: false,

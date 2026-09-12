@@ -54,6 +54,33 @@ test.describe("M9 accessibility", () => {
       ),
     ).toEqual([]);
 
+    await page.getByTestId("workspace-area-learn").click();
+    await expect(page.getByTestId("tutorial-lesson")).toBeVisible();
+    const lessonScan = await new AxeBuilder({ page })
+      .include('[data-testid="tutorial-lesson"]')
+      .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+      .analyze();
+    expect(
+      lessonScan.violations.filter(
+        (violation) =>
+          violation.impact === "critical" || violation.impact === "serious",
+      ),
+    ).toEqual([]);
+
+
+    await page.getByTestId("workspace-area-sandbox").click();
+    await expect(page.getByTestId("sandbox-workspace")).toBeVisible();
+    await page.getByTestId("sandbox-operation-create").click();
+    const sandboxScan = await new AxeBuilder({ page })
+      .include('[data-testid="sandbox-workspace"]')
+      .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+      .analyze();
+    expect(
+      sandboxScan.violations.filter(
+        (violation) =>
+          violation.impact === "critical" || violation.impact === "serious",
+      ),
+    ).toEqual([]);
     await page.getByTestId("open-help").click();
     await expect(page.getByTestId("help-dialog")).toBeVisible();
     const dialogScan = await new AxeBuilder({ page })
@@ -66,5 +93,64 @@ test.describe("M9 accessibility", () => {
           violation.impact === "critical" || violation.impact === "serious",
       ),
     ).toEqual([]);
+  });
+
+  test("M11 Code ready and parser-error states have no critical or serious axe violations", async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name === "visual", "Accessibility is covered by the WebGPU and WebGL 2 projects.");
+    const pageErrors: string[] = [];
+    page.on("pageerror", (error) => pageErrors.push(error.message));
+    const renderer = testInfo.project.name === "chromium-webgl2" ? "webgl2" : "webgpu";
+    await page.goto(`/?renderer=${renderer}`);
+    await expect(page.getByTestId("machine-viewport")).toHaveAttribute("data-ready", "true");
+    await page.getByTestId("workspace-area-code").click();
+    const editor = page.getByTestId("gcode-editor");
+    await expect(editor).toHaveAttribute("data-analysis-state", "ready");
+    await expect(page.getByTestId("gcode-run")).toBeEnabled();
+    const readyScan = await new AxeBuilder({ page })
+      .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+      .analyze();
+    expect(readyScan.violations.filter((violation) => violation.impact === "critical" || violation.impact === "serious")).toEqual([]);
+
+    await editor.click({ position: { x: 160, y: 30 } });
+    await page.keyboard.press("Control+A");
+    await page.keyboard.insertText("G21 G90\nG41\nM30\n");
+    const diagnostic = page.getByTestId("gcode-diagnostic-item");
+    await expect(diagnostic).toContainText("semantic.cutter_comp.unsupported");
+    await diagnostic.getByRole("button").click();
+    await expect(page.getByTestId("gcode-diagnostic-help")).toContainText("공구 중심 경로");
+    await expect(page.getByTestId("gcode-run")).toBeDisabled();
+    const parserErrorScan = await new AxeBuilder({ page })
+      .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+      .analyze();
+    expect(parserErrorScan.violations.filter((violation) => violation.impact === "critical" || violation.impact === "serious")).toEqual([]);
+    expect(pageErrors).toEqual([]);
+  });
+
+  test("M11 completed Stock comparison modes have no critical or serious axe violations", async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name === "visual", "Accessibility is covered by the WebGPU and WebGL 2 projects.");
+    const pageErrors: string[] = [];
+    page.on("pageerror", (error) => pageErrors.push(error.message));
+    const renderer = testInfo.project.name === "chromium-webgl2" ? "webgl2" : "webgpu";
+    await page.goto(`/?renderer=${renderer}`);
+    const viewport = page.getByTestId("machine-viewport");
+    await expect(viewport).toHaveAttribute("data-ready", "true");
+    await page.getByTestId("pipeline-play").click();
+    await expect(viewport).toHaveAttribute("data-pipeline-state", "completed");
+    expect(Number(await viewport.getAttribute("data-pipeline-stock-revision"))).toBeGreaterThan(0);
+    const runId = await viewport.getAttribute("data-pipeline-run-id");
+    expect(runId).not.toBeNull();
+    await page.getByTestId("workspace-area-results").click();
+    await page.getByRole("button", { name: "현재 Stock 비교", exact: true }).click();
+    await expect(page.getByTestId("result-provenance")).toContainText(runId!);
+    await expect(page.locator('[data-result-key="maxDeviationMm"]')).toHaveAttribute("data-canonical-value", "0");
+    for (const mode of ["Overlay", "Split", "Heatmap"] as const) {
+      await page.getByRole("button", { name: mode, exact: true }).click();
+      await expect(page.getByTestId("result-legend")).toContainText("범위 ±0.000000 mm");
+      const comparisonScan = await new AxeBuilder({ page })
+        .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+        .analyze();
+      expect(comparisonScan.violations.filter((violation) => violation.impact === "critical" || violation.impact === "serious"), mode).toEqual([]);
+    }
+    expect(pageErrors).toEqual([]);
   });
 });

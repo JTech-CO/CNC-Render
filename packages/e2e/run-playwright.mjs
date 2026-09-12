@@ -11,13 +11,25 @@ const suiteFiles = {
     "tests/persistence.spec.ts",
     "tests/viewport.spec.ts",
     "tests/viewport-soak.spec.ts",
+    "tests/workspace-configuration.spec.ts",
     "tests/workspace-ui.spec.ts",
+    "tests/tutorial-face.spec.ts",
+    "tests/gcode-lab.spec.ts",
+    "tests/diagnostic-link.spec.ts",
+    "tests/result-comparison.spec.ts",
+    "tests/sandbox-operation.spec.ts",
   ],
   pages: ["tests/pages-deployment.spec.ts"],
   a11y: ["tests/accessibility.spec.ts"],
-  visual: ["tests/machine-scene.visual.spec.ts"],
+  visual: [
+    "tests/machine-scene.visual.spec.ts",
+    "tests/tutorial-states.visual.spec.ts",
+    "tests/gcode-error.visual.spec.ts",
+    "tests/heatmap.visual.spec.ts",
+  ],
 };
 const selectedSuiteFiles = suiteFiles[suiteName];
+const suiteArguments = suiteName === "visual" ? ["--project=visual"] : [];
 
 if (!selectedSuiteFiles) {
   console.error(
@@ -44,12 +56,13 @@ const result = spawnSync(
     "test",
     "--config",
     configPath,
+    ...suiteArguments,
     ...selectedSuiteFiles,
     ...process.argv.slice(3),
   ],
   {
     cwd: fileURLToPath(new URL(".", import.meta.url)),
-    env: process.env,
+    env: { ...process.env, CNC_RENDER_E2E_SUITE: suiteName },
     stdio: "inherit",
   },
 );

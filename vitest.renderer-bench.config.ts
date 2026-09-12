@@ -16,6 +16,7 @@ export default defineConfig({
     },
   },
   test: {
+    fileParallelism: false,
     environment: "node",
     include: ["tests/bench/**/*.test.ts"],
     passWithNoTests: false,

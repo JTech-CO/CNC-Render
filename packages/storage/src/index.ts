@@ -13,3 +13,4 @@ export * from "./migrations";
 export * from "./project-container";
 export * from "./repository";
 export * from "./zip";
+export * from "./upload-security";

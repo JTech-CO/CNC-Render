@@ -10,6 +10,11 @@ const VERTICES_PER_CELL = 36;
 const COMPONENTS_PER_VERTEX = 3;
 const FLOATS_PER_CELL = VERTICES_PER_CELL * COMPONENTS_PER_VERTEX;
 const NUMERIC_EPSILON = 1e-5;
+const CELL_TRIANGLE_CORNERS = new Uint8Array([
+  0, 2, 1, 0, 3, 2, 4, 5, 6, 4, 6, 7,
+  0, 1, 5, 0, 5, 4, 3, 7, 6, 3, 6, 2,
+  0, 4, 7, 0, 7, 3, 1, 2, 6, 1, 6, 5,
+]);
 const CELL_FACE_NORMALS = (() => {
   const normals = new Float32Array(FLOATS_PER_CELL);
   const faceNormals = [
@@ -87,19 +92,6 @@ function finite(value: number, label: string): number {
   return value;
 }
 
-function writeVertex(
-  target: Float32Array,
-  offset: number,
-  xMm: number,
-  yMm: number,
-  zMm: number,
-): number {
-  target[offset] = xMm;
-  target[offset + 1] = zMm;
-  target[offset + 2] = -yMm;
-  return offset + 3;
-}
-
 export class PartialStockSurface {
   readonly geometry: BufferGeometry;
   readonly mesh: Mesh;
@@ -115,7 +107,7 @@ export class PartialStockSurface {
   #totalUpdatedCells = 0;
   #uploadedBytes: number;
 
-  constructor(descriptor: StockSurfaceDescriptor, material?: Material) {
+  constructor(descriptor: StockSurfaceDescriptor, material?: Material, reusableMesh?: Mesh) {
     this.#validateDescriptor(descriptor);
     this.#descriptor = descriptor;
     this.#topZMm = descriptor.topZMm.slice();
@@ -135,8 +127,13 @@ export class PartialStockSurface {
     this.#ownedMaterial =
       material === undefined
         ? new MeshStandardMaterial({ color: 0xfdfdfb, roughness: 0.7 })
-        : null;
-    this.mesh = new Mesh(this.geometry, material ?? this.#ownedMaterial!);
+        : material.clone();
+    // A dynamic surface owns its material lifetime. WebGPU render objects attach
+    // disposal listeners to materials, so a shared material retains old meshes.
+    this.mesh = reusableMesh ?? new Mesh(this.geometry, this.#ownedMaterial!);
+    this.mesh.geometry = this.geometry;
+    this.mesh.material = this.#ownedMaterial!;
+    this.mesh.visible = true;
     this.mesh.name = "m5-partial-stock-surface";
     this.mesh.castShadow = true;
     this.mesh.receiveShadow = true;
@@ -234,6 +231,26 @@ export class PartialStockSurface {
     return this.getDiagnostics();
   }
 
+  reset(descriptor: StockSurfaceDescriptor): boolean {
+    this.#validateDescriptor(descriptor);
+    const previous = this.#descriptor;
+    if (descriptor.columns !== previous.columns || descriptor.rows !== previous.rows || descriptor.resolutionMm !== previous.resolutionMm ||
+      (["minimum", "maximum"] as const).some((bound) => (["xMm", "yMm", "zMm"] as const).some((axis) => descriptor.boundsMm[bound][axis] !== previous.boundsMm[bound][axis]))) return false;
+    this.#topZMm.set(descriptor.topZMm);
+    for (let cell = 0; cell < this.#topZMm.length; cell++) this.#writeCell(cell, this.#topZMm[cell]);
+    this.#positionAttribute.clearUpdateRanges();
+    this.#positionAttribute.addUpdateRange(0, this.#positions.length);
+    this.#positionAttribute.needsUpdate = true;
+    this.geometry.boundingBox = null;
+    this.geometry.boundingSphere = null;
+    this.#revision = 0;
+    this.#partialBufferUpdates = 0;
+    this.#lastUpdatedCells = 0;
+    this.#totalUpdatedCells = 0;
+    this.#uploadedBytes = this.#positions.byteLength;
+    return true;
+  }
+
   finishUpload(): void {
     this.#positionAttribute.clearUpdateRanges();
   }
@@ -315,28 +332,14 @@ export class PartialStockSurface {
     const y0 = minimum.yMm + row * this.#descriptor.resolutionMm;
     const y1 = Math.min(maximum.yMm, y0 + this.#descriptor.resolutionMm);
     const z0 = minimum.zMm;
-    const corners = [
-      [x0, y0, z0],
-      [x1, y0, z0],
-      [x1, y1, z0],
-      [x0, y1, z0],
-      [x0, y0, topZMm],
-      [x1, y0, topZMm],
-      [x1, y1, topZMm],
-      [x0, y1, topZMm],
-    ] as const;
-    const triangles = [
-      0, 2, 1, 0, 3, 2,
-      4, 5, 6, 4, 6, 7,
-      0, 1, 5, 0, 5, 4,
-      3, 7, 6, 3, 6, 2,
-      0, 4, 7, 0, 7, 3,
-      1, 2, 6, 1, 6, 5,
-    ] as const;
     let offset = cellIndex * FLOATS_PER_CELL;
-    for (const cornerIndex of triangles) {
-      const [xMm, yMm, zMm] = corners[cornerIndex];
-      offset = writeVertex(this.#positions, offset, xMm, yMm, zMm);
+    // Fixed cube topology, no temporary corner/triangle arrays per dexel.
+    // Scene mapping remains (domain X, domain Z, -domain Y).
+    for (let vertex = 0; vertex < CELL_TRIANGLE_CORNERS.length; vertex += 1) {
+      const corner = CELL_TRIANGLE_CORNERS[vertex];
+      this.#positions[offset++] = ((corner & 1) ^ ((corner >> 1) & 1)) ? x1 : x0;
+      this.#positions[offset++] = (corner & 4) ? topZMm : z0;
+      this.#positions[offset++] = -((corner & 2) ? y1 : y0);
     }
   }
 }

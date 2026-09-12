@@ -6,6 +6,25 @@ import { describe, expect, it } from "vitest";
 import { SyntheticCoordinatorWorker } from "../helpers/synthetic-coordinator-worker";
 
 describe("M7 simulation coordinator lifecycle", () => {
+  it("notifies lifecycle subscribers for cancel, resume, Worker error and disposal without fabricated summaries", async () => {
+    const worker = new SyntheticCoordinatorWorker();
+    const coordinator = new SimulationCoordinator(() => worker);
+    const statuses: string[] = [];
+    const unsubscribe = coordinator.onStatusChange((status) => statuses.push(status));
+    const run = createM7PipelineFixture("milling", "70000000-0000-4000-8000-000000000315");
+    await coordinator.start(run, { playbackSpeed: 1, executionMode: "realtime" });
+    await coordinator.pause();
+    coordinator.resume(1);
+    await coordinator.cancel();
+    expect(statuses).toEqual(["running", "paused", "running", "cancelled"]);
+    await coordinator.start(run, { playbackSpeed: 1, executionMode: "realtime" });
+    worker.onerror?.({ message: "Test runtime failure" } as ErrorEvent);
+    expect(statuses.at(-1)).toBe("error");
+    coordinator.dispose();
+    expect(statuses.at(-1)).toBe("cancelled");
+    unsubscribe();
+  });
+
   it("rejects events from replaced runs, restarted Workers, and stale sequences", async () => {
     const workers: SyntheticCoordinatorWorker[] = [];
     const coordinator = new SimulationCoordinator(() => {
@@ -79,7 +98,43 @@ describe("M7 simulation coordinator lifecycle", () => {
     expect(metrics.axisUiSamples).toBeGreaterThanOrEqual(
       metrics.generalUiSamples,
     );
+    expect(metrics.maximumMainHandlerMs).toBeGreaterThan(0);
     expect(metrics.maximumMainHandlerMs).toBeLessThan(50);
+    coordinator.beginMainThreadPerformanceWindow();
+    expect(coordinator.getSnapshot().metrics.maximumMainHandlerMs).toBe(0);
+    coordinator.dispose();
+  });
+
+  it("returns a full checkpoint without rebroadcasting its measurement snapshot to renderers", async () => {
+    const worker = new SyntheticCoordinatorWorker({
+      fullSnapshotRender: true,
+    });
+    const coordinator = new SimulationCoordinator(() => worker);
+    const run = createM7PipelineFixture(
+      "milling",
+      "70000000-0000-4000-8000-000000000314",
+    );
+    const renders: string[] = [];
+    coordinator.onRender((update) => renders.push(update.renderType));
+    await coordinator.start(run, {
+      playbackSpeed: 1,
+      executionMode: "realtime",
+    });
+
+    const checkpoint = await coordinator.checkpoint();
+
+    expect(checkpoint.render).toMatchObject({
+      renderType: "milling-full",
+      columns: 45,
+      rows: 25,
+      resolutionMm: 8,
+    });
+    if (checkpoint.render.renderType !== "milling-full") {
+      throw new Error("Expected a complete milling checkpoint.");
+    }
+    expect(checkpoint.render.topZMm).toHaveLength(1_125);
+    expect(renders).toEqual([]);
+    expect(coordinator.getSnapshot().metrics.renderUpdates).toBe(0);
     coordinator.dispose();
   });
 });

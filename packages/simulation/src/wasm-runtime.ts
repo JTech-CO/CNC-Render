@@ -1,17 +1,25 @@
 import type {
   CoordinatorCoreSummary,
   CoordinatorRunRequest,
+  GcodeAnalysisRequest as ContractGcodeAnalysisRequest,
+  GcodeAnalysisResult,
 } from "@cnc-render/contracts";
 
 const WASM_PROTOCOL_VERSION = 1;
 const MAX_WASM_OUTPUT_BYTES = 128 * 1024 * 1024;
+
+export type GcodeAnalysisRequest = ContractGcodeAnalysisRequest;
+export type GcodeAnalysisResponse = GcodeAnalysisResult;
 
 interface CncRenderWasmExports extends WebAssembly.Exports {
   readonly memory: WebAssembly.Memory;
   cnc_render_protocol_version(): number;
   cnc_render_input_resize(byteLength: number): number;
   cnc_render_initialize(): number;
+  cnc_render_analyze_gcode(): number;
   cnc_render_step(): number;
+  cnc_render_source_tick(): number;
+  cnc_render_step_source_line(): number;
   cnc_render_snapshot(): number;
   cnc_render_cancel(): number;
   cnc_render_output_json_ptr(): number;
@@ -22,6 +30,11 @@ interface CncRenderWasmExports extends WebAssembly.Exports {
 
 export interface WasmCoreInvocation {
   readonly summary: CoordinatorCoreSummary;
+  readonly binary: ArrayBuffer;
+}
+
+interface WasmInvocation<TSummary> {
+  readonly summary: TSummary;
   readonly binary: ArrayBuffer;
 }
 
@@ -42,7 +55,10 @@ function assertExports(
     "cnc_render_protocol_version",
     "cnc_render_input_resize",
     "cnc_render_initialize",
+    "cnc_render_analyze_gcode",
     "cnc_render_step",
+    "cnc_render_source_tick",
+    "cnc_render_step_source_line",
     "cnc_render_snapshot",
     "cnc_render_cancel",
     "cnc_render_output_json_ptr",
@@ -107,33 +123,65 @@ export class CncRenderWasmRuntime {
   }
 
   initialize(request: CoordinatorRunRequest): WasmCoreInvocation {
-    const input = this.#encoder.encode(JSON.stringify(request));
-    const pointer = this.#exports.cnc_render_input_resize(input.byteLength);
-    if (pointer === 0 && input.byteLength > 0) {
+    this.#writeInput(request, "The run request exceeded the WASM input limit.");
+    return this.#invoke<CoordinatorCoreSummary>(() =>
+      this.#exports.cnc_render_initialize(),
+    );
+  }
+
+  analyzeGcode(request: GcodeAnalysisRequest): GcodeAnalysisResponse {
+    this.#writeInput(
+      request,
+      "The G-code analysis request exceeded the WASM input limit.",
+    );
+    const { summary } = this.#invoke<GcodeAnalysisResponse>(() =>
+      this.#exports.cnc_render_analyze_gcode(),
+    );
+    if (summary.phase !== "analysis") {
       throw new CncRenderWasmError(
-        "wasm.input.resource-limit",
-        "The run request exceeded the WASM input limit.",
+        "wasm.analysis.invalid-response",
+        "The WASM core returned an invalid G-code analysis response.",
       );
     }
-    new Uint8Array(this.#exports.memory.buffer, pointer, input.byteLength).set(
-      input,
-    );
-    return this.#invoke(() => this.#exports.cnc_render_initialize());
+    return summary;
   }
 
   step(): WasmCoreInvocation {
-    return this.#invoke(() => this.#exports.cnc_render_step());
+    return this.#invoke<CoordinatorCoreSummary>(() =>
+      this.#exports.cnc_render_step(),
+    );
   }
 
   snapshot(): WasmCoreInvocation {
-    return this.#invoke(() => this.#exports.cnc_render_snapshot());
+    return this.#invoke<CoordinatorCoreSummary>(() =>
+      this.#exports.cnc_render_snapshot(),
+    );
+  }
+
+  sourceTick(): WasmCoreInvocation {
+    return this.#invoke<CoordinatorCoreSummary>(() => this.#exports.cnc_render_source_tick());
+  }
+
+  stepSourceLine(): WasmCoreInvocation {
+    return this.#invoke<CoordinatorCoreSummary>(() => this.#exports.cnc_render_step_source_line());
   }
 
   cancel(): void {
     this.#exports.cnc_render_cancel();
   }
 
-  #invoke(call: () => number): WasmCoreInvocation {
+  #writeInput(request: unknown, limitMessage: string): void {
+    const input = this.#encoder.encode(JSON.stringify(request));
+    const pointer = this.#exports.cnc_render_input_resize(input.byteLength);
+    if (pointer === 0 && input.byteLength > 0) {
+      throw new CncRenderWasmError("wasm.input.resource-limit", limitMessage);
+    }
+    new Uint8Array(this.#exports.memory.buffer, pointer, input.byteLength).set(
+      input,
+    );
+  }
+
+  #invoke<TSummary>(call: () => number): WasmInvocation<TSummary> {
     const status = call();
     const jsonLength = this.#exports.cnc_render_output_json_len();
     const binaryLength = this.#exports.cnc_render_output_binary_len();
@@ -172,7 +220,7 @@ export class CncRenderWasmRuntime {
       binaryLength,
     ).slice().buffer;
     return {
-      summary: decoded as unknown as CoordinatorCoreSummary,
+      summary: decoded as unknown as TSummary,
       binary,
     };
   }

@@ -54,6 +54,30 @@ test.describe("M7 Worker/WASM playback pipeline", () => {
       ),
     ).toBeCloseTo(realtime.state.playbackElapsedS, 3);
 
+    const outsidePlayback = await page.evaluate(async () => {
+      const harness = window.__CNC_RENDER_M7__;
+      if (!harness) {
+        throw new Error("M7 browser harness is unavailable.");
+      }
+      const before = harness.getPipelineState().longTasksOver50Ms;
+      for (let iteration = 0; iteration < 2; iteration += 1) {
+        let spinCount = 0;
+        const startedAt = performance.now();
+        while (performance.now() - startedAt <= 60) {
+          spinCount += 1;
+        }
+        if (spinCount === 0) {
+          throw new Error("Idle long-task fixture did not execute.");
+        }
+        await new Promise((resolve) => window.setTimeout(resolve, 0));
+      }
+      return {
+        before,
+        after: harness.getPipelineState().longTasksOver50Ms,
+      };
+    });
+    expect(outsidePlayback.after).toBe(outsidePlayback.before);
+
     const fastForward = await page.evaluate(async () => {
       const harness = window.__CNC_RENDER_M7__;
       if (!harness) {
@@ -197,6 +221,15 @@ test.describe("M7 Worker/WASM playback pipeline", () => {
       code: "collision.tool.fixture",
       sourceLine: 5,
     });
+    await expect(viewport).toHaveAttribute("data-pipeline-collision-received-frame", /^\d+$/u);
+    await expect(viewport).toHaveAttribute("data-pipeline-collision-rendered-frame", /^\d+$/u);
+    expect(Number(await viewport.getAttribute("data-pipeline-collision-rendered-frame")) -
+      Number(await viewport.getAttribute("data-pipeline-collision-received-frame"))).toBe(1);
+    expect(await page.evaluate(() => window.__CNC_RENDER_M3__?.getDiagnostics().collisionMarkerMm)).toEqual([
+      result.terminal.collision!.positionMm.xMm,
+      result.terminal.collision!.positionMm.yMm,
+      result.terminal.collision!.positionMm.zMm,
+    ]);
     expect(result.terminal.currentStep).toBeLessThan(result.terminal.totalSteps);
     expect(result.state.renderedOnFrame).toBeGreaterThan(
       result.state.baselineRenderFrame ?? 0,
