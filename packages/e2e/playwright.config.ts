@@ -57,6 +57,7 @@ export default defineConfig({
             ...softwareRenderingArguments,
             "--enable-unsafe-webgpu",
             "--enable-features=Vulkan",
+            ...(process.platform === "linux" ? ["--enable-gpu", "--ignore-gpu-blocklist", "--use-vulkan=swiftshader"] : []),
           ],
         },
         viewport: { width: 1_440, height: 900 },

@@ -5,7 +5,26 @@
 - Last completed: 전체 회귀·실장비 24조합·메모리 8조합·broadband LCP 3회
 - Next task: 커밋·푸시·PR → 원격 CI → 병합·Pages 릴리스 검증
 - Open questions: 없음 — 사용자가 브라우저 고정 비용 제외 앱 사용량(Worker/WASM/GPU 포함) 산정을 승인
-- Known regressions: 현재 새 gate 실패 없음; cold blank 초기화 비용 포함 시 약 819 MB인 원본도 보존, 원격 CI 미실행
+- Known regressions: 첫 원격 CI의 Linux WebGPU 캔버스 합성 실패 1건 수정 검증 중; 병합 보류
+
+## M12 PR #13 첫 CI 후속
+
+- `b8ed28a` 커밋·푸시와 PR #13 생성 완료. clean Pages 빌드의 version/SHA/WASM 검증 통과.
+- CI run `34696170428`: verify·보안·60초 fuzz·Rust fmt/clippy/test 통과,
+  전체 E2E 87 passed/2 skipped/1 failed. WebGPU 레이어 toggle의 전후 캔버스가 같았다.
+  원본 screenshot/trace를 `artifacts/ci-34696170428`에 보존했다.
+- 실패 이미지에는 3개 완료 프레임 신호에도 캔버스 전체가 비어 있었다. Linux headless의
+  Dawn/ANGLE 합성 문제와 일치하는 재현 사례를 참고하여 Linux software WebGPU만
+  enable-gpu/use-vulkan=swiftshader 및 Xvfb를 적용한다. Windows 기준 장비 설정은 그대로다.
+  참고: https://github.com/visgl/luma.gl/issues/2874 및 https://playwright.dev/docs/ci.
+- 이미지 비교를 삭제하지 않는다. 고정 120 ms sleep을 완료 프레임·실제 픽셀 변경 검사로
+  교체하고 전후 이미지를 CI Artifact에 남긴다. 앱 런타임·기준값·visual baseline 변경 없음.
+  재실행 CI 통과 전 M12 완료·병합으로 취급하지 않는다.
+- CI 진단 다운로드 후 lint가 생성된 Playwright trace viewer 번들까지 검사하는 문제도
+  발견했다. git 제외 산출물(.cache/artifacts/playwright-report/test-results)만 lint 제외에
+  맞췄으며 앱·스크립트·테스트 소스 검사 범위는 유지한다.
+- 후속 로컬 typecheck/lint·런타임 증거 검사 통과, WebGPU/WebGL 2 레이어 toggle
+  각각 3회(총 6회) 통과. Linux 합성 수정의 최종 판정은 재실행 CI에서 수행한다.
 
 ## M12 최종 로컬 검증 (2026-09-12)
 
