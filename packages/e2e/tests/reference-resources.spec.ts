@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 import { attributedMemory, emptyBrowserBaseline } from "../../../scripts/memory-contract.mjs";
@@ -23,12 +23,33 @@ for (const qualityPreset of ["balanced", "precision"] as const) {
     const output = resolve(root, `artifacts/app-memory-${testInfo.project.name}-${qualityPreset}.json`);
     await mkdir(resolve(root, "artifacts"), { recursive: true });
     await writeFile(output, JSON.stringify({ reportVersion: 3, status: "incomplete", qualityPreset, backend }));
+    const rawSamplesOutput = output.replace(/\.json$/u, ".samples.jsonl");
+    await writeFile(rawSamplesOutput, "");
+    let processSetRefreshes = 0;
     const measure = async () => {
+      for (let attempt = 0; attempt < 3; attempt++) {
       const info = await cdp.send("SystemInfo.getProcessInfo");
       const ids = info.processInfo.map((item) => item.id);
       if (!ids.every((id) => Number.isSafeInteger(id) && id > 0)) throw new Error("Invalid CDP process IDs");
-      const { stdout } = await execute("powershell.exe", ["-NoProfile", "-File", resolve(root, "scripts/measure-browser-memory.ps1"), "-ProcessIds", ids.join(",")], { windowsHide: true, timeout: 15_000 });
+      let stdout: string;
+      try {
+        ({ stdout } = await execute("powershell.exe", ["-NoProfile", "-File", resolve(root, "scripts/measure-browser-memory.ps1"), "-ProcessIds", ids.join(",")], { windowsHide: true, timeout: 15_000 }));
+      } catch (error) {
+        const stderr = (error as { stderr?: string }).stderr ?? "";
+        await appendFile(rawSamplesOutput, JSON.stringify({ attempt, samplingError: stderr }) + "\n");
+        // Navigation can retire the blank renderer between CDP and OS sampling.
+        // Refresh only that process list; never retry a measured budget failure.
+        if (attempt < 2 && stderr.includes("process set changed during sampling")) {
+          processSetRefreshes++;
+          continue;
+        }
+        throw error;
+      }
+      // Keep invalid samples for diagnosis too; never publish this PID-bearing log.
+      await appendFile(rawSamplesOutput, stdout.trim() + "\n");
       return JSON.parse(stdout);
+      }
+      throw new Error("Browser process set did not stabilize for memory sampling");
     };
     const blankSamples = [];
     for (let index = 0; index < 3; index++) blankSamples.push(await measure());
@@ -103,7 +124,7 @@ for (const qualityPreset of ["balanced", "precision"] as const) {
     const limit = qualityPreset === "balanced" ? 600_000_000 : 1_500_000_000;
     const peak = Math.max(...samples.map((sample) => sample.attributedBytes));
     const report = {
-      reportVersion: 3, qualityPreset, backend, browserVersion: browser.version(), freshBrowserPerCase: true, baselineResources,
+      reportVersion: 3, qualityPreset, backend, browserVersion: browser.version(), freshBrowserPerCase: true, baselineResources, processSetRefreshes,
       coldBlankBrowserSamples: blankSamples, emptyGpuInitializedBrowserSamples: emptySamples, baseline,
       artifact: JSON.parse(await readFile(resolve(root, "dist/pages/release.json"), "utf8")),
       scope: "app-attributed-all-CDP-processes-including-Worker-WASM-and-GPU-minus-blank-browser",

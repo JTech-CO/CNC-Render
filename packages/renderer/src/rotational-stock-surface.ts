@@ -10,6 +10,10 @@ const COMPONENTS_PER_VERTEX = 3;
 const VERTICES_PER_QUAD = 6;
 const QUADS_PER_SEGMENT = 4;
 const NUMERIC_EPSILON = 1e-5;
+const SEGMENT_TRIANGLE_CORNERS = new Uint8Array([
+  0, 1, 2, 0, 2, 3, 5, 4, 7, 5, 7, 6,
+  4, 0, 1, 4, 1, 5, 7, 6, 2, 7, 2, 3,
+]);
 
 export interface RotationalStockSurfaceDescriptor {
   readonly axisCenterMm: { readonly xMm: number; readonly yMm: number };
@@ -51,8 +55,6 @@ export class RotationalStockSurfaceInputError extends Error {
   }
 }
 
-type DomainPoint = readonly [xMm: number, yMm: number, zMm: number];
-
 function finite(value: number, label: string): number {
   if (!Number.isFinite(value)) {
     throw new RotationalStockSurfaceInputError(
@@ -63,31 +65,6 @@ function finite(value: number, label: string): number {
   return value;
 }
 
-function writeVertex(
-  target: Float32Array,
-  offset: number,
-  point: DomainPoint,
-): number {
-  target[offset] = point[0];
-  target[offset + 1] = point[2];
-  target[offset + 2] = -point[1];
-  return offset + COMPONENTS_PER_VERTEX;
-}
-
-function writeQuad(
-  target: Float32Array,
-  offset: number,
-  a: DomainPoint,
-  b: DomainPoint,
-  c: DomainPoint,
-  d: DomainPoint,
-): number {
-  for (const point of [a, b, c, a, c, d] as const) {
-    offset = writeVertex(target, offset, point);
-  }
-  return offset;
-}
-
 export class PartialRotationalStockSurface {
   readonly geometry: BufferGeometry;
   readonly mesh: Mesh;
@@ -96,6 +73,9 @@ export class PartialRotationalStockSurface {
   readonly #positionAttribute: BufferAttribute;
   readonly #innerRadiusMm: Float32Array;
   readonly #outerRadiusMm: Float32Array;
+  readonly #derivedInnerRadiusMm: Float32Array;
+  readonly #derivedOuterRadiusMm: Float32Array;
+  readonly #unitCircle: Float64Array;
   readonly #floatsPerCell: number;
   readonly #ownedMaterial: Material | null;
   #revision = 0;
@@ -113,6 +93,14 @@ export class PartialRotationalStockSurface {
     this.#descriptor = descriptor;
     this.#innerRadiusMm = descriptor.innerRadiusMm.slice();
     this.#outerRadiusMm = descriptor.outerRadiusMm.slice();
+    this.#derivedInnerRadiusMm = descriptor.innerRadiusMm.slice();
+    this.#derivedOuterRadiusMm = descriptor.outerRadiusMm.slice();
+    this.#unitCircle = new Float64Array((descriptor.radialSegments + 1) * 2);
+    for (let segment = 0; segment <= descriptor.radialSegments; segment++) {
+      const angle = (segment / descriptor.radialSegments) * Math.PI * 2;
+      this.#unitCircle[segment * 2] = Math.cos(angle);
+      this.#unitCircle[segment * 2 + 1] = Math.sin(angle);
+    }
     this.#floatsPerCell =
       descriptor.radialSegments *
       QUADS_PER_SEGMENT *
@@ -234,15 +222,24 @@ export class PartialRotationalStockSurface {
     if (descriptor.axisCenterMm.xMm !== previous.axisCenterMm.xMm || descriptor.axisCenterMm.yMm !== previous.axisCenterMm.yMm ||
       descriptor.minimumZMm !== previous.minimumZMm || descriptor.maximumZMm !== previous.maximumZMm ||
       descriptor.axialCells !== previous.axialCells || descriptor.radialSegments !== previous.radialSegments || descriptor.resolutionMm !== previous.resolutionMm) return false;
+    const sameDerivedProfile = descriptor.innerRadiusMm.every((radius, cell) => radius === this.#derivedInnerRadiusMm[cell]) &&
+      descriptor.outerRadiusMm.every((radius, cell) => radius === this.#derivedOuterRadiusMm[cell]);
     this.#innerRadiusMm.set(descriptor.innerRadiusMm);
     this.#outerRadiusMm.set(descriptor.outerRadiusMm);
     for (let cell = 0; cell < descriptor.axialCells; cell++) this.#writeCell(cell, this.#innerRadiusMm[cell], this.#outerRadiusMm[cell]);
     this.#positionAttribute.clearUpdateRanges();
     this.#positionAttribute.addUpdateRange(0, this.#positions.length);
     this.#positionAttribute.needsUpdate = true;
-    this.geometry.computeVertexNormals();
-    this.geometry.computeBoundingBox();
-    this.geometry.computeBoundingSphere();
+    // Patches retain the original per-cell face normals and conservative bounds.
+    // An identical reset restores exactly that profile: its derived data is still
+    // valid. A different full profile must recompute all three, then replace keys.
+    if (!sameDerivedProfile) {
+      this.geometry.computeVertexNormals();
+      this.geometry.computeBoundingBox();
+      this.geometry.computeBoundingSphere();
+      this.#derivedInnerRadiusMm.set(descriptor.innerRadiusMm);
+      this.#derivedOuterRadiusMm.set(descriptor.outerRadiusMm);
+    }
     this.#revision = 0;
     this.#partialBufferUpdates = 0;
     this.#lastUpdatedCells = 0;
@@ -316,25 +313,14 @@ export class PartialRotationalStockSurface {
     const z1 = Math.min(maximumZMm, z0 + resolutionMm);
     let offset = cellIndex * this.#floatsPerCell;
     for (let segment = 0; segment < radialSegments; segment += 1) {
-      const angle0 = (segment / radialSegments) * Math.PI * 2;
-      const angle1 = ((segment + 1) / radialSegments) * Math.PI * 2;
-      const point = (radius: number, angle: number, zMm: number): DomainPoint => [
-        axisCenterMm.xMm + radius * Math.cos(angle),
-        axisCenterMm.yMm + radius * Math.sin(angle),
-        zMm,
-      ];
-      const outer00 = point(outerRadiusMm, angle0, z0);
-      const outer10 = point(outerRadiusMm, angle1, z0);
-      const outer11 = point(outerRadiusMm, angle1, z1);
-      const outer01 = point(outerRadiusMm, angle0, z1);
-      const inner00 = point(innerRadiusMm, angle0, z0);
-      const inner10 = point(innerRadiusMm, angle1, z0);
-      const inner11 = point(innerRadiusMm, angle1, z1);
-      const inner01 = point(innerRadiusMm, angle0, z1);
-      offset = writeQuad(this.#positions, offset, outer00, outer10, outer11, outer01);
-      offset = writeQuad(this.#positions, offset, inner10, inner00, inner01, inner11);
-      offset = writeQuad(this.#positions, offset, inner00, outer00, outer10, inner10);
-      offset = writeQuad(this.#positions, offset, inner01, inner11, outer11, outer01);
+      for (const corner of SEGMENT_TRIANGLE_CORNERS) {
+        const radius = (corner & 4) ? innerRadiusMm : outerRadiusMm;
+        const angleOffset = ((corner & 1) ^ ((corner >> 1) & 1));
+        const circleOffset = (segment + angleOffset) * 2;
+        this.#positions[offset++] = axisCenterMm.xMm + radius * this.#unitCircle[circleOffset];
+        this.#positions[offset++] = (corner & 2) ? z1 : z0;
+        this.#positions[offset++] = -(axisCenterMm.yMm + radius * this.#unitCircle[circleOffset + 1]);
+      }
     }
   }
 }

@@ -1,11 +1,54 @@
 ﻿# CNC Render Progress
 
 - Current phase: M12 성능·폴백·보안·CI·릴리스 게이트 진행 중
-- Status: 학습 측정 행 수정 후 로컬 회귀·성능 24조합·메모리 8조합 통과; 최종 원격 CI 대기
+- Status: 회전 소재 최적화 후 로컬 전체 회귀·실장비/메모리/LCP 재검증 통과; 원격 CI 대기, 병합 보류
 - Last completed: 전체 회귀·실장비 24조합·메모리 8조합·broadband LCP 3회
 - Next task: 커밋·푸시·PR → 원격 CI → 병합·Pages 릴리스 검증
 - Open questions: 없음 — 사용자가 브라우저 고정 비용 제외 앱 사용량(Worker/WASM/GPU 포함) 산정을 승인
-- Known regressions: 발견된 Linux WebGPU 합성·학습 측정 행 문제 수정; 최종 CI 및 공개 배포 검증 대기
+- Known regressions: 이전 CI software handler 초과는 로컬 수정 검증 통과; Linux 통합 CI 재판정 필요
+
+## M12 회전 소재 최적화 후 최종 로컬 증거 (2026-09-13)
+
+- 기준 장비 성능 24/24 및 모든 backend/browser 가공 결과 동등성 통과.
+  최저 FPS balanced 119.784 / precision 119.665, cold shell 최대 1513.8 ms,
+  main handler 최대 23.4 ms, long task 0, 실행 중 React commit 증가 0.
+- 메모리 유효 결과 8/8 확보: 각 60초 이상, 26–37 samples, 332–355회 세 공정 반복.
+  Chrome GPU/GL2 balanced 441.11/310.82 MB, precision 470.30/311.33 MB;
+  Edge GPU/GL2 balanced 445.85/351.79 MB, precision 475.80/341.54 MB.
+  MB=1,000,000 bytes이며 승인 산식·600 MB/1.5 GB 한도는 변경하지 않았다.
+- 재측정 7개 통과 후 마지막 Edge/WebGL 2 precision은 속성 캡처 도중 종료된
+  프로세스로 차단됐다. 캡처 전후 HasExited 검사로 실제 종료만 목록 갱신 오류로
+  분류한 뒤 해당 조합을 새 브라우저에서 재측정해 통과했다. 값이 있는 샘플은 제외하지
+  않았으며 예산 실패를 재시도하지 않았다. 모든 취득 실패 로그는 로컬에 보존한다.
+- Lighthouse 새 Chrome 3회 LCP 835.9/795.6/807.4 ms 통과(10 Mbps/40 ms·CPU×1).
+  로컬 production Pages 측정이며 CI 보고서도 기준 장비와 구분해 환경을 표기한다.
+- 런타임 지문 189 files / `702e06a7a60ced9f1d4889dd0ad2bedcbf0844f3013d999932e1f97067e291d8`.
+  새 압축 증거의 산술·예산·동등성·지문 검증 통과. 원격 CI·릴리스 검증 전 병합 금지.
+
+## M12 CI software 회전 소재 성능 후속
+
+- 최적화 후 로컬 verify 310 unit/64 contracts/69 parity, 전체 E2E 88 passed/2 opt-in
+  soak skipped, visual 5·a11y 6·Pages 2·bundle 통과. software 12/12 통과,
+  최대 handler 밀링 5.7 / 선삭 34.9 / 드릴링 29.9 ms, long task 0.
+- 동일 reset 20회 진단은 14.38 ms로 줄었으며 법선·경계 재계산은 0회다.
+  이 수치를 원격 CI 또는 실장비 gate의 대체 증거로 사용하지 않는다.
+- 재측정 중 8개 메모리 조합 중 7개 통과, Edge/WebGL 2 balanced는 유효하지 않은
+  process private bytes로 차단됐다. 원본 incomplete 보고서를 별도 보존했다.
+  계측기가 느린 WDDM 조회 후 살아 있는 Process 객체의 속성을 다시 읽던 경로를
+  제거하고 한 번의 스냅샷을 사용한다. 추가된 전체 PID 일치 검사에서 navigation으로
+  종료된 renderer 목록 경쟁이 확인되어, 이 취득 오류만 최대 2회 CDP 목록을 갱신한다.
+  실제 측정 값·예산 초과·GPU 카운터 오류는 재시도하거나 제외하지 않는다.
+  갱신 횟수는 보고서에, PID 포함 원본은 ignored 로컬 JSONL에 남긴다. 전체 8개 재측정 예정.
+- `8ecf61d` / CI `34698346169`: visual·전체 E2E·a11y·bundle 통과.
+  software matrix 7 passed/5 failed, 모든 기능·Stock 동등성 통과.
+  선삭/드릴링의 handler 55.3–101.1 ms와 일부 long task 2–3회가 기존 한도를 넘었다.
+  보고서는 `artifacts/ci-34698346169/benchmark-report.json`에 보존하며 병합하지 않는다.
+- 회전 소재 reset 20회 로컬 진단: 총 138.18 ms 중 법선 50.33 ms, 경계 상자 20.56 ms,
+  경계 구 45.14 ms. 계측 진단은 성능 gate가 아니다.
+- 동일 full profile의 법선·경계를 재사용하고 다른 profile일 때만 재계산한다.
+  각도 삼각함수는 격자별로 한 번 계산하고 정점 임시 배열을 제거한다.
+  이전 정점·winding·퇴화 반경·잘린 끝 셀의 완전 일치와 변경 profile 재계산을 검증한다.
+  런타임 변경이므로 기준 장비 증거는 다시 측정하며 기존 한도를 유지한다.
 
 ## M12 학습 레이아웃 수정 후 최종 증거
 

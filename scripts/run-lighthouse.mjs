@@ -59,7 +59,7 @@ try {
     if (iteration === 0) await writeFile(output, await readFile(runOutput.replace(/\.json$/u, ".report.html")));
   }
   const pass = runs.every((run) => run.runtimeError === null && Number.isFinite(run.lcpMs) && run.lcpMs <= 2500);
-  await writeFile(jsonOutput, JSON.stringify({ status: pass ? "pass" : "fail", scope: "production Pages entrypoint on reference desktop, fresh Chrome per run, 10 Mbps/40 ms broadband", lcpMaximumMs: 2500,
+  await writeFile(jsonOutput, JSON.stringify({ status: pass ? "pass" : "fail", scope: `production Pages entrypoint on ${process.env.CI ? "CI runner (not reference hardware)" : "local desktop"}, fresh Chrome per run, 10 Mbps/40 ms broadband`, lcpMaximumMs: 2500,
     artifact: JSON.parse(await readFile(resolve(root, "dist/pages/release.json"), "utf8")), runs }, null, 2) + "\n");
   console.info(`[lighthouse] ${runs.map((run) => run.lcpMs.toFixed(1)).join(", ")} ms; ${pass ? "pass" : "fail"}`);
   if (!pass) process.exitCode = 1;
