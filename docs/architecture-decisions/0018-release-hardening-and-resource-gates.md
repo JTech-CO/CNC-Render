@@ -69,6 +69,14 @@
 
 ## 증거와 최종 로컬 회귀
 
+- 학습 레이아웃 수정 후 재측정: 메모리 8조합 최대 balanced 489.05 MB / precision
+  521.24 MB, 실장비 24조합 최저 FPS 119.289 / 109.684, cold shell 최대 1175.3 ms.
+  새 지문으로 증거를 교체했으며 이전 수치는 이력으로 보존한다.
+- Linux software WebGPU는 Xvfb와 Vulkan/SwiftShader 합성 옵션으로 실제 캔버스 캡처를
+  검사한다. 고정 sleep 대신 렌더 프레임 및 픽셀 변경을 기다리며 blank 화면은 실패한다.
+  OS별 system font 차이는 Windows/Linux 별도 기준 이미지로 검토한다. pixel 허용치는 유지한다.
+  참고: [WebGPU 재현](https://github.com/visgl/luma.gl/issues/2874),
+  [Playwright 시각 비교](https://playwright.dev/docs/test-snapshots).
 - 기준 장비 24조합, software 12조합, 전체 E2E 88개, visual 5개 및 a11y/Pages 통과.
   실장비 최저 FPS balanced 119.028 / precision 112.013, cold shell 최대 1585.8 ms.
   Lighthouse 최종 LCP 925.0/948.5/979.1 ms. 이전 실패 보고서는 별도로 보존한다.

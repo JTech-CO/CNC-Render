@@ -1,11 +1,27 @@
 ﻿# CNC Render Progress
 
 - Current phase: M12 성능·폴백·보안·CI·릴리스 게이트 진행 중
-- Status: 학습 측정 행 수정 후 로컬 visual/a11y/Pages 통과; 성능·메모리 재측정 및 Linux visual 검증 중
+- Status: 학습 측정 행 수정 후 로컬 회귀·성능 24조합·메모리 8조합 통과; 최종 원격 CI 대기
 - Last completed: 전체 회귀·실장비 24조합·메모리 8조합·broadband LCP 3회
 - Next task: 커밋·푸시·PR → 원격 CI → 병합·Pages 릴리스 검증
 - Open questions: 없음 — 사용자가 브라우저 고정 비용 제외 앱 사용량(Worker/WASM/GPU 포함) 산정을 승인
-- Known regressions: Linux WebGPU 합성 해결, OS별 visual 기준 및 좁은 학습 측정 행 수정 검증 중; 병합 보류
+- Known regressions: 발견된 Linux WebGPU 합성·학습 측정 행 문제 수정; 최종 CI 및 공개 배포 검증 대기
+
+## M12 학습 레이아웃 수정 후 최종 증거
+
+- `5874e50` / CI `34697679929`: Linux visual 4개 통과, 새 성공 baseline 부재 1개 차단.
+  실제 캡처에서 수치·단위·항목명의 가로 표시와 겹침 방지 검사를 확인해
+  `tutorial-success-linux.png`를 등록했다. Windows/Linux 기준과 1% 허용치는 분리·유지한다.
+- 로컬 최종 verify 306/64/69, visual 5, a11y 6, Pages 2 통과.
+- CSS 수정 후 메모리 8/8 재통과(각 60초 이상, 39–41 samples, 126–290회 반복):
+  Chrome GPU/GL2 balanced 438.58/304.66 MB, precision 457.40/361.59 MB;
+  Edge GPU/GL2 balanced 489.05/363.63 MB, precision 521.24/378.08 MB.
+  수치 변화는 실행 변동을 포함하며 CSS 수정에 따른 메모리 개선율로 해석하지 않는다.
+- 실장비 성능 24/24 재통과. 최저 FPS balanced 119.289, precision 109.684,
+  cold shell 최대 1175.3 ms, main handler 최대 21.7 ms, long task 0.
+- 새 런타임 지문 189 files / `c164223c566b2aa1529ce4d0228a78644e82b8fe9372d412d2f4cd52e20b9066`.
+  체크인 증거를 새 보고서로 갱신했고 검증기 통과. 이전 증거는 Git과 별도 로컬 파일에 보존한다.
+  전체 원격 CI·clean release·공개 배포 확인 전 M12 전체 완료로 취급하지 않는다.
 
 ## M12 두 번째 CI — 시각 기준 환경 분리
 

@@ -6,7 +6,27 @@
 
 ## M12 후속 검증 상태
 
-### 최종 리소스 수명 수정 후 (로컬 검증)
+### 최종 학습 레이아웃 수정 후 (로컬 검증)
+
+- 기본 119.289 / 고정밀 109.684 최저 FPS, cold shell 최대 1175.3 ms,
+  handler 최대 21.7 ms, long task 0. 기준 장비 24/24 및 동등성 통과.
+- 메모리 8/8 통과. 같은 승인 산식·600 MB/1.5 GB 한도이며 각 60초 이상,
+  39–41 samples, 126–290회 세 공정 반복이다.
+
+| Browser / backend | Balanced peak MB | Precision peak MB |
+|---|---:|---:|
+| Chrome / WebGPU | 438.58 | 457.40 |
+| Chrome / WebGL 2 | 304.66 | 361.59 |
+| Edge / WebGPU | 489.05 | 521.24 |
+| Edge / WebGL 2 | 363.63 | 378.08 |
+
+- Windows visual 5개 및 a11y/Pages 통과. Linux는 Xvfb+SwiftShader Vulkan 합성으로
+  전체 E2E 88개를 통과했다. OS system font 차이는 별도 baseline으로 검토하며 1% 기준 유지.
+  좁은 학습 측정 행의 겹침도 수정·검사한다. 최종 통합 CI/공개 배포는 아직 대기 중이다.
+- 현재 증거의 런타임 지문은 `c164223c566b2aa1529ce4d0228a78644e82b8fe9372d412d2f4cd52e20b9066`.
+  아래 이전 측정 수치는 이력이며 최신 값과 섞어 비교하지 않는다.
+
+### 리소스 수명 수정 후, 학습 레이아웃 수정 전
 
 - `benchmark-reference-final.json`: 실장비 24/24 통과. 최저 FPS balanced 119.028,
   precision 112.013, cold shell 최대 1585.8 ms, handler 최대 21.7 ms, long task 0.
