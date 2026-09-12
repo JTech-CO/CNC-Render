@@ -1,11 +1,32 @@
 ﻿# CNC Render Progress
 
 - Current phase: M12 성능·폴백·보안·CI·릴리스 게이트 진행 중
-- Status: 최종 로컬 gate 모두 통과 — 원격 CI·병합·배포 대기, M12 전체 완료 아님
+- Status: 학습 측정 행 수정 후 로컬 visual/a11y/Pages 통과; 성능·메모리 재측정 및 Linux visual 검증 중
 - Last completed: 전체 회귀·실장비 24조합·메모리 8조합·broadband LCP 3회
 - Next task: 커밋·푸시·PR → 원격 CI → 병합·Pages 릴리스 검증
 - Open questions: 없음 — 사용자가 브라우저 고정 비용 제외 앱 사용량(Worker/WASM/GPU 포함) 산정을 승인
-- Known regressions: 첫 원격 CI의 Linux WebGPU 캔버스 합성 실패 1건 수정 검증 중; 병합 보류
+- Known regressions: Linux WebGPU 합성 해결, OS별 visual 기준 및 좁은 학습 측정 행 수정 검증 중; 병합 보류
+
+## M12 두 번째 CI — 시각 기준 환경 분리
+
+- `5e489b8` / CI `34696796080`: WebGPU 합성 수정 후 전체 E2E 88 passed/2 skipped.
+  시각 회귀에서 G-code 오류·튜토리얼 성공/실패의 Windows/Linux system font 차이를 확인했다.
+  machine-scene/heatmap은 통과했다. 실패 원본은 `artifacts/ci-34696796080`에 보존한다.
+- Playwright 권고대로 OS별로 동일 환경의 기준 이미지와 비교한다. 기존 Windows 기준은
+  유지하며 Linux 글꼴 기준은 별도 이름으로 검토한다. 1% pixel 허용치는 변경하지 않는다.
+  참고: https://playwright.dev/docs/test-snapshots.
+- 비교 중 기존 좁은 학습 측정 행이 긴 값 때문에 항목명을 한 글자씩 줄바꾸는 문제를 확인했다.
+  항목명/값을 별도 행에 배치하고, 세로 순서 및 가로 넘침을 검사한다. 성공 baseline은
+  의도된 레이아웃 변경만 갱신하며, CSS 런타임 변경에 따라 성능/메모리 증거도 재측정한다.
+- 수정 후 Windows visual 5/5, a11y 6/6(별도 visual project 3 skipped), Pages 2/2 통과.
+  새 성공 이미지를 직접 검토해 측정 항목의 세로 찢김이 없어졌음을 확인했다.
+  G-code/실패 상태의 Linux CI 생성 이미지도 직접 검토하여 별도 Linux 기준으로 등록한다.
+  새 레이아웃의 Linux 성공 이미지는 다음 CI에서 검토한다. CI의 visual 순서를 앞으로
+  옮겨 OS 기준 문제를 빠르게 검출하며, 전체 E2E/성능 gate는 모두 유지한다.
+  기존 성능/메모리 원본은 `*-before-lesson-layout.json`으로도 보존했다.
+- 수정 후 `pnpm verify` 재통과: 306 unit/64 contracts/69 parity, lint·typecheck·build.
+  기준 장비 메모리/성능은 재측정 중이다. 체크인된 이전 evidence는 의도적으로 보존하며
+  현재 CSS 지문과의 불일치를 통과 처리하지 않는다. 새 증거와 Linux 성공 기준 검토 전 병합 금지.
 
 ## M12 PR #13 첫 CI 후속
 

@@ -1621,8 +1621,9 @@ dd,
 
 .lesson-measurement div {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-1);
+  padding-block: var(--space-1);
 }
 
 .lesson-measurement dt {
@@ -1631,7 +1632,8 @@ dd,
 
 .lesson-measurement dd {
   margin: 0;
-  text-align: right;
+  text-align: left;
+  overflow-wrap: anywhere;
 }
 
 .lesson-score {

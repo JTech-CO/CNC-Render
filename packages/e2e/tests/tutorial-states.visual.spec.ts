@@ -1,4 +1,5 @@
 import { expect, test, type Page, type TestInfo } from "@playwright/test";
+import { visualPlatformName } from "./visual-platform";
 
 type LessonPhase = "prepare" | "setup" | "execute" | "measure" | "assess";
 
@@ -119,8 +120,17 @@ test("tutorial-success visual baseline retains the final 3D result", async ({
   await expect(page.getByTestId("lesson-score")).toContainText("100.00 / 100");
   await expect(page.getByTestId("machine-canvas")).toBeVisible();
   await expect(page.getByTestId("lesson-celebration")).toHaveCount(0);
+  const readableMeasurements = await page.getByTestId("lesson-measurement").evaluate((list) =>
+    [...list.children].every((row) => {
+      const label = row.querySelector("dt")!;
+      const value = row.querySelector("dd")!;
+      return value.getBoundingClientRect().top >= label.getBoundingClientRect().bottom &&
+        row.scrollWidth <= row.clientWidth + 1;
+    }),
+  );
+  expect(readableMeasurements).toBe(true);
   await expect(await settleScopedScreenshot(page)).toHaveScreenshot(
-    "tutorial-success.png",
+    visualPlatformName("tutorial-success.png"),
   );
 });
 
@@ -158,7 +168,7 @@ test("tutorial-failure visual baseline shows authored reason and recovery", asyn
   );
   await expect(recovery).toBeVisible();
   await expect(await settleScopedScreenshot(page)).toHaveScreenshot(
-    "tutorial-failure.png",
+    visualPlatformName("tutorial-failure.png"),
   );
 
   await recovery.click();

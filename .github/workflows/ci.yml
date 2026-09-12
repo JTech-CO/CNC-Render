@@ -91,9 +91,9 @@ jobs:
 
       - name: Run complete browser, visual and accessibility gates
         run: |
+          pnpm test:visual
           xvfb-run -a pnpm test:e2e --project=chromium-webgpu --project=chromium-webgl2
           pnpm test:contracts --filter report
-          pnpm test:visual
           pnpm test:a11y
           pnpm check:bundle
 

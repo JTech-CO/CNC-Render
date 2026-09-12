@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { visualPlatformName } from "./visual-platform";
 
 test("gcode-error visual baseline distinguishes the parser diagnostic", async ({
   page,
@@ -39,5 +40,5 @@ test("gcode-error visual baseline distinguishes the parser diagnostic", async ({
   await page.evaluate(async () => {
     await document.fonts.ready;
   });
-  await expect(lab).toHaveScreenshot("gcode-error.png");
+  await expect(lab).toHaveScreenshot(visualPlatformName("gcode-error.png"));
 });
