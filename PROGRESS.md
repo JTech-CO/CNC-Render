@@ -1,11 +1,117 @@
 ﻿# CNC Render Progress
 
-- Current phase: M11 G-code Lab·진단·측정·결과 비교(S1 기초) 완료
-- Status: M11 Definition of Done 7개와 공식·회귀 gate 통과
-- Last completed: 실제 코드 실행·양방향 진단·6종 측정·3종 결과 비교·리포트 내보내기
-- Next task: M12 성능·폴백·보안·CI·릴리스 게이트 (M11 PR·병합·배포는 별도 승인)
+- Current phase: M12 성능·폴백·보안·CI·릴리스 게이트 진행 중
+- Status: 기준 benchmark v1·18조합 로컬 gate 통과 — M12 전체 완료/공개 릴리스 아님
+- Last completed: M12 기준 benchmark·Chrome/Edge/Chromium 대표 공정 matrix와 JSON 증거
+- Next task: 기준 장비 승인·cold 성능 반복성·High/전체 메모리·남은 브라우저/릴리스 gate
 - Open questions: 없음
-- Known regressions: 없음
+- Known regressions: 기능 회귀 없음; 초기 Chrome 성능 예산 초과 2건의 변동성 추가 검증 필요
+
+## M12 커밋·푸시 인계 (2026-09-12)
+
+- 사용자 승인에 따라 릴리스 출처 검증과 benchmark/browser matrix 두 로컬 단위를
+  `origin/codex/m12-release-gates`의 커밋·푸시 대상으로 확정했다. 저장소는
+  `JTech-CO/CNC-Render`이며 force push, PR 생성, 병합, 공개 배포는 수행 범위가 아니다.
+- 커밋 직전 release-metadata 26 tests, benchmark-contract 16 tests,
+  `check:versions`, `check:doc-terms`, `git diff --check`를 재통과했다.
+  전체 verify 273/64/69와 최종 browser matrix 18 passed 증거는 아래 기록을 유지한다.
+- 생성된 두 벤치마크 JSON과 dist 산출물은 로컬 증거로 보존하되 커밋에 포함하지 않는다.
+  기존 산출물의 SHA/dirty 표시는 당시 측정 출처이며, 새 clean commit의 릴리스 검증은
+  별도 재빌드가 필요하다. M11 선행 브랜치 병합·기준 정리와 M12 나머지 gate는 남아 있다.
+
+## M12 기준 benchmark·브라우저 matrix (2026-09-12, 로컬 단위 완료)
+
+- 기존 Node `bench`를 유지하면서 `--report=artifacts/<name>.json --matrix=software|reference|all`
+  경로를 추가했다. 전체 Node gate 후 production Pages에서 실제 Worker/WASM 공정과
+  renderer를 직렬 측정한다. CPU benchmark도 파일 단위 직렬화했으며 임계값은 유지했다.
+- bundled Chromium/SwiftShader, 설치된 Chrome, 설치된 Edge 각각 WebGPU/WebGL 2에서
+  밀링·외경 선삭·드릴링을 실행한다. fallback을 요청 backend의 성공으로 치환하지 않는다.
+- balanced·seed 7·1440×900·DPR 1·fast-forward 1회 warmup·최소 8초 realtime 100배속,
+  wall-clock 15°/s orbit으로 workload v1을 정의했다. 완료 프레임/경과 시간 FPS와
+  관찰된 frame interval P95, 셸 준비 ms·main handler ms·long task·React commit을 기록한다.
+- OS/CPU/RAM·브라우저 실제 버전·GPU probe·canvas 크기·버전/SHA/WASM 출처를 남긴다.
+  page JS heap은 참고값이며 총 메모리로 판정하지 않는다. 원본 G-code/프로젝트명/hostname은 없다.
+- 모든 요청 조합의 semantic/Stock hash·XYZ mm·진단·제거 체적·단계 수를 정확히 비교한다.
+  기능·메인 스레드 gate·개별 FPS·전체 release 상태를 분리해 과대 통과를 막는다.
+- CI에 software benchmark와 성공/실패 JSON 30일 보존을 연결했다. 원격 실행은 하지 않았다.
+  생성 파일은 `artifacts/`에만 허용하고 git에서 제외한다. 시작 시 incomplete marker로
+  과거 성공 결과의 오인 재사용을 방지한다. README 등 소스 경로 덮어쓰기 거부도 확인했다.
+- ADR-0017과 `docs/browser-support-matrix.md`에 방법·제한·관찰 버전을 기록했다.
+
+### 최종 검증
+
+| Gate | Result |
+|---|---|
+| `pnpm verify` | 통과 — unit 273/36 files, contracts 64/16 files, parity 69/10 files, lint·typecheck·Cargo check·production build |
+| benchmark 판정 단위 | 16 tests 통과(전체 unit 포함); 누락/중복/backend mismatch/소프트웨어/비정상 수치/60 FPS 기준 |
+| 기존 Node benchmark | 5 files / 8 tests 통과, 기준 완화 없음 |
+| `pnpm bench -- --report=artifacts/benchmark-reference-v1.json --matrix=all` | 최종 18 passed; 3공정 전체 cross-backend/browser parity 통과 |
+| Chrome·Edge 후보 GPU FPS | 최종 118.80–119.85 FPS; 12조합 모두 60 FPS 이상 |
+| React·메인 스레드 | 최종 18조합 commit 증가 0, handler < 50 ms, long task 0 |
+| localhost cold-context shell | 최종 약 515–2,268 ms; 공개 LCP 검증 아님 |
+| release identity client/Pages | 둘 다 재통과, WASM 해시·크기 이전 단위와 동일 |
+| dependency boundary | 147 modules / 338 dependencies, 위반 0 |
+| `git diff --check` | 통과 |
+
+- 초기 매개변수화 테스트 배열의 타입/인자 매핑 오류를 수정하고, 최종 전체 verify를 통과했다.
+- 최초 조사(프레임당 고정각 orbit)는 16 passed / 2 failed: Chrome WebGPU drilling
+  handler 66.9 ms, Chrome WebGL 2 milling long task 5회. `artifacts/benchmark-report.json`에
+  보존했다. 카메라를 시간 기준으로 정규화한 최종 결과는 별도 `benchmark-reference-v1.json`이다.
+- 초기 예산 초과는 최종 실행에서 재현되지 않았으나 원인을 해결했다고 선언하지 않는다.
+  엔진·UI 성능 기준을 바꾸지 않았으며, 반복 cold/전원/GPU cache 조건 검증이 남는다.
+- Chrome 152.0.7977.83은 NVIDIA, Edge 153.0.4234.32는 Intel GPU가 관찰됐다.
+  같은 GPU 기준 브라우저 비교가 아니다. Chromium 140.0.7339.16/SwiftShader의 FPS는
+  실장비 판정에서 제외했다. High·총 메모리·LCP·Firefox/Safari·기준 장비 승인도 미완료다.
+- 브랜치는 `codex/m12-release-gates`이며 이전 릴리스 출처 변경을 보존했다.
+  커밋·푸시·PR·병합·공개 배포는 수행하지 않았다. 기존 stash도 변경하지 않았다.
+
+## M12 첫 단위 — 릴리스 출처·WASM 무결성 (2026-09-12, 로컬 gate 완료)
+
+- `codex/m12-release-gates`를 아직 병합 전인 M11의 `2f48a6f`에서 분기했다.
+  M11 PR·병합과 공개 배포는 이번 요청에서 수행하지 않는다. 장기 기준과 배포 대상은
+  `main` 및 사용자 지정 GitHub Pages를 유지한다. ADR-0016에 임시 stacked 경계를 기록했다.
+- Vinext client와 Pages 산출물에 `release.json`을 생성한다. 제품·엔진·프로젝트 스키마·
+  Worker protocol 버전, 실제 HEAD 전체 SHA, 로컬 변경 여부, 대상, WASM 크기·SHA-256을
+  기록한다. 기존 버전 0.9.0과 schema/protocol 1은 변경하지 않는다.
+- 잘못된 `GITHUB_SHA`, 누락/추가/변조 metadata, 변경된 배포 WASM을 거부한다.
+  GitHub Actions 및 `--require-clean` 검사는 미커밋/새 소스가 있으면 게시를 차단한다.
+- JSON에 시간·사용자명·브랜치명·로컬 경로·프로젝트명·G-code 원문을 넣지 않는다.
+  UI·Worker 실행 주기와 기존 성능·시각 임계값은 변경하지 않았다.
+- Pages E2E는 `/CNC-Render/release.json`과 같은 배포의 WASM을 HTTP로 받아 대조한다.
+  CI는 Pages smoke 다음, artifact 업로드 전에 `check:release --require-clean`을 실행한다.
+
+### 검증
+
+| Gate | Result |
+|---|---|
+| `pnpm test:unit --filter release-metadata` | 26 tests 통과 — SHA/dirty/변조/누락/결정론적 JSON |
+| `pnpm verify` | 최종 통과 — unit 257/35 files, contracts 64/16 files, parity 69/10 files; lint·typecheck·Cargo check·production build |
+| dependency boundary | 통과 — 142 modules, 327 dependencies, 위반 0 |
+| `pnpm check:release --target=client` | 통과 — 실제 Vinext client metadata와 WASM SHA 일치 |
+| `pnpm test:pages` | 2 passed — metadata HTTP 응답/WASM 해시, UI·Monaco·분석/비교 Worker·절삭·JSON 내보내기 회귀 |
+| `pnpm check:release --target=pages` | 통과 — 실제 Pages metadata와 WASM SHA 일치 |
+| `check-release.mjs --target=pages --require-clean` negative gate | 예상대로 실패 — 미커밋 worktree의 게시 차단, 오류 원인까지 확인 |
+| `git diff --check` | 통과 |
+
+- 초기 타입 검사에서 테스트 환경 객체의 필수 `NODE_ENV` 누락을 수정했고, 이후
+  전체 표준 검증을 처음부터 재통과했다. 기존 500 kB lazy chunk 안내 경고는 남는다.
+- client/Pages 모두 제품·엔진 0.9.0, schema/protocol 1, 기반 SHA `2f48a6f…`,
+  `sourceDirty: true`를 기록한다. WASM은 857,623 B, SHA-256
+  `9f588d8fb523d98cf79ec86b9b1f6f775dc30efc9c7d146cebb45bf4468ffccf`로 이전과 같다.
+- 이번 결과는 Windows 로컬 Chromium/SwiftShader 검증이다. 원격 CI 실행·커밋·푸시·
+  PR·병합·공개 Pages 재배포는 수행하지 않았다. 기존 M10 stash는 변경하지 않았다.
+
+### 남은 M12 범위
+
+- DoD 1–3: 기준 실장비/브라우저/해상도 명시, LCP·cold shell·Medium/High FPS·메모리.
+- DoD 4–6: 1프레임 충돌 경고·WebGPU/WebGL 2 parity의 릴리스 matrix, Chrome/Edge
+  필수 결과와 Safari/Firefox 통과 또는 제약 문서. 기존 SwiftShader 테스트를 실장비로 간주하지 않는다.
+- DoD 7–9: 업로드 형식·크기·구조·과도한 메시·압축 폭탄 방어, SAB 사용 여부와 실배포
+  COOP/COEP/외부 리소스 정책, 익명 telemetry의 수집 범위/개인정보 검증.
+- DoD 10: 전체 CI matrix와 bench-smoke·Lighthouse·보안 검사·결과 artifact 보존.
+- DoD 11: 산출물 식별·로컬 gate 구현은 완료했다. clean commit의 원격 CI 및 실제
+  공개 배포 산출물 확인은 별도 승인 후 진행한다. 로컬 미커밋 SHA를 공개 릴리스로 간주하지 않는다.
+- M12 전체 완료와 공개 릴리스는 위 gate 및 알려진 P0/P1/P2 검토 이전에 선언하지 않는다.
 
 ## M11 G-code Lab·진단·측정·결과 비교 (2026-09-08 검증 완료, 2026-09-12 기록 정리)
 

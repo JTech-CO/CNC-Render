@@ -1,5 +1,27 @@
 import { readFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { expect, test } from "@playwright/test";
+import { readReleaseIdentity } from "../../../scripts/release-metadata.mjs";
+
+test("GitHub Pages serves verifiable release identity and matching WASM bytes", async ({ request }) => {
+  const response = await request.get("./release.json");
+  expect(response.ok()).toBe(true);
+  expect(response.headers()["content-type"]).toContain("application/json");
+  const metadata = await response.json();
+  const wasmResponse = await request.get("./wasm/cnc_render_wasm.wasm");
+  expect(wasmResponse.ok()).toBe(true);
+  const wasm = await wasmResponse.body();
+  expect(metadata).toEqual({
+    metadataVersion: 1,
+    ...readReleaseIdentity(),
+    target: "pages",
+    wasm: {
+      path: "wasm/cnc_render_wasm.wasm",
+      byteLength: wasm.length,
+      sha256: createHash("sha256").update(wasm).digest("hex"),
+    },
+  });
+});
 
 test("GitHub Pages preserves styled, clickable workspace behavior", async ({
   page,

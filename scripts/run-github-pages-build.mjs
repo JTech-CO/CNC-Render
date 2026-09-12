@@ -2,8 +2,10 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
+import { readReleaseIdentity, validateReleaseMetadata, writeReleaseMetadata } from "./release-metadata.mjs";
 
 const workspacePath = process.cwd();
+const releaseIdentity = readReleaseIdentity();
 const repository = process.env.GITHUB_REPOSITORY ?? "JTech-CO/CNC-Render";
 const [owner, repositoryName, ...unexpectedParts] = repository.split("/");
 
@@ -123,6 +125,9 @@ if (
     "GitHub Pages Worker does not reference the project-scoped WASM URL.",
   );
 }
+
+writeReleaseMetadata(pagesDirectory, "pages", releaseIdentity);
+validateReleaseMetadata(pagesDirectory, "pages");
 
 console.info(
   "[build:pages] Validated static demo for " +

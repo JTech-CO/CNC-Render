@@ -91,8 +91,23 @@ jobs:
           pnpm test:a11y
           pnpm check:bundle
 
+      - name: Run M12 software benchmark and backend matrix
+        run: pnpm bench -- --report=artifacts/benchmark-report.json --matrix=software
+
+      - name: Preserve M12 benchmark evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-software-matrix
+          path: artifacts/benchmark-report.json
+          if-no-files-found: warn
+          retention-days: 30
+
       - name: Build and test GitHub Pages demo
         run: pnpm test:pages
+
+      - name: Verify release identity before publishing
+        run: pnpm check:release --target=pages --require-clean
 
       - name: Upload GitHub Pages artifact
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
