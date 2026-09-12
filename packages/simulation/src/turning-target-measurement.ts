@@ -366,7 +366,7 @@ function cellExtent(
   };
 }
 
-function representedTargetRadii(
+export function representedTargetRadii(
   target: TurningRadiusFieldTarget,
   resolutionMm: number,
   centerZMm: number,

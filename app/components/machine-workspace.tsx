@@ -31,6 +31,7 @@ import {
   createM7DrillingTarget,
   createM7FaceMillingTarget,
   createM7OdTurningTarget,
+  createM7PipelineFixture,
   measureMillingStockAgainstTarget,
   measureTurningStockAgainstTarget,
   runM4CollisionStopDemo,
@@ -62,6 +63,11 @@ import {
   type M7PipelineHarness,
 } from "./m7-pipeline-adapter";
 import { attachM8Persistence } from "./m8-persistence-adapter";
+import { GcodeLabLoader } from "./gcode-lab-loader";
+import { M11LabBridge, selectSpatialDiagnostics } from "./m11-lab-bridge";
+import { ResultComparisonLoader } from "./result-comparison-loader";
+import { M11ResultBridge } from "./m11-result-bridge";
+import type { ResultComparisonInput } from "../../packages/simulation/src/result-comparison";
 import {
   WORKSPACE_COMMAND_EVENT,
   WORKSPACE_STATUS_EVENT,
@@ -70,6 +76,7 @@ import {
 } from "./workspace-events";
 
 interface CncRenderM3Harness {
+  getDiagnosticScreenPosition(id: string): readonly [number, number] | null;
   getDiagnostics(): WorkcellRendererDiagnostics;
   getReactCommitCount(): number;
   setView(view: CameraPresetId): void;
@@ -293,6 +300,8 @@ function pipelineState(
   if (summary.completed) {
     return "completed";
   }
+  if (summary.paused) return "paused";
+  if (summary.phase === "cancelled") return "cancelled";
   return summary.phase === "initialized" ? "starting" : "running";
 }
 
@@ -326,7 +335,11 @@ function updatePipelineSummary(
     state === "completed"
       ? "완료"
       : state === "stopped"
-        ? "충돌 정지"
+        ? (summary.collision ? "충돌 정지" : "진단 정지")
+        : state === "paused"
+          ? "일시정지"
+          : state === "cancelled"
+            ? "정지"
         : state === "starting"
           ? "준비 중"
           : "절삭 중";
@@ -406,6 +419,19 @@ function updateAxisSummary(
 }
 
 export function MachineWorkspace() {
+  const [resultBridge] = useState(() => new M11ResultBridge());
+  const [labBridge] = useState(() => new M11LabBridge());
+  const [labSource, setLabSource] = useState(() => createM7PipelineFixture("milling", "00000000-0000-4000-8000-000000000011").source);
+  const labSourceRef = useRef(labSource);
+  const labSourceDirtyRef = useRef(false);
+  const [labSourceVersion, setLabSourceVersion] = useState(0);
+  const [labBreakpoints, setLabBreakpoints] = useState<number[]>([]);
+  const labBreakpointsRef = useRef<number[]>([]);
+  const [selectedLabDiagnostic, setSelectedLabDiagnostic] = useState<string | null>(null);
+  const selectedLabDiagnosticRef = useRef<string | null>(null);
+  const [labActionError, setLabActionError] = useState<string | null>(null);
+  const labRunRef = useRef<(source: string, step: boolean) => Promise<void>>(async () => undefined);
+  const labDiagnosticSignatureRef = useRef("");
   const [faceMillingLessonController] = useState(
     () => new FaceMillingLessonController(faceMillingLessonDocument),
   );
@@ -483,6 +509,36 @@ export function MachineWorkspace() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<WorkcellRenderer | null>(null);
+  const captureResultComparison = useCallback(async (): Promise<ResultComparisonInput> => {
+    const pipeline = pipelineHarnessRef.current;
+    if (pipeline?.isRestoredCheckpointVisible()) throw new Error("불러온 Stock과 실행 세션이 다릅니다. 재실행 후 결과를 비교하세요.");
+    const before = pipeline?.getPipelineState();
+    if (!pipeline || !before?.summary || (!before.summary.completed && !before.summary.stopped)) {
+      throw new Error("공정이 완료되거나 진단으로 중단된 뒤 Stock을 측정하세요.");
+    }
+    const checkpoint = await pipeline.capturePipelineCheckpoint();
+    const after = pipeline.getPipelineState();
+    if (pipeline.isRestoredCheckpointVisible()) throw new Error("측정 중 Stock을 불러왔습니다. 재실행 후 결과를 비교하세요.");
+    if (checkpoint.summary.runId !== before.summary.runId || after.summary?.runId !== before.summary.runId || (!checkpoint.summary.completed && !checkpoint.summary.stopped) || (!after.summary.completed && !after.summary.stopped)) {
+      throw new Error("측정 중 실행이 변경되었습니다. 새 결과를 다시 측정하세요.");
+    }
+    const provenance = {
+      runId: checkpoint.summary.runId,
+      fixtureId: checkpoint.summary.fixtureId,
+      stateHash: checkpoint.summary.stateSemanticHashSha256,
+      stockHash: checkpoint.summary.stockHashSha256,
+      logicalTimeS: checkpoint.summary.logicalTimeS,
+      outcome: checkpoint.summary.stopped ? "stopped" as const : "completed" as const,
+      collisionCount: checkpoint.summary.collision ? 1 : 0,
+      warningCount: (checkpoint.summary.runtimeDiagnostics ?? []).filter((item) => item.severity === "warning").length,
+      diagnosticCount: (checkpoint.summary.runtimeDiagnostics ?? []).length,
+    };
+    if (checkpoint.render.renderType === "milling-full") {
+      return { surface: checkpoint.render, target: createM7FaceMillingTarget(before.millingConfiguration, before.millingOperation), provenance };
+    }
+    if (before.fixture !== "turning" && before.fixture !== "drilling") throw new Error("이 공정의 목표 형상이 정의되지 않았습니다.");
+    return { surface: checkpoint.render, target: before.fixture === "drilling" ? createM7DrillingTarget() : createM7OdTurningTarget(), provenance };
+  }, []);
   const commitCountRef = useRef(0);
   const modeBadgeRef = useRef<HTMLSpanElement>(null);
   const backendDetailRef = useRef<HTMLParagraphElement>(null);
@@ -728,6 +784,17 @@ export function MachineWorkspace() {
           preference: requestedRendererPreference(),
           onStatus: updateStatus,
           onTelemetry: updateTelemetry,
+          onDiagnosticSelect: (id) => {
+            const executionSource = pipelineHarnessRef.current?.getPipelineSource();
+            if (executionSource && !labSourceDirtyRef.current) labSourceRef.current = executionSource;
+            if (executionSource !== labSourceRef.current) return;
+            setLabSource(labSourceRef.current);
+            selectedLabDiagnosticRef.current = id;
+            setSelectedLabDiagnostic(id);
+            activeAreaRef.current = "code";
+            setActiveArea("code");
+            setDockTab("gcode");
+          },
         });
         rendererRef.current = renderer;
 
@@ -899,6 +966,7 @@ export function MachineWorkspace() {
           getReactCommitCount: () => commitCountRef.current,
           setView: (view) => renderer.setCameraPreset(view),
           fit: () => renderer.fit(),
+          getDiagnosticScreenPosition: (id) => renderer.getDiagnosticScreenPosition(id),
           focusLayer: (layerId) => renderer.focusLayer(layerId),
           orbit: (azimuthDegrees, polarDegrees) =>
             renderer.orbitByDegrees(azimuthDegrees, polarDegrees),
@@ -935,12 +1003,57 @@ export function MachineWorkspace() {
           getTurningState: () => lastTurningRunRef.current,
         };
         pipelineBinding = attachM7Pipeline(renderer, viewport, {
-          onGeneralSummary: (summary, playbackElapsedS) =>
-            updatePipelineSummary(workspace, summary, playbackElapsedS),
+          onCheckpointRestored: () => {
+            resultBridge.restored();
+            renderer.setDiagnosticMarkers([]);
+            labDiagnosticSignatureRef.current = "";
+          },
+          onStatusChange: (status) => {
+            if (status === "starting") resultBridge.started();
+            labBridge.publishStatus(status);
+            if (activeAreaRef.current === "code") {
+              dispatchWorkspaceStatus({ state: status === "error" ? "error" : status === "cancelled" ? "cancelled" : status === "paused" ? "paused" : status === "completed" ? "completed" : status === "stopped" ? "stopped" : status === "starting" ? "starting" : "running", fixture: pipelineHarnessRef.current?.getPipelineState().fixture ?? null });
+            }
+          },
+          onGeneralSummary: (summary, playbackElapsedS) => {
+            resultBridge.publishRun(summary.runId);
+            updatePipelineSummary(workspace, summary, playbackElapsedS);
+            const executionStatus = summary.paused ? "paused" : summary.stopped ? "stopped" : summary.completed ? "completed" : summary.phase === "cancelled" ? "cancelled" : "running";
+            const executionSource = pipelineHarnessRef.current?.getPipelineSource() ?? null;
+            labBridge.publish(summary, executionStatus, executionSource);
+            const spatial = selectSpatialDiagnostics(!labSourceDirtyRef.current || executionSource === labSourceRef.current ? summary.runtimeDiagnostics ?? [] : [], selectedLabDiagnosticRef.current);
+            const signature = JSON.stringify([selectedLabDiagnosticRef.current, spatial]);
+            if (signature !== labDiagnosticSignatureRef.current) {
+              labDiagnosticSignatureRef.current = signature;
+              renderer.setDiagnosticMarkers(spatial, selectedLabDiagnosticRef.current);
+            }
+          },
           onAxisSummary: (summary) => updateAxisSummary(workspace, summary),
         });
         const pipeline = pipelineBinding.harness;
         pipelineHarnessRef.current = pipeline;
+        labRunRef.current = async (source, step) => {
+          setLabActionError(null);
+          const state = pipeline.getPipelineState();
+          const sameProgram = pipeline.getPipelineSource() === source;
+          if (sameProgram && state.status === "paused") {
+            if (step) await pipeline.stepPipelineSourceLine();
+            else pipeline.resumePipeline(WORKSPACE_PLAYBACK_SPEED);
+            return;
+          }
+          if (state.activeRunId !== null && (state.status === "running" || state.status === "starting")) {
+            throw new Error("실행 중입니다. 일시정지 또는 정지 후 코드를 실행하세요.");
+          }
+          if (state.status === "paused") await pipeline.cancelPipeline();
+          await pipeline.startPipelineFixture(selectedFixture(), {
+            source,
+            playbackSpeed: WORKSPACE_PLAYBACK_SPEED,
+            millingConfiguration: selectedMillingConfiguration(),
+            startPaused: step,
+            breakpoints: labBreakpointsRef.current,
+          });
+          if (step) await pipeline.stepPipelineSourceLine();
+        };
 
         const selectedFixture = (): M7PipelineFixture => {
           const value = fixtureSelectRef.current?.value;
@@ -965,6 +1078,16 @@ export function MachineWorkspace() {
         playToggleRef.current = async () => {
           const pipelineSnapshot = pipeline.getPipelineState();
           const selected = selectedFixture();
+          if (activeAreaRef.current === "code") {
+            try {
+              if (pipelineSnapshot.status === "running" || pipelineSnapshot.status === "starting") await pipeline.pausePipeline();
+              else await labRunRef.current(labSourceRef.current, false);
+            } catch (error) {
+              setLabActionError(error instanceof Error ? error.message : String(error));
+              throw error;
+            }
+            return;
+          }
           if (activeAreaRef.current === "sandbox") {
             const snapshot = sandboxOperationController.getSnapshot();
             if (snapshot.status !== "ready") {
@@ -1130,6 +1253,11 @@ export function MachineWorkspace() {
           persistenceHarnessRef.current = persistenceBinding.harness;
           setSandboxPersistenceReady(true);
           saveWorkspaceRef.current = async () => {
+            if (activeAreaRef.current === "code") {
+              const message = "G-code 편집 세션은 프로젝트 저장을 지원하지 않습니다. 코드를 별도로 복사하고 결과 탭에서 리포트를 저장하세요.";
+              setLabActionError(message);
+              throw new Error(message);
+            }
             let fixture = selectedFixture();
             if (activeAreaRef.current === "sandbox") {
               const snapshot = sandboxOperationController.getSnapshot();
@@ -1243,6 +1371,8 @@ export function MachineWorkspace() {
       delete window.__CNC_RENDER_M10__;
     };
   }, [
+    labBridge,
+    resultBridge,
     drillingLessonController,
     faceMillingLessonController,
     odTurningLessonController,
@@ -1255,6 +1385,13 @@ export function MachineWorkspace() {
     rendererRef.current?.setCameraPreset(view);
   };
   const selectWorkspaceArea = (area: WorkspaceArea) => {
+    if (area === "code" && !labSourceDirtyRef.current) {
+      labSourceRef.current = pipelineHarnessRef.current?.getPipelineSource() ?? createM7PipelineFixture(selectedPipelineFixture, "00000000-0000-4000-8000-000000000011", {
+        stockPreset: stockPresetSelectRef.current?.value === "compact" ? "compact" : "standard",
+        cutDirection: cutDirectionSelectRef.current?.value === "y" ? "y" : "x",
+      }).source;
+    }
+    if (area === "code") setLabSource(labSourceRef.current);
     activeAreaRef.current = area;
     setActiveArea(area);
     if (area === "code") {
@@ -1801,23 +1938,67 @@ export function MachineWorkspace() {
           </div>
 
           {activeArea === "code" ? (
-            <div className="context-content">
-              <p className="context-kicker">CURRENT PROGRAM</p>
-              <h3>대표 밀링 Fixture</h3>
-              <ol className="context-code" aria-label="현재 G-code">
-                <li><code>G21 G90</code></li>
-                <li><code>G0 X-170 Y-80 Z370</code></li>
-                <li><code>G1 Z338 F1200</code></li>
-                <li><code>G1 X170 F2400</code></li>
-                <li><code>G1 Y-40</code></li>
-                <li><code>... 40 mm pitch milling passes ...</code></li>
-                <li><code>G0 Z370</code></li>
-                <li><code>M30</code></li>
-              </ol>
-              <p className="context-note">
-                현재 코드는 실행 문맥을 확인하는 읽기 전용 미리보기입니다. 편집,
-                줄 진단, 브레이크포인트는 아직 제공되지 않습니다.
-              </p>
+            <div className="m11-code-context">
+              <button className="secondary-control" type="button" onClick={() => {
+                const pipeline = pipelineHarnessRef.current;
+                const state = pipeline?.getPipelineState();
+                if (state?.status === "running" || state?.status === "paused") {
+                  setLabActionError("먼저 현재 실행을 정지하세요.");
+                  return;
+                }
+                labSourceRef.current = createM7PipelineFixture(selectedPipelineFixture, "00000000-0000-4000-8000-000000000011", {
+                  stockPreset: stockPresetSelectRef.current?.value === "compact" ? "compact" : "standard",
+                  cutDirection: cutDirectionSelectRef.current?.value === "y" ? "y" : "x",
+                }).source;
+                labBreakpointsRef.current = [];
+                labSourceDirtyRef.current = false;
+                setLabSource(labSourceRef.current);
+                rendererRef.current?.setDiagnosticMarkers([]);
+                labDiagnosticSignatureRef.current = "";
+                setSelectedLabDiagnostic(null);
+                setLabBreakpoints([]);
+                setLabSourceVersion((value) => value + 1);
+                setLabActionError(null);
+              }}>선택한 대표 공정 코드 불러오기</button>
+              {labActionError ? <p role="alert">{labActionError}</p> : null}
+              <GcodeLabLoader
+                key={labSourceVersion}
+                source={labSource}
+                breakpoints={labBreakpoints}
+                selectedDiagnosticId={selectedLabDiagnostic}
+                subscribeExecution={labBridge.subscribe}
+                onSourceChange={(source) => {
+                  labSourceRef.current = source;
+                  labSourceDirtyRef.current = true;
+                  rendererRef.current?.setDiagnosticMarkers([]);
+                  labDiagnosticSignatureRef.current = "";
+                  // Selection changes only when a prior diagnosis exists, not every keystroke.
+                  selectedLabDiagnosticRef.current = null;
+                  setSelectedLabDiagnostic((selected) => selected === null ? selected : null);
+                }}
+                onRun={(source) => labRunRef.current(source, false)}
+                onStep={(source) => labRunRef.current(source, true)}
+                onPause={async () => { await pipelineHarnessRef.current?.pausePipeline(); }}
+                onStop={async () => { await pipelineHarnessRef.current?.cancelPipeline(); }}
+                onToggleBreakpoint={(line) => {
+                  const next = labBreakpointsRef.current.includes(line) ? labBreakpointsRef.current.filter((item) => item !== line) : [...labBreakpointsRef.current, line].sort((a, b) => a - b);
+                  labBreakpointsRef.current = next;
+                  setLabBreakpoints(next);
+                  const state = pipelineHarnessRef.current?.getPipelineState();
+                  if (state?.status === "running" || state?.status === "paused") {
+                    void pipelineHarnessRef.current?.setPipelineBreakpoints(next).catch((error: unknown) => setLabActionError(error instanceof Error ? error.message : String(error)));
+                  }
+                }}
+                onSelectDiagnostic={(id) => {
+                  selectedLabDiagnosticRef.current = id;
+                  setSelectedLabDiagnostic(id);
+                  const execution = labBridge.getState();
+                  const markers = selectSpatialDiagnostics(execution.source === labSourceRef.current ? execution.runtimeDiagnostics : [], id);
+                  labDiagnosticSignatureRef.current = JSON.stringify([id, markers]);
+                  rendererRef.current?.setDiagnosticMarkers(markers, id);
+                }}
+                onFocusDiagnostic={(id) => rendererRef.current?.focusDiagnostic(id)}
+              />
             </div>
           ) : activeArea === "learn" ? (
             <div
@@ -2294,8 +2475,8 @@ export function MachineWorkspace() {
                 </div>
               </dl>
               <p className="context-note">
-                평면 밀링 Lesson은 실제 Stock checkpoint와 목표 sweep을 비교합니다.
-                Heatmap·리포트 내보내기는 아직 제공되지 않습니다.
+                완료된 Stock을 별도로 작성된 대표 목표와 비교합니다. 중앙 결과 도구에서
+                Overlay·Split·Heatmap, 측정과 JSON·CSV·인쇄 HTML을 사용할 수 있습니다.
               </p>
             </div>
           )}
@@ -2352,6 +2533,11 @@ export function MachineWorkspace() {
             ref={canvasRef}
             tabIndex={0}
           />
+          {activeArea === "results" ? (
+            <div className="m11-result-surface" data-testid="result-comparison-surface">
+              <ResultComparisonLoader bridge={resultBridge} enabled={lessonPipelineReady} capture={captureResultComparison} />
+            </div>
+          ) : null}
           <div className="viewport-axis" aria-hidden="true">
             <span className="axis-z">Z</span>
             <span className="axis-x">X</span>

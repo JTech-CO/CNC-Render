@@ -83,6 +83,14 @@ jobs:
       - name: Install Chromium for Pages smoke
         run: pnpm --filter @cnc-render/e2e exec playwright install --with-deps chromium
 
+      - name: Run M11 Lab, diagnostics, measurement and report gates
+        run: |
+          pnpm test:e2e --grep "gcode-lab|diagnostic-link|measurement|result-compare"
+          pnpm test:contracts --filter report
+          pnpm test:visual --grep "gcode-error|heatmap"
+          pnpm test:a11y
+          pnpm check:bundle
+
       - name: Build and test GitHub Pages demo
         run: pnpm test:pages
 

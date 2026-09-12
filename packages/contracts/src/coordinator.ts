@@ -9,9 +9,16 @@ import {
   UuidSchema,
   Vec3MmSchema,
 } from "./primitives";
-import { DotCodeSchema } from "./wire-text";
+// Rust's native parser/kinematics codes include hyphens and underscores.
+const CoreDiagnosticCodeSchema = z.string().min(1).max(128)
+  .regex(/^[a-z][a-z0-9_-]*(?:\.[a-z][a-z0-9_-]*)+$/);
 
 const PlaybackSpeedSchema = z.number().min(0.1).max(100);
+const SourceLineSchema = z.number().int().positive().max(250_000);
+const BreakpointsSchema = z.array(SourceLineSchema).max(10_000).refine(
+  (lines) => new Set(lines).size === lines.length,
+  "breakpoint source lines must be unique",
+);
 const Sha256Schema = z.string().length(64).regex(/^[a-f0-9]{64}$/);
 const FixtureIdSchema = z
   .string()
@@ -122,6 +129,8 @@ export const CoordinatorStartCommandSchema = z
     payload: z.strictObject({
       executionMode: z.enum(["realtime", "fast-forward"]),
       playbackSpeed: PlaybackSpeedSchema,
+      startPaused: z.boolean().optional(),
+      breakpoints: BreakpointsSchema.optional(),
       run: CoordinatorRunRequestSchema,
     }),
   })
@@ -177,6 +186,26 @@ export const CoordinatorSnapshotCommandSchema = z.strictObject({
   payload: z.strictObject({}),
 });
 
+export const CoordinatorStepSourceLineCommandSchema = z.strictObject({
+  ...EnvelopeBaseShape,
+  replyTo: z.null(),
+  kind: z.literal("command"),
+  type: z.literal("simulation.step-source-line"),
+  runId: UuidSchema,
+  sequence: SafeSequenceSchema,
+  payload: z.strictObject({}),
+});
+
+export const CoordinatorBreakpointsCommandSchema = z.strictObject({
+  ...EnvelopeBaseShape,
+  replyTo: z.null(),
+  kind: z.literal("command"),
+  type: z.literal("simulation.breakpoints"),
+  runId: UuidSchema,
+  sequence: SafeSequenceSchema,
+  payload: z.strictObject({ lines: BreakpointsSchema }),
+});
+
 export const CoordinatorDisposeCommandSchema = z.strictObject({
   ...EnvelopeBaseShape,
   replyTo: z.null(),
@@ -194,6 +223,8 @@ export const CoordinatorCommandSchema = z.discriminatedUnion("type", [
   CoordinatorStartCommandSchema,
   CoordinatorPauseCommandSchema,
   CoordinatorResumeCommandSchema,
+  CoordinatorStepSourceLineCommandSchema,
+  CoordinatorBreakpointsCommandSchema,
   CoordinatorCancelCommandSchema,
   CoordinatorSnapshotCommandSchema,
   CoordinatorDisposeCommandSchema,
@@ -216,12 +247,23 @@ const BinarySliceSchema = z.strictObject({
 });
 
 const CollisionRecordSchema = z.strictObject({
-  code: DotCodeSchema,
+  code: CoreDiagnosticCodeSchema,
   objectAId: UuidSchema,
   objectBId: UuidSchema,
   positionMm: Vec3MmSchema,
   penetrationEstimateMm: PositiveNumberSchema,
   sourceLine: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+});
+
+export const CoordinatorRuntimeDiagnosticSchema = z.strictObject({
+  id: z.string().regex(/^runtime-[a-f0-9]{64}$/),
+  code: CoreDiagnosticCodeSchema,
+  origin: z.enum(["axis-limit", "collision", "machining-warning"]),
+  severity: z.enum(["warning", "error"]),
+  message: z.string().min(1).max(4_096),
+  sourceLine: SourceLineSchema,
+  objectId: UuidSchema,
+  positionMm: Vec3MmSchema,
 });
 
 const CoreSummarySchema = z.strictObject({
@@ -245,12 +287,19 @@ const CoreSummarySchema = z.strictObject({
   finalSemanticHashSha256: Sha256Schema.nullable(),
   stockHashSha256: Sha256Schema,
   currentStep: SafeSequenceSchema,
+  // Optional fields preserve immutable pre-M11 persisted checkpoint hashes.
+  currentSourceLine: SourceLineSchema.nullable().optional(),
+  nextSourceLine: SourceLineSchema.nullable().optional(),
+  programPause: z.boolean().optional(),
+  paused: z.boolean().optional(),
+  pauseReason: z.enum(["user", "breakpoint", "step", "program-control"]).nullable().optional(),
+  runtimeDiagnostics: z.array(CoordinatorRuntimeDiagnosticSchema).max(10_000).optional(),
   totalSteps: SafeSequenceSchema,
   logicalTimeS: NonNegativeNumberSchema,
   toolPositionMm: Vec3MmSchema,
   stockRevision: SafeSequenceSchema,
   removedVolumeMm3: NonNegativeNumberSchema,
-  diagnosticCodes: z.array(DotCodeSchema),
+  diagnosticCodes: z.array(CoreDiagnosticCodeSchema),
   collision: CollisionRecordSchema.nullable(),
   completed: z.boolean(),
   stopped: z.boolean(),
@@ -327,7 +376,7 @@ export const CoordinatorErrorEventSchema = z.strictObject({
   runId: UuidSchema.nullable(),
   sequence: SafeSequenceSchema,
   payload: z.strictObject({
-    code: DotCodeSchema,
+    code: CoreDiagnosticCodeSchema,
     message: z.string().min(1).max(1_024),
     recoverable: z.boolean(),
   }),
@@ -344,6 +393,7 @@ export type CoordinatorRunRequest = z.infer<typeof CoordinatorRunRequestSchema>;
 export type CoordinatorCommand = z.infer<typeof CoordinatorCommandSchema>;
 export type CoordinatorEvent = z.infer<typeof CoordinatorEventSchema>;
 export type CoordinatorCoreSummary = z.infer<typeof CoreSummarySchema>;
+export type CoordinatorRuntimeDiagnostic = z.infer<typeof CoordinatorRuntimeDiagnosticSchema>;
 export type CoordinatorBinarySlice = z.infer<typeof BinarySliceSchema>;
 
 export interface CoordinatorTransportPacket<TMessage = CoordinatorEvent> {

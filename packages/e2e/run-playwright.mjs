@@ -14,6 +14,9 @@ const suiteFiles = {
     "tests/workspace-configuration.spec.ts",
     "tests/workspace-ui.spec.ts",
     "tests/tutorial-face.spec.ts",
+    "tests/gcode-lab.spec.ts",
+    "tests/diagnostic-link.spec.ts",
+    "tests/result-comparison.spec.ts",
     "tests/sandbox-operation.spec.ts",
   ],
   pages: ["tests/pages-deployment.spec.ts"],
@@ -21,6 +24,8 @@ const suiteFiles = {
   visual: [
     "tests/machine-scene.visual.spec.ts",
     "tests/tutorial-states.visual.spec.ts",
+    "tests/gcode-error.visual.spec.ts",
+    "tests/heatmap.visual.spec.ts",
   ],
 };
 const selectedSuiteFiles = suiteFiles[suiteName];

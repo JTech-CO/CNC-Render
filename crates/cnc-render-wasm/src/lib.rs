@@ -7,12 +7,13 @@ use cnc_render_contracts::{
     SCHEMA_VERSION,
     domain::{
         CollisionGroup, DirectionUnit, KinematicAxis, MachineDefinition, MachineType,
-        SpindleDefinition, Vec3Mm, WorkEnvelope,
+        SourceLineMapEntry, SpindleDefinition, Vec3Mm, WorkEnvelope,
     },
     semantic_hash,
 };
 use cnc_render_gcode_core::{
-    CanonicalMotion, InitialState, ParseOptions, RotaryPositionRad, compile,
+    CanonicalMotion, DIALECT, Diagnostic, InitialState, ParseOptions, ProgramControl,
+    ProgramControlEvent, RotaryPositionRad, SupportMatrix, compile, lex, support_matrix,
 };
 use cnc_render_simulation_core::{
     SimulationError, ThreeAxisKinematics,
@@ -27,6 +28,7 @@ use cnc_render_simulation_core::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 
 const CORE_VERSION: &str = env!("CARGO_PKG_VERSION");
 const MAX_INPUT_BYTES: usize = 16 * 1024 * 1024;
@@ -51,6 +53,60 @@ struct CoordinatorRunRequest {
     source: String,
     initial_position_mm: Vec3Mm,
     process: ProcessConfiguration,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct GcodeAnalysisRequest {
+    schema_version: u32,
+    dialect: String,
+    source: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct GcodeAnalysisPosition {
+    line: u64,
+    column: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct GcodeAnalysisRange {
+    start: GcodeAnalysisPosition,
+    end: GcodeAnalysisPosition,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct GcodeAnalysisDiagnostic {
+    id: String,
+    code: String,
+    origin: &'static str,
+    severity: cnc_render_gcode_core::DiagnosticSeverity,
+    recoverable: bool,
+    message: String,
+    range: GcodeAnalysisRange,
+    token: Option<String>,
+    support_level: &'static str,
+    replacement_availability: &'static str,
+    help_key: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct GcodeAnalysisResponse {
+    schema_version: u32,
+    core_version: &'static str,
+    wasm: bool,
+    phase: &'static str,
+    dialect: &'static str,
+    accepted: bool,
+    source_hash_sha256: String,
+    diagnostics: Vec<GcodeAnalysisDiagnostic>,
+    toolpath_id: Option<String>,
+    source_line_map: Vec<SourceLineMapEntry>,
+    program_control_events: Vec<ProgramControlEvent>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -101,6 +157,51 @@ struct CollisionRecord {
     position_mm: Vec3Mm,
     penetration_estimate_mm: f64,
     source_line: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RuntimeDiagnostic {
+    id: String,
+    code: String,
+    origin: &'static str,
+    severity: &'static str,
+    message: String,
+    source_line: u64,
+    object_id: String,
+    position_mm: Vec3Mm,
+}
+
+impl RuntimeDiagnostic {
+    fn new(
+        code: &str,
+        origin: &'static str,
+        message: String,
+        source_line: u64,
+        object_id: &str,
+        position_mm: Vec3Mm,
+        parse_hash: &str,
+    ) -> CoreResult<Self> {
+        let identity = semantic_hash(&json!({
+            "coreVersion": CORE_VERSION, "parseHash": parse_hash, "code": code,
+            "sourceLine": source_line, "objectId": object_id, "positionMm": position_mm,
+        }))
+        .map_err(|error| CoreError::new("wasm.diagnostic-hash.failed", error.to_string()))?;
+        Ok(Self {
+            id: format!("runtime-{identity}"),
+            code: code.to_owned(),
+            origin,
+            severity: if origin == "machining-warning" {
+                "warning"
+            } else {
+                "error"
+            },
+            message,
+            source_line,
+            object_id: object_id.to_owned(),
+            position_mm,
+        })
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -218,6 +319,13 @@ struct CommonSession {
     logical_time_s: f64,
     tool_position_mm: Vec3Mm,
     diagnostic_codes: Vec<String>,
+    runtime_diagnostics: Vec<RuntimeDiagnostic>,
+    source_lines: Vec<u64>,
+    next_source_index: usize,
+    current_source_line: Option<u64>,
+    source_execution_active: bool,
+    program_control_events: Vec<ProgramControlEvent>,
+    program_pause: bool,
     collision: Option<CollisionRecord>,
     stopped: bool,
 }
@@ -311,6 +419,19 @@ impl CoordinatorSession {
             .iter()
             .map(|diagnostic| diagnostic.code.clone())
             .collect::<Vec<_>>();
+        // Reuse the authoritative lexer: comments/blank lines are not executable.
+        // Stop collecting at the parser's actual end event, including M2/M30 itself.
+        let end_line = parsed
+            .program_control_events
+            .iter()
+            .find(|event| matches!(event.control, ProgramControl::M2 | ProgramControl::M30))
+            .map_or(u64::MAX, |event| event.source_line);
+        let source_lines = lex(&request.source)
+            .lines
+            .into_iter()
+            .filter(|line| !line.words.is_empty() && line.source_line <= end_line)
+            .map(|line| line.source_line)
+            .collect();
 
         let (process_type, process) = match request.process {
             ProcessConfiguration::Milling {
@@ -402,6 +523,13 @@ impl CoordinatorSession {
                 logical_time_s: 0.0,
                 tool_position_mm: request.initial_position_mm,
                 diagnostic_codes,
+                runtime_diagnostics: Vec::new(),
+                source_lines,
+                next_source_index: 0,
+                current_source_line: None,
+                source_execution_active: false,
+                program_control_events: parsed.program_control_events,
+                program_pause: false,
                 collision: None,
                 stopped: false,
             },
@@ -459,19 +587,29 @@ impl CoordinatorSession {
 
     fn initialized_output(&self) -> CoreResult<CoreOutput> {
         let (render, binary) = self.full_render()?;
-        self.output("initialized", Some(render), binary, false)
+        let mut output = self.output("initialized", Some(render), binary, false)?;
+        // Source execution must visit modal/control-only programs too.
+        output.json["completed"] = json!(self.common.source_lines.is_empty());
+        Ok(output)
     }
 
     fn step(&mut self) -> CoreResult<CoreOutput> {
+        self.common.program_pause = false;
         if self.common.stopped {
             return self.output("stopped", None, BinaryBuilder::default(), true);
         }
         if self.common.next_motion_index >= self.common.motions.len() {
+            if !self.common.source_execution_active {
+                self.common.current_source_line = self.common.source_lines.last().copied();
+                self.common.next_source_index = self.common.source_lines.len();
+            }
             return self.output("completed", None, BinaryBuilder::default(), true);
         }
 
         let motion = self.common.motions[self.common.next_motion_index].clone();
         let motion_data = MotionData::from_motion(&motion);
+        self.common.current_source_line = Some(motion_data.source_line);
+        let before_volume = self.process_diagnostics().removed_volume_mm3;
         let mut binary = BinaryBuilder::default();
         let mut render = None;
         let collision;
@@ -492,11 +630,25 @@ impl CoordinatorSession {
                 let positions = axis_positions(&effective_end);
                 session.kinematics.solve(&positions)?;
                 let limit_diagnostics = session.kinematics.position_diagnostics(&positions)?;
-                self.common.diagnostic_codes.extend(
-                    limit_diagnostics
-                        .into_iter()
-                        .map(|diagnostic| diagnostic.code),
-                );
+                for diagnostic in &limit_diagnostics {
+                    self.common.runtime_diagnostics.push(RuntimeDiagnostic::new(
+                        &diagnostic.code,
+                        "axis-limit",
+                        format!(
+                            "Requested axis position {:.6} mm exceeds limit {:.6} mm.",
+                            diagnostic.actual_mm, diagnostic.limit_mm
+                        ),
+                        motion_data.source_line,
+                        &diagnostic.axis_id,
+                        effective_end.clone(),
+                        &self.common.parse_semantic_hash_sha256,
+                    )?);
+                    self.common.diagnostic_codes.push(diagnostic.code.clone());
+                }
+                if !limit_diagnostics.is_empty() {
+                    self.common.stopped = true;
+                    return self.output("stopped", None, BinaryBuilder::default(), true);
+                }
 
                 if collision.is_none() && motion_data.removes_material {
                     session.engine.apply_sweep(&MillingSweep {
@@ -551,11 +703,49 @@ impl CoordinatorSession {
         self.common.next_motion_index += 1;
         self.common.tool_position_mm = effective_end;
         if let Some(record) = collision {
+            self.common.runtime_diagnostics.push(RuntimeDiagnostic::new(
+                &record.code,
+                "collision",
+                "Tool intersects a restricted collision object.".to_owned(),
+                record.source_line,
+                &record.object_b_id,
+                record.position_mm.clone(),
+                &self.common.parse_semantic_hash_sha256,
+            )?);
             self.common.collision = Some(record);
             self.common.stopped = true;
         }
-        let terminal =
-            self.common.stopped || self.common.next_motion_index >= self.common.motions.len();
+        if !self.common.stopped
+            && motion_data.removes_material
+            && self.process_diagnostics().removed_volume_mm3 <= before_volume + NUMERIC_EPSILON
+            && self.common.runtime_diagnostics.len() < 10_000
+        {
+            let diagnostic = RuntimeDiagnostic::new(
+                "machining.feed.no-removal", "machining-warning",
+                "This feed motion removed no stock at the selected E2 resolution; it may be an air cut or below-resolution cut.".to_owned(),
+                motion_data.source_line, TOOL_OBJECT_ID, motion_data.end_mm.clone(),
+                &self.common.parse_semantic_hash_sha256)?;
+            if !self
+                .common
+                .runtime_diagnostics
+                .iter()
+                .any(|existing| existing.id == diagnostic.id)
+            {
+                self.common.runtime_diagnostics.push(diagnostic);
+            }
+        }
+        if self.common.source_execution_active
+            && self
+                .common
+                .motions
+                .get(self.common.next_motion_index)
+                .is_none_or(|next| {
+                    MotionData::from_motion(next).source_line != motion_data.source_line
+                })
+        {
+            self.finish_source_line(motion_data.source_line);
+        }
+        let terminal = self.is_terminal();
         let phase = if self.common.stopped {
             "stopped"
         } else if terminal {
@@ -572,7 +762,78 @@ impl CoordinatorSession {
     }
 
     fn is_completed(&self) -> bool {
-        !self.common.stopped && self.common.next_motion_index >= self.common.motions.len()
+        !self.common.stopped
+            && self.common.next_motion_index >= self.common.motions.len()
+            && (self.common.source_lines.is_empty() || self.common.current_source_line.is_some())
+            && (!self.common.source_execution_active
+                || self.common.next_source_index >= self.common.source_lines.len())
+    }
+
+    fn finish_source_line(&mut self, source_line: u64) {
+        while self
+            .common
+            .source_lines
+            .get(self.common.next_source_index)
+            .is_some_and(|line| *line <= source_line)
+        {
+            self.common.next_source_index += 1;
+        }
+        self.common.program_pause = self.common.program_control_events.iter().any(|event| {
+            event.source_line == source_line
+                && matches!(event.control, ProgramControl::M0 | ProgramControl::M1)
+        });
+    }
+
+    fn source_tick(&mut self) -> CoreResult<CoreOutput> {
+        self.common.source_execution_active = true;
+        self.common.program_pause = false;
+        if self.is_terminal() {
+            return self.snapshot();
+        }
+        let source_line = self.common.source_lines[self.common.next_source_index];
+        self.common.current_source_line = Some(source_line);
+        if self
+            .common
+            .motions
+            .get(self.common.next_motion_index)
+            .is_some_and(|motion| MotionData::from_motion(motion).source_line == source_line)
+        {
+            return self.step();
+        }
+        // Modal and program-control blocks have zero motion and zero logical duration.
+        self.finish_source_line(source_line);
+        self.output(
+            if self.is_completed() {
+                "completed"
+            } else {
+                "progress"
+            },
+            None,
+            BinaryBuilder::default(),
+            self.is_terminal(),
+        )
+    }
+
+    fn step_source_line(&mut self) -> CoreResult<CoreOutput> {
+        self.common.source_execution_active = true;
+        let line = self
+            .common
+            .source_lines
+            .get(self.common.next_source_index)
+            .copied();
+        while line.is_some()
+            && !self.is_terminal()
+            && self
+                .common
+                .source_lines
+                .get(self.common.next_source_index)
+                .copied()
+                == line
+        {
+            self.source_tick()?;
+        }
+        // Multiple cycle motions may yield several dirty patches; return a complete Stock.
+        self.snapshot()
     }
 
     fn is_terminal(&self) -> bool {
@@ -604,6 +865,10 @@ impl CoordinatorSession {
             "finalSemanticHashSha256": final_hash,
             "stockHashSha256": stock_hash,
             "currentStep": self.common.next_motion_index,
+            "currentSourceLine": self.common.current_source_line,
+            "nextSourceLine": if self.common.stopped { None } else { self.common.source_lines.get(self.common.next_source_index) },
+            "programPause": self.common.program_pause,
+            "runtimeDiagnostics": self.common.runtime_diagnostics,
             "totalSteps": self.common.motions.len(),
             "logicalTimeS": normalized_zero(self.common.logical_time_s),
             "toolPositionMm": self.common.tool_position_mm,
@@ -1071,6 +1336,212 @@ fn validate_vec3(value: &Vec3Mm, path: &str) -> CoreResult<()> {
     Ok(())
 }
 
+fn analyze_gcode(request: GcodeAnalysisRequest) -> CoreResult<CoreOutput> {
+    if request.schema_version != SCHEMA_VERSION {
+        return Err(CoreError::new(
+            "wasm.schema-version.unsupported",
+            format!("Expected schemaVersion {SCHEMA_VERSION}."),
+        ));
+    }
+    if request.dialect != DIALECT {
+        return Err(CoreError::new(
+            "wasm.dialect.unsupported",
+            format!("Expected dialect {DIALECT}."),
+        ));
+    }
+    if request.source.len() > MAX_INPUT_BYTES {
+        return Err(CoreError::new(
+            "wasm.gcode.resource-limit",
+            "G-code source exceeded the WASM input limit.",
+        ));
+    }
+
+    let source_hash_sha256 = sha256_hex(request.source.as_bytes());
+    let parsed = compile(
+        &request.source,
+        &ParseOptions {
+            dialect: request.dialect,
+            ..ParseOptions::default()
+        },
+    );
+    let matrix = support_matrix();
+    let source_lines = request.source.split('\n').collect::<Vec<_>>();
+    let diagnostics = parsed
+        .diagnostics
+        .iter()
+        .enumerate()
+        .map(|(index, diagnostic)| {
+            analysis_diagnostic(
+                diagnostic,
+                index,
+                &source_lines,
+                &source_hash_sha256,
+                &matrix,
+            )
+        })
+        .collect::<CoreResult<Vec<_>>>()?;
+    let (toolpath_id, source_line_map) = parsed
+        .toolpath
+        .as_ref()
+        .map(|toolpath| (Some(toolpath.id.clone()), toolpath.source_line_map.clone()))
+        .unwrap_or_default();
+    let response = GcodeAnalysisResponse {
+        schema_version: SCHEMA_VERSION,
+        core_version: CORE_VERSION,
+        wasm: true,
+        phase: "analysis",
+        dialect: DIALECT,
+        accepted: parsed.accepted,
+        source_hash_sha256,
+        diagnostics,
+        toolpath_id,
+        source_line_map,
+        program_control_events: parsed.program_control_events,
+    };
+
+    Ok(CoreOutput {
+        json: serde_json::to_value(response)?,
+        binary: Vec::new(),
+    })
+}
+
+fn analysis_diagnostic(
+    diagnostic: &Diagnostic,
+    index: usize,
+    source_lines: &[&str],
+    source_hash_sha256: &str,
+    matrix: &SupportMatrix,
+) -> CoreResult<GcodeAnalysisDiagnostic> {
+    let line = diagnostic.line.max(1);
+    let column = diagnostic.column.max(1);
+    let token = source_token_at(source_lines, line, column);
+    let token_length = token
+        .as_ref()
+        .map_or(1, |value| {
+            u64::try_from(value.chars().count()).unwrap_or(u64::MAX)
+        })
+        .max(1);
+    let range = GcodeAnalysisRange {
+        start: GcodeAnalysisPosition { line, column },
+        end: GcodeAnalysisPosition {
+            line,
+            column: column.saturating_add(token_length),
+        },
+    };
+    let diagnostic_hash = semantic_hash(&json!({
+        "coreVersion": CORE_VERSION,
+        "origin": "parser",
+        "sourceHashSha256": source_hash_sha256,
+        "index": index,
+        "code": diagnostic.code,
+        "severity": diagnostic.severity,
+        "recoverable": diagnostic.recoverable,
+        "range": range,
+        "token": token,
+    }))
+    .map_err(|error| CoreError::new("wasm.diagnostic-hash.failed", error.to_string()))?;
+
+    Ok(GcodeAnalysisDiagnostic {
+        id: format!("gcode-{diagnostic_hash}"),
+        code: diagnostic.code.clone(),
+        origin: "parser",
+        severity: diagnostic.severity,
+        recoverable: diagnostic.recoverable,
+        message: diagnostic.message.clone(),
+        range,
+        support_level: support_level(token.as_deref(), matrix),
+        token,
+        replacement_availability: "unavailable",
+        help_key: format!("gcode.help.{}", diagnostic.code),
+    })
+}
+
+fn source_token_at(source_lines: &[&str], line: u64, column: u64) -> Option<String> {
+    let line_index = usize::try_from(line.checked_sub(1)?).ok()?;
+    let column_index = usize::try_from(column.checked_sub(1)?).ok()?;
+    let raw_line = *source_lines.get(line_index)?;
+    let source_line = raw_line.strip_suffix('\r').unwrap_or(raw_line);
+    let characters = source_line.chars().collect::<Vec<_>>();
+    let first = *characters.get(column_index)?;
+    if first.is_whitespace() {
+        return None;
+    }
+    if !first.is_ascii_alphabetic() {
+        return Some(first.to_string());
+    }
+
+    let mut end = column_index + 1;
+    if matches!(characters.get(end), Some('+' | '-')) {
+        end += 1;
+    }
+    let mut seen_dot = false;
+    while let Some(character) = characters.get(end) {
+        if character.is_ascii_digit() {
+            end += 1;
+        } else if *character == '.' && !seen_dot {
+            seen_dot = true;
+            end += 1;
+        } else {
+            break;
+        }
+    }
+    Some(characters[column_index..end].iter().collect())
+}
+
+fn support_level(token: Option<&str>, matrix: &SupportMatrix) -> &'static str {
+    let Some(token) = token else {
+        return "unsupported";
+    };
+    let mut characters = token.chars();
+    let Some(letter) = characters.next().map(|value| value.to_ascii_uppercase()) else {
+        return "unsupported";
+    };
+    let status = if matches!(letter, 'G' | 'M') {
+        normalized_code_token(letter, characters.as_str()).and_then(|normalized| {
+            let entries = if letter == 'G' {
+                &matrix.g_codes
+            } else {
+                &matrix.m_codes
+            };
+            entries
+                .iter()
+                .find(|entry| entry.code == normalized)
+                .map(|entry| entry.status.as_str())
+        })
+    } else {
+        matrix
+            .words
+            .iter()
+            .find(|entry| entry.word == letter.to_string())
+            .map(|entry| entry.status.as_str())
+    };
+
+    match status {
+        Some("supported") => "supported",
+        Some("recognized-unsupported") => "recognized-unsupported",
+        _ => "unsupported",
+    }
+}
+
+fn normalized_code_token(letter: char, numeric: &str) -> Option<String> {
+    let value = numeric.parse::<f64>().ok()?;
+    if !value.is_finite()
+        || value.fract() != 0.0
+        || value < i32::MIN as f64
+        || value > i32::MAX as f64
+    {
+        return None;
+    }
+    Some(format!("{letter}{}", value as i32))
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    Sha256::digest(bytes)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
 fn validate_uuid_like(value: &str, path: &str) -> CoreResult<()> {
     if value.len() != 36
         || value.as_bytes().get(8) != Some(&b'-')
@@ -1106,6 +1577,17 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 }
 
 fn read_request() -> CoreResult<CoordinatorRunRequest> {
+    let input = lock(&INPUT);
+    if input.is_empty() || input.len() > MAX_INPUT_BYTES {
+        return Err(CoreError::new(
+            "wasm.input.resource-limit",
+            "WASM input must contain between 1 byte and 16 MiB.",
+        ));
+    }
+    serde_json::from_slice(&input).map_err(Into::into)
+}
+
+fn read_analysis_request() -> CoreResult<GcodeAnalysisRequest> {
     let input = lock(&INPUT);
     if input.is_empty() || input.len() > MAX_INPUT_BYTES {
         return Err(CoreError::new(
@@ -1170,6 +1652,11 @@ pub extern "C" fn cnc_render_initialize() -> u32 {
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn cnc_render_analyze_gcode() -> u32 {
+    write_result(read_analysis_request().and_then(analyze_gcode))
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn cnc_render_step() -> u32 {
     let result = lock(&SESSION)
         .as_mut()
@@ -1190,6 +1677,30 @@ pub extern "C" fn cnc_render_snapshot() -> u32 {
         })
         .and_then(CoordinatorSession::snapshot);
     write_result(result)
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn cnc_render_source_tick() -> u32 {
+    write_result(
+        lock(&SESSION)
+            .as_mut()
+            .ok_or_else(|| {
+                CoreError::new("wasm.session.missing", "Initialize a run before stepping.")
+            })
+            .and_then(CoordinatorSession::source_tick),
+    )
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn cnc_render_step_source_line() -> u32 {
+    write_result(
+        lock(&SESSION)
+            .as_mut()
+            .ok_or_else(|| {
+                CoreError::new("wasm.session.missing", "Initialize a run before stepping.")
+            })
+            .and_then(CoordinatorSession::step_source_line),
+    )
 }
 
 #[unsafe(no_mangle)]
@@ -1234,6 +1745,123 @@ pub extern "C" fn cnc_render_output_binary_len() -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn analysis_request(source: &str) -> GcodeAnalysisRequest {
+        GcodeAnalysisRequest {
+            schema_version: SCHEMA_VERSION,
+            dialect: DIALECT.to_owned(),
+            source: source.to_owned(),
+        }
+    }
+
+    #[test]
+    fn source_steps_visit_modal_controls_and_skip_comments_at_zero_time() {
+        let mut request = milling_request(false);
+        request.source = "(comment)\nG21 G90\n\nG0 X0 Y0 Z8\nM0\nG1 X10 F600\nM1\nM30\n".to_owned();
+        let mut session = CoordinatorSession::new(request).expect("session");
+        assert_eq!(
+            session.initialized_output().unwrap().json["nextSourceLine"],
+            2
+        );
+        let modal = session.step_source_line().unwrap();
+        assert_eq!(modal.json["currentSourceLine"], 2);
+        assert_eq!(modal.json["currentStep"], 0);
+        assert_eq!(modal.json["logicalTimeS"], 0.0);
+        assert_eq!(modal.json["nextSourceLine"], 4);
+        session.step_source_line().unwrap();
+        let stop = session.step_source_line().unwrap();
+        assert_eq!(stop.json["currentSourceLine"], 5);
+        assert_eq!(stop.json["programPause"], true);
+        assert_eq!(stop.json["completed"], false);
+        session.step_source_line().unwrap();
+        let optional_stop = session.step_source_line().unwrap();
+        assert_eq!(optional_stop.json["programPause"], true);
+        let end = session.step_source_line().unwrap();
+        assert_eq!(end.json["currentSourceLine"], 8);
+        assert_eq!(end.json["nextSourceLine"], Value::Null);
+        assert_eq!(end.json["completed"], true);
+    }
+
+    #[test]
+    fn modal_only_program_does_not_complete_before_controls_are_visited() {
+        let mut request = milling_request(false);
+        request.source = "G21 G90\nM0\nM30\n".to_owned();
+        let mut session = CoordinatorSession::new(request).unwrap();
+        assert_eq!(session.snapshot().unwrap().json["completed"], false);
+        session.step_source_line().unwrap();
+        let stopped = session.step_source_line().unwrap();
+        assert_eq!(stopped.json["programPause"], true);
+        assert_eq!(stopped.json["completed"], false);
+        assert_eq!(session.step_source_line().unwrap().json["completed"], true);
+    }
+
+    #[test]
+    fn source_step_groups_every_expanded_cycle_motion_and_preserves_final_hash() {
+        let mut request = milling_request(false);
+        request.source = "G21 G90\nG0 X0 Y0 Z8\nG83 Z2 R6 Q1 F600\nG80\nM30\n".to_owned();
+        let canonical_hash = final_hash(CoordinatorSession::new(request.clone()).unwrap());
+        let mut session = CoordinatorSession::new(request).unwrap();
+        session.step_source_line().unwrap();
+        session.step_source_line().unwrap();
+        let before = session.common.next_motion_index;
+        let cycle = session.step_source_line().unwrap();
+        assert_eq!(cycle.json["currentSourceLine"], 3);
+        assert_eq!(cycle.json["nextSourceLine"], 4);
+        assert!(session.common.next_motion_index > before + 1);
+        assert_eq!(cycle.json["render"]["renderType"], "milling-full");
+        while !session.is_terminal() {
+            session.step_source_line().unwrap();
+        }
+        assert_eq!(
+            session.snapshot().unwrap().json["finalSemanticHashSha256"],
+            canonical_hash
+        );
+    }
+
+    #[test]
+    fn runtime_diagnostics_preserve_actual_source_objects_and_requested_position() {
+        let mut request = milling_request(false);
+        request.source = "G21 G90\nG1 X501 F600\nM30\n".to_owned();
+        let mut session = CoordinatorSession::new(request).unwrap();
+        session.step_source_line().unwrap();
+        let stopped = session.step_source_line().unwrap();
+        let diagnostic = &stopped.json["runtimeDiagnostics"][0];
+        assert_eq!(diagnostic["origin"], "axis-limit");
+        assert_eq!(diagnostic["sourceLine"], 2);
+        assert_eq!(diagnostic["objectId"], X_AXIS_ID);
+        assert_eq!(diagnostic["positionMm"]["xMm"], 501.0);
+        assert_eq!(stopped.json["toolPositionMm"]["xMm"], 0.0);
+        assert_eq!(stopped.json["removedVolumeMm3"], 0.0);
+        assert_eq!(stopped.json["stopped"], true);
+
+        let mut collision = CoordinatorSession::new(milling_request(true)).unwrap();
+        while !collision.is_terminal() {
+            collision.source_tick().unwrap();
+        }
+        let last = collision.common.runtime_diagnostics.last().unwrap();
+        assert_eq!(last.origin, "collision");
+        let record = collision.common.collision.as_ref().unwrap();
+        assert_eq!(last.source_line, record.source_line);
+        assert_eq!(last.position_mm, record.position_mm);
+        assert_eq!(last.object_id, record.object_b_id);
+    }
+
+    #[test]
+    fn no_removal_warning_comes_from_engine_volume_not_ui_guessing() {
+        let mut request = milling_request(false);
+        request.source = "G21 G90\nG1 X10 Z8 F600\nM30\n".to_owned();
+        let mut first = CoordinatorSession::new(request.clone()).unwrap();
+        let mut second = CoordinatorSession::new(request).unwrap();
+        first.step().unwrap();
+        second.step().unwrap();
+        let first_warning = &first.common.runtime_diagnostics[0];
+        assert_eq!(first_warning.origin, "machining-warning");
+        assert_eq!(first_warning.source_line, 2);
+        assert_eq!(first_warning.object_id, TOOL_OBJECT_ID);
+        assert_eq!(first_warning.position_mm.x_mm, 10.0);
+        assert_eq!(first_warning.id, second.common.runtime_diagnostics[0].id);
+        assert_eq!(first.process_diagnostics().removed_volume_mm3, 0.0);
+    }
 
     fn milling_request(collision: bool) -> CoordinatorRunRequest {
         let collision_boxes = if collision {
@@ -1351,5 +1979,113 @@ mod tests {
             stepped.json["stateSemanticHashSha256"]
         );
         assert_eq!(snapshot.json["currentStep"], stepped.json["currentStep"]);
+    }
+
+    #[test]
+    fn analysis_returns_deterministic_source_maps_and_program_controls() {
+        let source = "G21 G90\nG0 X1 Y2 Z3\nM0\nM30\n";
+        let first = analyze_gcode(analysis_request(source)).expect("first analysis");
+        let second = analyze_gcode(analysis_request(source)).expect("second analysis");
+
+        assert!(first.binary.is_empty());
+        assert_eq!(first.json, second.json);
+        assert_eq!(first.json["schemaVersion"], SCHEMA_VERSION);
+        assert_eq!(first.json["coreVersion"], CORE_VERSION);
+        assert_eq!(first.json["wasm"], true);
+        assert_eq!(first.json["phase"], "analysis");
+        assert_eq!(first.json["dialect"], DIALECT);
+        assert_eq!(first.json["accepted"], true);
+        assert_eq!(
+            first.json["sourceHashSha256"],
+            "1a785b32aecb920f9c7920b4dbf302c8132efbb51c26ad3deca919c03567898a"
+        );
+        assert!(
+            first.json["sourceHashSha256"]
+                .as_str()
+                .expect("source hash")
+                .chars()
+                .all(|character| character.is_ascii_hexdigit() && !character.is_ascii_uppercase())
+        );
+        assert!(first.json["toolpathId"].is_string());
+        assert!(
+            first.json["sourceLineMap"]
+                .as_array()
+                .is_some_and(|mappings| !mappings.is_empty())
+        );
+        assert_eq!(first.json["programControlEvents"][0]["sourceLine"], 3);
+        assert_eq!(first.json["programControlEvents"][0]["control"], "m0");
+        assert_eq!(first.json["programControlEvents"][1]["sourceLine"], 4);
+        assert_eq!(first.json["programControlEvents"][1]["control"], "m30");
+    }
+
+    #[test]
+    fn analysis_diagnostics_use_source_tokens_and_support_matrix_levels() {
+        let output = analyze_gcode(analysis_request("G84\nU1\n")).expect("analysis");
+        assert_eq!(output.json["accepted"], false);
+        assert!(output.json["toolpathId"].is_null());
+        assert_eq!(output.json["sourceLineMap"], json!([]));
+
+        let diagnostics = output.json["diagnostics"].as_array().expect("diagnostics");
+        let recognized = diagnostics
+            .iter()
+            .find(|diagnostic| diagnostic["token"] == "G84")
+            .expect("recognized unsupported diagnostic");
+        assert_eq!(recognized["origin"], "parser");
+        assert_eq!(recognized["supportLevel"], "recognized-unsupported");
+        assert_eq!(recognized["replacementAvailability"], "unavailable");
+        assert_eq!(
+            recognized["range"]["start"],
+            json!({ "line": 1, "column": 1 })
+        );
+        assert_eq!(
+            recognized["range"]["end"],
+            json!({ "line": 1, "column": 4 })
+        );
+        assert!(
+            recognized["id"]
+                .as_str()
+                .is_some_and(|id| id.starts_with("gcode-") && id.len() == 70)
+        );
+        assert_eq!(
+            recognized["helpKey"],
+            format!("gcode.help.{}", recognized["code"].as_str().unwrap())
+        );
+
+        let unsupported = diagnostics
+            .iter()
+            .find(|diagnostic| diagnostic["token"] == "U1")
+            .expect("unsupported diagnostic");
+        assert_eq!(unsupported["supportLevel"], "unsupported");
+        assert_eq!(
+            unsupported["range"]["start"],
+            json!({ "line": 2, "column": 1 })
+        );
+        assert_eq!(
+            unsupported["range"]["end"],
+            json!({ "line": 2, "column": 3 })
+        );
+    }
+
+    #[test]
+    fn analysis_abi_does_not_change_the_active_session() {
+        *lock(&SESSION) =
+            Some(CoordinatorSession::new(milling_request(false)).expect("active session"));
+        *lock(&INPUT) = serde_json::to_vec(&json!({
+            "schemaVersion": SCHEMA_VERSION,
+            "dialect": DIALECT,
+            "source": "G21\nM30\n",
+        }))
+        .expect("request JSON");
+
+        assert_eq!(cnc_render_analyze_gcode(), 0);
+        let output: Value =
+            serde_json::from_slice(&lock(&OUTPUT_JSON)).expect("analysis output JSON");
+        assert_eq!(output["phase"], "analysis");
+        let session = lock(&SESSION);
+        let active = session.as_ref().expect("active session");
+        assert_eq!(active.common.next_motion_index, 0);
+        assert_eq!(active.common.run_id, "70000000-0000-4000-8000-000000000100");
+        drop(session);
+        *lock(&SESSION) = None;
     }
 }

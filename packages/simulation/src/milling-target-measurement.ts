@@ -209,7 +209,7 @@ function cellExtent(
   };
 }
 
-function representedTargetTopZMm(
+export function representedTargetTopZMm(
   surface: MillingStockSurfaceDescriptor,
   target: MillingFlatEndSweepTarget,
   xMm: number,

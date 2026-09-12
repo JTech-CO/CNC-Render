@@ -56,6 +56,8 @@ kbd {
 
 .application-shell {
   display: grid;
+  height: 100dvh;
+  overflow: hidden;
   min-height: 100dvh;
   grid-template-rows: 56px minmax(0, 1fr);
 }
@@ -168,7 +170,7 @@ kbd {
   letter-spacing: 0.08em;
 }
 
-.command-actions button {
+.command-actions button:not(.ui-button) {
   height: 30px;
   padding: 0 12px;
   border: 1px solid var(--border-strong);
@@ -178,7 +180,7 @@ kbd {
   font-weight: 650;
 }
 
-.command-actions button:hover {
+.command-actions button:not(.ui-button):hover {
   border-color: #9da9b6;
   background: var(--surface-secondary);
 }
@@ -544,6 +546,26 @@ kbd {
   color: var(--text-secondary);
   font-size: 9px;
   font-weight: 700;
+}
+
+.m11-result-surface {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  overflow: auto;
+  padding: 16px;
+  background: #ffffff;
+  color: #17202a;
+}
+
+.m11-result-surface canvas {
+  position: static;
+  display: block;
+}
+
+.m11-code-context > .secondary-control {
+  margin: 12px;
+  width: calc(100% - 24px);
 }
 
 .viewport-stage {
@@ -1185,6 +1207,8 @@ kbd {
 
   .application-shell {
     min-height: 100dvh;
+    height: auto;
+    overflow: visible;
     grid-template-rows: 52px minmax(0, 1fr);
   }
 
@@ -2139,6 +2163,15 @@ dd,
   .workspace-grid[data-active-area="sandbox"] .viewport-shell,
   .workspace-grid[data-active-area="results"] .viewport-shell {
     display: none;
+  }
+
+  .workspace-grid[data-active-area="results"] .context-panel {
+    display: none;
+  }
+
+  .workspace-grid[data-active-area="results"] .viewport-shell {
+    display: grid;
+    min-height: 680px;
   }
 
   .diagnostics-preview {

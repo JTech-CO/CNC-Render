@@ -750,11 +750,11 @@ export function createMachineScene(): MachineScene {
     },
     setMillingToolpath(pointsMm) {
       if (
-        pointsMm.length < 2 ||
+        pointsMm.length === 1 ||
         pointsMm.some((point) => point.some((value) => !Number.isFinite(value)))
       ) {
         throw new RangeError(
-          "Milling toolpath requires at least two finite millimetre points.",
+          "Milling toolpath requires at least two finite millimetre points, or an empty array to clear it.",
         );
       }
       const points = pointsMm.map((point) => {

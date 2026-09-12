@@ -1,0 +1,215 @@
+@media (min-width: 1181px) {
+  .workspace-grid[data-active-area="code"] {
+    grid-template-columns: 56px minmax(420px, 38vw) minmax(0, 1fr) 260px;
+  }
+}
+
+.gcode-lab {
+  display: grid;
+  gap: var(--space-3);
+  align-content: start;
+  min-width: 0;
+  padding: var(--space-4);
+}
+
+.gcode-lab-intro p:not(.context-kicker),
+.gcode-lab-loading,
+.gcode-diagnostics p {
+  margin: 0;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.gcode-lab-intro h3 {
+  margin: 0 0 var(--space-2);
+  font-size: var(--font-size-body);
+}
+
+.gcode-lab-loading {
+  padding: var(--space-4);
+}
+
+.gcode-editor {
+  min-width: 0;
+  height: 240px;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  background: var(--surface-secondary);
+}
+
+.gcode-editor[data-analysis-state="failed"] {
+  border-color: var(--danger-fg);
+}
+
+.gcode-diagnostics {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.gcode-diagnostics-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.gcode-diagnostics-heading span {
+  color: var(--text-muted);
+}
+
+.gcode-diagnostics ul {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.gcode-diagnostics li > button {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border: 1px solid var(--danger-fg);
+  border-radius: var(--radius-control);
+  background: var(--surface-primary);
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+}
+
+.gcode-diagnostics li[aria-current="true"] > button,
+.gcode-diagnostics li > button:focus-visible {
+  outline: 2px solid var(--primary-600);
+  outline-offset: 1px;
+}
+
+.gcode-diagnostics li > button > span:last-child {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.gcode-diagnostics code {
+  overflow-wrap: anywhere;
+  color: var(--danger-fg);
+  font-size: var(--font-size-code);
+}
+
+.gcode-diagnostic-icon {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--danger-fg);
+  color: var(--danger-fg);
+  font-weight: var(--font-weight-bold);
+}
+
+.gcode-error-glyph::after {
+  display: grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  border: 1px solid var(--danger-fg);
+  color: var(--danger-fg);
+  content: "!";
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.gcode-error-line-label {
+  border-left: 3px solid var(--danger-fg);
+}
+
+.gcode-diagnostic-range {
+  border-bottom: 2px solid var(--danger-fg);
+  background: var(--danger-bg);
+}
+
+.gcode-lab-controls,
+.gcode-diagnostic-pages,
+.gcode-line-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.gcode-lab-controls button,
+.gcode-diagnostic-pages button,
+.gcode-diagnostic-help button {
+  min-height: 32px;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  background: var(--surface-primary);
+  color: var(--text-primary);
+  font: inherit;
+  cursor: pointer;
+}
+
+.gcode-lab button:disabled {
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+
+.gcode-lab button:focus-visible {
+  outline: 2px solid var(--primary-600);
+  outline-offset: 2px;
+}
+
+.gcode-line-legend {
+  color: var(--text-secondary);
+  font-size: var(--font-size-code);
+}
+
+.gcode-diagnostic-help {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  overflow-wrap: anywhere;
+}
+
+.gcode-current-glyph::after,
+.gcode-breakpoint-glyph::after {
+  display: grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.gcode-current-glyph::after {
+  color: var(--primary-600);
+  content: "▶";
+}
+
+.gcode-breakpoint-glyph::after {
+  color: #805000;
+  content: "◆";
+}
+
+.gcode-current-range {
+  background: #e8effd;
+}
+
+.gcode-current-line-label {
+  border-right: 3px solid var(--primary-600);
+}
+
+.gcode-breakpoint-line-label {
+  border-left: 3px dashed #805000;
+}
+
+@media (max-width: 700px) {
+  .gcode-lab {
+    padding: var(--space-3);
+  }
+
+  .gcode-editor {
+    height: 210px;
+  }
+}

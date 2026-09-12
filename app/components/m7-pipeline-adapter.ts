@@ -32,6 +32,9 @@ export interface M7PipelineBrowserState extends CoordinatorSnapshot {
 }
 
 export interface M7PipelineRunOptions {
+  readonly source?: string;
+  readonly startPaused?: boolean;
+  readonly breakpoints?: number[];
   readonly playbackSpeed?: number;
   readonly executionMode?: CoordinatorExecutionMode;
   readonly millingOperation?: M7MillingOperationParametersInput;
@@ -39,6 +42,8 @@ export interface M7PipelineRunOptions {
 }
 
 export interface M7PipelineUiObserver {
+  readonly onCheckpointRestored?: () => void;
+  readonly onStatusChange?: (status: CoordinatorSnapshot["status"]) => void;
   readonly onGeneralSummary?: (
     summary: CoordinatorCoreSummary,
     playbackElapsedS: number,
@@ -52,6 +57,10 @@ interface PlaybackPerformanceWindow {
 }
 
 export interface M7PipelineHarness {
+  isRestoredCheckpointVisible(): boolean;
+  getPipelineSource(): string | null;
+  stepPipelineSourceLine(): Promise<CoordinatorCoreSummary>;
+  setPipelineBreakpoints(lines: number[]): Promise<CoordinatorCoreSummary>;
   startPipelineFixture(
     fixture: M7PipelineFixture,
     options?: M7PipelineRunOptions,
@@ -155,7 +164,10 @@ export function attachM7Pipeline(
   observer: M7PipelineUiObserver = {},
 ): { readonly harness: M7PipelineHarness; dispose(): void } {
   const coordinator = new SimulationCoordinator();
+  const unsubscribeStatus = coordinator.onStatusChange((status) => observer.onStatusChange?.(status));
   let fixture: M7PipelineFixture | null = null;
+  let activeSource: string | null = null;
+  let restoredCheckpointVisible = false;
   let millingOperation = resolveM7MillingOperationParameters();
   let millingConfiguration = resolveM7MillingConfiguration();
   let baselineRenderFrame: number | null = null;
@@ -221,6 +233,7 @@ export function attachM7Pipeline(
       : null;
 
   const unsubscribeRender = coordinator.onRender((update, summary) => {
+    restoredCheckpointVisible = false;
     const before = renderer.getDiagnostics().telemetry.framesRendered;
     applyRenderUpdate(renderer, update);
     if (summary.collision) {
@@ -249,7 +262,7 @@ export function attachM7Pipeline(
       endPerformanceWindow(playbackEndedAtMs);
     }
     const elapsedS = playbackElapsedS();
-    viewport.dataset.pipelineState = summary.stopped
+    viewport.dataset.pipelineState = summary.paused ? "paused" : summary.stopped
       ? "stopped"
       : summary.completed
         ? "completed"
@@ -344,15 +357,26 @@ export function attachM7Pipeline(
     delete viewport.dataset.pipelineRenderedFrame;
     delete viewport.dataset.pipelineFinalHash;
     const runId = crypto.randomUUID();
-    const run: CoordinatorRunRequest = createM7PipelineFixture(
+    const template = createM7PipelineFixture(
       selectedFixture,
       runId,
       millingConfiguration,
       millingOperation,
     );
+    const run: CoordinatorRunRequest = {
+      ...template,
+      source: options.source ?? template.source,
+    };
+    activeSource = run.source;
+    // Custom programs must not retain the representative fixture's guide.
+    if (options.source !== undefined && run.process.processType === "milling") {
+      renderer.setMillingToolpath([]);
+    }
     const initialized = await coordinator.start(run, {
       playbackSpeed: options.playbackSpeed ?? 1,
       executionMode: options.executionMode ?? "realtime",
+      startPaused: options.startPaused,
+      breakpoints: options.breakpoints,
     });
     if (selectedFixture === "turning" || selectedFixture === "drilling") {
       renderer.focusLayer("stock");
@@ -361,6 +385,10 @@ export function attachM7Pipeline(
   }
 
   const harness: M7PipelineHarness = {
+    isRestoredCheckpointVisible: () => restoredCheckpointVisible,
+    getPipelineSource: () => activeSource,
+    stepPipelineSourceLine: () => coordinator.stepSourceLine(),
+    setPipelineBreakpoints: (lines) => coordinator.setBreakpoints(lines),
     startPipelineFixture: start,
     async runPipelineFixture(selectedFixture, options) {
       const initialized = await start(selectedFixture, options);
@@ -382,6 +410,8 @@ export function attachM7Pipeline(
     },
     capturePipelineCheckpoint: () => coordinator.checkpoint(),
     async renderPipelineCheckpoint(checkpoint) {
+      restoredCheckpointVisible = true;
+      observer.onCheckpointRestored?.();
       const before = renderer.getDiagnostics().telemetry.framesRendered;
       applyRenderUpdate(renderer, checkpoint.render);
       const frame = await waitForNextRenderedFrame(renderer, before);
@@ -415,6 +445,7 @@ export function attachM7Pipeline(
   return {
     harness,
     dispose() {
+      unsubscribeStatus();
       unsubscribeRender();
       unsubscribeGeneral();
       unsubscribeAxis();

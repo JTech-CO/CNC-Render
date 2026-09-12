@@ -6,6 +6,25 @@ import { describe, expect, it } from "vitest";
 import { SyntheticCoordinatorWorker } from "../helpers/synthetic-coordinator-worker";
 
 describe("M7 simulation coordinator lifecycle", () => {
+  it("notifies lifecycle subscribers for cancel, resume, Worker error and disposal without fabricated summaries", async () => {
+    const worker = new SyntheticCoordinatorWorker();
+    const coordinator = new SimulationCoordinator(() => worker);
+    const statuses: string[] = [];
+    const unsubscribe = coordinator.onStatusChange((status) => statuses.push(status));
+    const run = createM7PipelineFixture("milling", "70000000-0000-4000-8000-000000000315");
+    await coordinator.start(run, { playbackSpeed: 1, executionMode: "realtime" });
+    await coordinator.pause();
+    coordinator.resume(1);
+    await coordinator.cancel();
+    expect(statuses).toEqual(["running", "paused", "running", "cancelled"]);
+    await coordinator.start(run, { playbackSpeed: 1, executionMode: "realtime" });
+    worker.onerror?.({ message: "Test runtime failure" } as ErrorEvent);
+    expect(statuses.at(-1)).toBe("error");
+    coordinator.dispose();
+    expect(statuses.at(-1)).toBe("cancelled");
+    unsubscribe();
+  });
+
   it("rejects events from replaced runs, restarted Workers, and stale sequences", async () => {
     const workers: SyntheticCoordinatorWorker[] = [];
     const coordinator = new SimulationCoordinator(() => {

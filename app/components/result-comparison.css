@@ -1,0 +1,28 @@
+.result-comparison { box-sizing: border-box; width: 100%; min-width: 0; padding: 20px; color: var(--text-primary, #172b3a); background: #fff; font-size: 13px; }
+.result-comparison h2 { font-size: 20px; margin: 0 0 6px; }
+.result-comparison h3 { font-size: 16px; }
+.result-comparison p { line-height: 1.6; overflow-wrap: anywhere; }
+.result-comparison__header { display: flex; align-items: start; justify-content: space-between; gap: 16px; }
+.result-comparison__modes, .result-comparison__exports, .result-comparison__controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; margin: 12px 0; }
+.result-comparison button { min-height: 36px; padding: 8px 12px; border: 1px solid #a6b6c7; background: #fff; color: #172b3a; border-radius: 5px; cursor: pointer; }
+.result-comparison button[aria-pressed="true"] { background: #eaf0fb; border-color: #275ac8; font-weight: 700; }
+.result-comparison button:disabled { cursor: default; opacity: .6; }
+.result-comparison button:focus-visible, .result-comparison input:focus-visible, .result-comparison select:focus-visible { outline: 2px solid #275ac8; outline-offset: 2px; }
+.viewport-stage canvas.result-comparison__canvas, .result-comparison__canvas { position: static; width: 100%; height: auto; display: block; border: 1px solid #c3ced9; border-radius: 4px; cursor: crosshair; }
+.result-comparison__legend { display: flex; flex-wrap: wrap; gap: 14px; padding: 10px; border: 1px solid #c3ced9; }
+.result-comparison__legend span:first-child { color: #235fbe; }
+.result-comparison__legend span:nth-child(3) { color: #96521e; }
+.result-comparison__summary { display: grid; grid-template-columns: minmax(160px, 1fr) minmax(280px, 2fr); gap: 16px; }
+.result-comparison__summary dl { margin: 0; }
+.result-comparison__summary dd { margin: 4px 0 12px; overflow-wrap: anywhere; font-family: monospace; }
+.result-comparison table { width: 100%; border-collapse: collapse; }
+.result-comparison th, .result-comparison td { text-align: left; padding: 7px; border-bottom: 1px solid #dbe2e9; }
+.result-comparison td { font-family: monospace; white-space: nowrap; }
+.result-comparison__measurement { border-top: 1px solid #c3ced9; margin-top: 20px; }
+.result-comparison label { display: flex; flex-direction: column; gap: 4px; }
+.result-comparison input, .result-comparison select { box-sizing: border-box; width: 100%; min-width: 0; min-height: 34px; border: 1px solid #a6b6c7; border-radius: 4px; padding: 6px; background: #fff; color: #172b3a; }
+.result-comparison fieldset { border: 1px solid #dbe2e9; border-radius: 4px; margin: 8px 0; }
+.result-comparison__coordinates { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.result-comparison__measurement-value { display: inline-block; margin-left: 12px; font: 600 16px monospace; }
+.result-comparison__notice { color: #536478; border-top: 1px solid #c3ced9; padding-top: 12px; }
+@media (max-width: 1100px) { .result-comparison__summary { grid-template-columns: minmax(0, 1fr); } .result-comparison { padding: 12px; } }

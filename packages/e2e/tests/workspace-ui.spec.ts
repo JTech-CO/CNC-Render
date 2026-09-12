@@ -27,6 +27,40 @@ async function openWorkspace(page: Page, testInfo: TestInfo) {
 }
 
 test.describe("M9 workspace UI", () => {
+  test("workspace-layout header primary button preserves readable default and hover colors", async ({ page }, testInfo) => {
+    await openWorkspace(page, testInfo);
+    const button = page.locator(".command-actions .ui-button--primary");
+    await expect(button).toBeEnabled();
+    await expect(button).toHaveText("실행");
+    const readPaint = () => button.evaluate((element) => {
+      const style = getComputedStyle(element);
+      const luminance = (color: string) => {
+        const channels = color.match(/[\d.]+/gu)?.slice(0, 3).map(Number);
+        if (!channels || channels.length !== 3) throw new Error(`Unexpected computed color: ${color}`);
+        const linear = channels.map((channel) => {
+          const normalized = channel / 255;
+          return normalized <= 0.04045 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4;
+        });
+        return linear[0] * 0.2126 + linear[1] * 0.7152 + linear[2] * 0.0722;
+      };
+      const foreground = luminance(style.color);
+      const background = luminance(style.backgroundColor);
+      return {
+        color: style.color,
+        background: style.backgroundColor,
+        opacity: Number.parseFloat(style.opacity),
+        contrast: (Math.max(foreground, background) + 0.05) / (Math.min(foreground, background) + 0.05),
+      };
+    });
+    const normal = await readPaint();
+    expect(normal).toMatchObject({ color: "rgb(255, 255, 255)", background: "rgb(40, 89, 197)", opacity: 1 });
+    expect(normal.contrast).toBeGreaterThanOrEqual(4.5);
+    await button.hover();
+    const hovered = await readPaint();
+    expect(hovered).toMatchObject({ color: "rgb(255, 255, 255)", background: "rgb(32, 73, 165)", opacity: 1 });
+    expect(hovered.contrast).toBeGreaterThanOrEqual(4.5);
+  });
+
   test("workspace-layout keeps controls visible at all nine target resolutions", async ({
     page,
   }, testInfo) => {
@@ -223,7 +257,8 @@ test.describe("M9 workspace UI", () => {
     await page.setViewportSize({ width: 1_440, height: 900 });
 
     await page.getByTestId("workspace-area-code").click();
-    await expect(page.getByText("대표 밀링 Fixture")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "실행 프로그램 편집" })).toBeVisible();
+    await expect(page.getByTestId("gcode-editor")).toHaveAttribute("data-analysis-state", "ready");
     await page.getByTestId("workspace-area-learn").click();
     await expect(page.getByRole("button", { name: "준비 확인" })).toBeVisible();
     await page.getByTestId("workspace-area-scene").click();

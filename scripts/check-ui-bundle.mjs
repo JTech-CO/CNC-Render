@@ -3,6 +3,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { extname, resolve } from "node:path";
 import { gzipSync } from "node:zlib";
 import { fileURLToPath } from "node:url";
+import { checkGcodeLabLazyBoundary } from "./check-gcode-lab-bundle.mjs";
 
 const repositoryRoot = fileURLToPath(new URL("../", import.meta.url));
 const distClient = resolve(repositoryRoot, "dist/client");
@@ -36,6 +37,7 @@ async function collect(directory, files = []) {
 }
 
 const files = await collect(distClient);
+await checkGcodeLabLazyBoundary(distClient);
 const cssFiles = files.filter((path) => extname(path) === ".css");
 const fontFiles = files.filter((path) => extname(path) === ".woff2");
 const jsFiles = files.filter((path) => extname(path) === ".js");

@@ -1,11 +1,103 @@
 ﻿# CNC Render Progress
 
-- Current phase: M10 튜토리얼·샌드박스 MVP(E2) 완료
-- Status: M10 Definition of Done 8개와 공식 unit·parity·E2E·visual gate 통과
-- Last completed: 성공·실패 visual baseline과 샌드박스 Operation 생성·편집·실행·저장·복원
-- Next task: M11 — G-code Lab·진단·측정·결과 비교(S1 기초)
+- Current phase: M11 G-code Lab·진단·측정·결과 비교(S1 기초) 완료
+- Status: M11 Definition of Done 7개와 공식·회귀 gate 통과
+- Last completed: 실제 코드 실행·양방향 진단·6종 측정·3종 결과 비교·리포트 내보내기
+- Next task: M12 성능·폴백·보안·CI·릴리스 게이트 (M11 PR·병합·배포는 별도 승인)
 - Open questions: 없음
 - Known regressions: 없음
+
+## M11 G-code Lab·진단·측정·결과 비교 (2026-09-08 검증 완료, 2026-09-12 기록 정리)
+
+### 구현과 DoD 대응
+
+- Monaco·분석 Worker/WASM을 Code 탭의 lazy 경계로 분리했다. Rust parser-only ABI와
+  strict versioned 계약이 원본 SHA-256, end-exclusive source range, 지원 수준,
+  결정론적 진단 ID를 반환한다. 편집은 150 ms debounce/세대 검사로 오래된 응답을 버린다.
+- 편집한 실제 source를 전용 Coordinator→Rust/WASM 경로에서 실행한다. 현재 줄,
+  원본 줄 단위 실행, 첫 motion 전 breakpoint, modal-only 0초 step, M0/M1 pause와
+  M2/M30 종료를 지원한다. 같은 줄의 cycle 확장은 한 step으로 묶고 기존 motion ABI와
+  Golden semantic/Stock hash는 유지한다. 현재 줄·오류·중단점은 문자·모양·레이블로 구분한다.
+- 파서 오류는 editor↔목록, 실제 축 한계·충돌·비절삭 feed 경고는 editor↔목록↔3D
+  객체·좌표를 같은 ID로 연결한다. 파서에 가짜 공간 위치를 부여하지 않는다. G41/G42는
+  지원 수준과 자동 대체 불가, 직접 공구 중심 경로를 작성하는 도움말을 표시한다.
+- UI는 실행 중 편집을 잠그고 정지 후 다시 편집할 수 있다. 다른 source의 이전 진단,
+  현재 줄과 3D 마커는 새 draft에 연결하지 않는다. Lab만 최대 10 Hz 실행 요약을 구독하고
+  source map·program-control 배열·Stock/편차 TypedArray는 React/Zustand에 넣지 않는다.
+- 거리·직경·반경·각도·깊이·벽 두께를 좌표 입력과 실제 Stock 표면 sampling으로 측정한다.
+  canonical mm/rad를 보존하고 inch/degree와 반올림은 표시 경계에서만 적용한다.
+- 완료/진단 중단 Stock과 독립 작성한 목표를 comparison Worker에서 비교한다.
+  Overlay/Split/Heatmap은 동일 Float64 편차 field와 max/mean/P95·과절삭·미절삭 통계를 쓴다.
+  JSON/CSV/인쇄 HTML은 같은 metric 정의를 공유하고 HTML escaping·CSV formula 방어를 한다.
+- 보고서에 run/fixture·state/Stock hash·target ID·추정 시간·완료/중단·진단 개수를 남긴다.
+  새 run은 이전 보고서·내보내기를 무효화한다. M8 renderer-only 복원은 엔진 세션과
+  혼합 비교하지 못하게 재실행을 요구하며 snapshot 전후 run ID와 terminal 상태를 검증한다.
+- 결과 Loader만 `M11ResultBridge`의 안정된 scalar snapshot을 구독하며 같은 run summary는
+  알림을 만들지 않는다. 실행 중 작업실 React commit 수는 증가하지 않는다.
+- Code 탭 헤더 저장은 편집 Stock을 대표 공정 재실행으로 교체하지 않도록 명시적으로
+  거부한다. 편집 source·run ID·Stock hash를 보존하고 복사/리포트 저장을 안내한다.
+  README·도움말도 현재 기능과 공개 데모 배포 시점을 구분하도록 갱신했다.
+- 대량 진단은 목록 50개/페이지, 장면 256개 한도에서도 선택한 ID를 우선 보존한다.
+  전송 10,000개 한도를 채운 경고가 있어도 마지막 축 한계·충돌 증거를 보존한다.
+  비교 지도는 실제 표본 최대 4,096개만 렌더·정렬·pick하며 생략을 알리고 전체 통계는 유지한다.
+- 데스크톱 shell을 화면 높이에 고정하고 패널 내부 스크롤로 3D 클릭이 화면 밖으로 나가는
+  문제를 해결했다. 모바일 결과 화면을 노출하고, 헤더 primary 실행 버튼을 덮던 레거시
+  CSS를 제한해 기본·hover 4.5:1 이상 대비를 검증한다.
+- ADR-0015와 CI에 M11 분석·실행·측정·내보내기·visual·접근성·lazy bundle gate를 연결했다.
+  Pages 산출물은 다른 검증용 build가 끝난 뒤 마지막에 생성한다.
+
+### 검증
+
+아래는 2026-09-08 실행에서 확인한 최종 결과다. 완료 기록과 커밋 직전 실행 승인 서비스의
+사용량 제한으로 중단되었고, 2026-09-12에 동일 브랜치에서 기록·커밋·푸시를 재개했다.
+2026-09-12 재실행한 `pnpm verify`도 unit 231, contracts 64, parity 69와 production
+build까지 모두 통과했다. WASM 크기와 SHA-256도 아래 2026-09-08 결과와 동일하다.
+
+| Gate | Result |
+|---|---|
+| `pnpm verify` | 통과 — unit 231/34 files, contracts 64/16 files, parity 69/10 files, lint·typecheck·Cargo check·production build |
+| M11 공식 E2E (`gcode-lab`, `diagnostic-link`, `measurement`, `result-compare`) | 최종 통과 — WebGPU·WebGL 2 28 passed, visual 중복 14 skipped; 저장 보호 포함 |
+| `pnpm test:contracts --filter report` | 통과 — 1 file, 5 tests |
+| `pnpm test:visual` | 통과 — 5 passed; 공식 gcode-error·heatmap 포함 |
+| `pnpm check:bundle` | 통과 — 초기 10개/lazy 6개 manifest 경계, CSS gzip 21,420 B / 81,920 B; 기준 완화 없음 |
+| `pnpm test:e2e` 전체 회귀 | 통과 — 97 passed, 기존 visual 중복·opt-in soak 35 skipped; 이후 저장 보호는 최종 M11 공식 gate로 추가 검증 |
+| `pnpm test:a11y` | 최종 통과 — WebGPU·WebGL 2 6 passed, visual 중복 3 skipped; Code 준비/오류·결과 3모드 포함 |
+| `pnpm test:pages` | 통과 — 1 passed; `/CNC-Render/` 실제 Monaco/분석·비교 Worker, Stock 비교·JSON provenance·브라우저 오류 0 |
+| Rust fmt·clippy·`pnpm cargo:test` | 통과 — 전체 workspace, WASM ABI 실행 테스트 12개 포함 |
+| dependency boundary | 통과 — 139 modules, 318 dependencies, 위반 0 |
+| `git diff --check` | 통과 |
+| production WASM | 857,623 bytes, SHA-256 `9f588d8fb523d98cf79ec86b9b1f6f775dc30efc9c7d146cebb45bf4468ffccf` |
+| visual assets | gcode-error 66,995 B; heatmap 98,348 B; 수정된 machine-scene 35,514 B |
+
+- 초기 검증에서 화면 밖 진단 클릭, 대량 진단의 선택/terminal 상한, 오래된 결과 출처,
+  빈 코드 alert 선택과 nullable 공간 타입, 작업실 React commit 증가를 확인해 수정했다.
+  최종 M7 gate는 양쪽 backend에서 commit 불변, `maximumMainHandlerMs < 50`,
+  `longTasksOver50Ms <= 1`을 그대로 통과했다. 테스트와 성능 임계값을 낮추지 않았다.
+- 기존 machine-scene의 923×883 캔버스는 900 px 화면을 벗어나 있었다. 높이 교정 후
+  923×625 화면을 직접 검토해 해당 baseline만 갱신했다. 새 오류·히트맵 baseline도
+  직접 확인하고 snapshot 업데이트 없이 전체 visual gate를 재통과했다.
+- Monaco lazy chunk의 500 kB 안내 경고는 남지만 초기 entry 유입은 없다.
+  Windows 로컬 Chromium/SwiftShader 기능 검증이며 opt-in 장기 soak와 기준 실장비
+  성능·메모리·다중 브라우저 릴리스 판정은 M12 범위다.
+
+### 제한과 다음 경계
+
+- M11은 S1 기능의 기초이며 정확도는 계속 E2 교육용 근사다. 밀링 balanced 8 mm dexel,
+  회전 1 mm layer보다 작은 형상과 산업용 검증·표면조도·열변형을 보증하지 않는다.
+- 목표는 대표 밀링·외경 선삭·센터 드릴링의 독립 작성 형상이다. 임의 CAD 목표 import,
+  feature 자동 인식·최소 벽 두께 탐색은 없다. 직경/반경의 중심과 깊이/벽 두께의 기준면
+  법선은 사용자가 지정한다. M1은 optional-stop 토글 없이 항상 멈춘다.
+- 10,000개를 넘는 경고는 생략할 수 있으므로 보고서 개수는 보존된 실행 진단의 개수다.
+  화면 LOD는 측정 가능한 표본을 줄일 뿐 전체 원본 field·통계의 정밀도를 낮추지 않는다.
+- M8에서 불러온 Stock은 새 실행 후 비교한다. 임의 checkpoint에서 엔진을 재개하는 기능과
+  프로젝트 공유·클라우드 동기화는 이번 단위의 범위가 아니다.
+- 편집 G-code는 세션 한정이며 프로젝트 영속화는 제공하지 않는다. Code 탭 헤더 저장은
+  거부하며 다른 영역의 대표 공정 저장과 결과 리포트 내보내기를 구분한다.
+- 다음 계획은 M12 성능·폴백·보안·CI·릴리스 게이트다. 기준 장비 성능/메모리,
+  브라우저 매트릭스, 업로드 보안, COOP/COEP, 개인정보, 릴리스 식별 검증은 별도 진행한다.
+- 이번 요청은 feature 브랜치 커밋·푸시까지이며 PR 생성·병합·공개 배포는 수행하지 않는다.
+  대상은 `origin/codex/m11-gcode-lab`이며 사용자 지정 저장소 `JTech-CO/CNC-Render`를
+  유지한다. 기존 M10 stash는 수정하지 않았다.
 
 
 ## M10 성공·실패 visual baseline·샌드박스 Operation (2026-09-04, 완료)
