@@ -29,10 +29,18 @@ describe("M12 benchmark evidence", () => {
   });
   it("keeps the 60 FPS and 5000 ms thresholds without claiming memory or High certification", () => {
     const sample = { gpuClass: "hardware-candidate", frames: { renderedFps: 60 }, shellReadyMs: 5000 };
-    expect(evaluatePerformance(sample)).toMatchObject({ mediumFps: "pass", coldShell: "pass", totalMemory: "not-measured", highPreset: "not-implemented", referenceHardwareApproval: "pending" });
+    expect(evaluatePerformance(sample)).toMatchObject({ mediumFps: "pass", coldShell: "pass", totalMemory: "not-measured", highPreset: "not-measured", referenceHardwareApproval: "pending" });
     expect(evaluatePerformance({ ...sample, frames: { renderedFps: 59.99 }, shellReadyMs: 5000.01 })).toMatchObject({ mediumFps: "fail", coldShell: "fail" });
     expect(evaluatePerformance({ ...sample, gpuClass: "software" }).mediumFps).toBe("not-qualified");
     expect(evaluatePerformance({ ...sample, frames: { renderedFps: Infinity }, shellReadyMs: null })).toMatchObject({ mediumFps: "not-measured", coldShell: "not-measured" });
+  });
+  it("requires 30 FPS for actual Precision and never reuses Medium parity as High evidence", () => {
+    const sample = { qualityPreset: "precision", gpuClass: "hardware-candidate", frames: { renderedFps: 30 }, shellReadyMs: 1000 };
+    expect(evaluatePerformance(sample)).toMatchObject({ highPreset: "pass", mediumFps: "not-applicable" });
+    expect(evaluatePerformance({ ...sample, frames: { renderedFps: 29.99 } }).highPreset).toBe("fail");
+    expect(evaluatePerformance({ ...sample, gpuClass: "software" }).highPreset).toBe("not-qualified");
+    expect(compareBenchmarkMatrix([], benchmarkProjects("all"), ["balanced", "precision"])).toHaveLength(6);
+    expect(compareBenchmarkMatrix([], benchmarkProjects("all"), ["balanced", "precision"]).every((row) => row.status === "incomplete")).toBe(true);
   });
   it("requires every requested backend/browser and identical semantic/Stock evidence", () => {
     const projects = benchmarkProjects("all");

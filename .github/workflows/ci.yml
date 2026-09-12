@@ -52,6 +52,9 @@ jobs:
       - name: Run repository verification
         run: pnpm verify
 
+      - name: Validate hostile project uploads
+        run: pnpm security:test-uploads
+
       - name: Run M1 filtered unit and parity gates
         run: |
           pnpm test:unit --filter units
@@ -80,19 +83,56 @@ jobs:
         run: node scripts/check-doc-terms.mjs
 
 
-      - name: Install Chromium for Pages smoke
-        run: pnpm --filter @cnc-render/e2e exec playwright install --with-deps chromium
+      - name: Install Chromium and Chrome for browser and loading gates
+        run: pnpm --filter @cnc-render/e2e exec playwright install --with-deps chromium chrome
 
-      - name: Run M11 Lab, diagnostics, measurement and report gates
+      - name: Run complete browser, visual and accessibility gates
         run: |
-          pnpm test:e2e --grep "gcode-lab|diagnostic-link|measurement|result-compare"
+          pnpm test:e2e --project=chromium-webgpu --project=chromium-webgl2
           pnpm test:contracts --filter report
-          pnpm test:visual --grep "gcode-error|heatmap"
+          pnpm test:visual
           pnpm test:a11y
           pnpm check:bundle
 
+      - name: Preserve browser diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-diagnostics
+          path: |
+            test-results/
+            playwright-report/
+          if-no-files-found: warn
+          retention-days: 30
+
       - name: Run M12 software benchmark and backend matrix
         run: pnpm bench -- --report=artifacts/benchmark-report.json --matrix=software
+
+      - name: Verify approved-host performance evidence against runtime sources
+        run: node scripts/check-reference-evidence.mjs
+
+      - name: Preserve approved-host reference evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: approved-host-reference-evidence
+          path: |
+            docs/verification/m12-reference-evidence.json
+            artifacts/approved-host-reference-evidence.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Preserve core fixtures and visual baselines
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: core-fixtures
+          path: |
+            tests/fixtures/
+            packages/e2e/tests/__screenshots__/
+            packages/simulation/src/coordinator-fixtures.ts
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Preserve M12 benchmark evidence
         if: always()
@@ -105,6 +145,18 @@ jobs:
 
       - name: Build and test GitHub Pages demo
         run: pnpm test:pages
+
+      - name: Verify broadband cold entrypoint LCP
+        run: pnpm lighthouse -- --output-path=artifacts/lighthouse.html
+
+      - name: Preserve loading evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lighthouse-broadband
+          path: artifacts/lighthouse*
+          if-no-files-found: warn
+          retention-days: 30
 
       - name: Verify release identity before publishing
         run: pnpm check:release --target=pages --require-clean

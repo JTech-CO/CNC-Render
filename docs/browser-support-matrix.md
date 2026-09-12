@@ -1,8 +1,72 @@
 # 브라우저 검증 매트릭스
 
-2026-09-12 로컬 Pages, benchmark workload v1의 **대표 공정 검증**이다.
+2026-09-12 로컬 Pages의 **대표 공정 검증**이다.
 모든 제품 기능이나 최신 브라우저 배포 채널을 인증한 결과가 아니다.
 공개 Pages와 현재 작업 브랜치의 배포 시점도 다를 수 있다.
+
+## M12 후속 검증 상태
+
+### 최종 리소스 수명 수정 후 (로컬 검증)
+
+- `benchmark-reference-final.json`: 실장비 24/24 통과. 최저 FPS balanced 119.028,
+  precision 112.013, cold shell 최대 1585.8 ms, handler 최대 21.7 ms, long task 0.
+  같은 프리셋의 Toolpath·축·진단·Stock 결과가 브라우저/backend 간 정확히 일치했다.
+- Lighthouse 최종 3회 LCP 925.0/948.5/979.1 ms, 전체 E2E 88개 및 visual 5개,
+  a11y/Pages/bundle 통과. 원격 CI·공개 배포 검증은 별도 진행한다.
+- `benchmark-software-v5.json`: 두 backend × 세 공정 × 두 프리셋 12/12 통과,
+  최대 handler 42.5 ms, long task 0. 아래 v3/v4 실패 이력은 그대로 보존한다.
+- 메모리는 매 조합 새 브라우저를 사용하고, CNC 코드가 없는 1×1 vanilla GPU 컨텍스트를
+  초기화·폐기한 뒤 빈 페이지에서 3회 최솟값으로 브라우저/드라이버 고정 비용을 측정한다.
+  앱 자산 요청 0을 검증한다. CPU private commit 및 GPU 보고값의 양의 증가분만 합산한다.
+  cold blank 기준과 이전 기준 초과 결과도 보존하며 총 브라우저 비용이 600 MB라는 뜻은 아니다.
+
+| Browser / backend | Balanced peak MB | Precision peak MB | Result |
+|---|---:|---:|---|
+| Chrome / WebGPU | 476.05 | 454.59 | pass |
+| Chrome / WebGL 2 | 356.00 | 354.24 | pass |
+| Edge / WebGPU | 504.30 | 526.73 | pass |
+| Edge / WebGL 2 | 368.85 | 421.54 | pass |
+
+- MB는 1,000,000 bytes. 각 60초 이상 세 공정 반복, 30–40 samples. 공정 횟수는 보고서에
+  별도 기록하며 preset/브라우저 우열 비교가 아니다. 장시간 모든 프로젝트의 메모리 보증도 아니다.
+- 현재 PC 승인과 앱 귀속 메모리 산정 승인을 받았다. 최종 로컬 회귀 통과, 원격 CI·릴리스 대기.
+- Chrome 152.0.7977.83은 조회 시 공식 Version History API의 활성 Windows Stable 배포에 포함된다.
+  Edge 153.0.4234.32는 공식 enterprise update API의 최신 Windows x64 Stable 버전과 일치한다.
+  단계적 배포를 고려하며 미측정 브라우저를 지원 인증하지 않는다.
+- 확인 출처: [Chrome Version History](https://versionhistory.googleapis.com/v1/chrome/platforms/win/channels/stable/versions/all/releases?filter=endtime=none),
+  [Edge Update API](https://edgeupdates.microsoft.com/api/products?view=enterprise).
+- PID를 제거한 [기준 장비 증거](verification/m12-reference-evidence.json)는
+  `node scripts/check-reference-evidence.mjs`로 검증·확장한다. 원본 sourceDirty 표시는
+  측정 당시 상태이며, 런타임 지문으로 현재 코드와 일치 여부를 확인한다.
+
+### 이전 측정 이력
+
+- 사용자가 현재 PC를 기준 장비로 승인했다. 아래 v1 기록의 장비 승인 대기와
+  High 미구현 설명은 당시 상태이며, 현재는 balanced/precision을 실제 Worker/WASM으로 검증한다.
+- `benchmark-reference-v2.json`: Chrome/Edge × 두 backend × 세 공정 × 두 프리셋
+  24/24 통과. Medium 최저 119.706 FPS, High 최저 119.086 FPS,
+  cold localhost shell 최대 1341.1 ms. 리소스 수명 수정 전 측정이다.
+- 수명 수정 후 `benchmark-reference-v3.json`은 34/36 통과했다. 기능/Stock 동등성은
+  전부 통과했으나 software Chromium High 밀링 handler가 WebGPU 57.9 ms,
+  WebGL 2 51.4 ms로 50 ms 미만 기준을 넘었다. 이 실패를 숨기거나 기준을 낮추지 않는다.
+- 셀별 임시 배열 제거 후 `benchmark-reference-v4.json`은 27/36 통과했다.
+  실장비 24조합과 모든 기능/Stock 동등성은 통과했지만 software 9조합에서
+  handler/long task 예산을 넘었다(최대 handler 994.7 ms, 공정당 long task 최대 85회).
+  실장비 cold shell 최대 1536.9 ms. 소프트웨어 성능 안정화는 미완료이며,
+  정점 동일성 테스트 통과만으로 성능 원인까지 해결했다고 선언하지 않는다.
+- Lighthouse 13.4.1의 새 Chrome 프로필 3회, 10 Mbps/40 ms·CPU×1에서
+  LCP 814.9/795.3/820.4 ms를 관측했다. 공개 Pages 배포 후 측정은 아니다.
+- 전체 E2E 88 passed/2 opt-in soak skipped, visual 5 passed,
+  a11y 6 passed/3 별도 visual project skipped, Pages 2 passed를 확인했다.
+- 보수적 전체 브라우저 메모리 측정은 아직 600 MB 기준을 통과하지 못했다.
+  브라우저 고정 비용과 공유 메모리 중복을 포함하므로 앱 소유 메모리와 같다고 주장하지 않는다.
+  산정 범위를 사용자 확인 중이며, M12 완료·병합·공개 배포는 보류한다.
+- Firefox/실제 Safari는 미검증이며 지원을 보증하지 않는다. 현재 검증 범위는 아래 설치된
+  Chrome/Edge의 대표 공정이다. WebGPU adapter 정보는 별도 probe이며 실제 고성능 adapter
+  선택과 항상 일치한다고 보장하지 않는다.
+- 추가 방법과 제한: [ADR 0018](architecture-decisions/0018-release-hardening-and-resource-gates.md).
+
+## 최초 balanced 측정 이력 (workload v1)
 
 ## 측정 환경
 

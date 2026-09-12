@@ -2,7 +2,7 @@ import { cpus, platform, release, totalmem } from "node:os";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { benchmarkProjects, compareBenchmarkMatrix, evaluatePerformance, functionalSamplePassed } from "../../scripts/benchmark-contract.mjs";
+import { BENCHMARK_QUALITIES, benchmarkProjects, compareBenchmarkMatrix, evaluatePerformance, functionalSamplePassed } from "../../scripts/benchmark-contract.mjs";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 export default class BenchmarkReporter {
@@ -12,7 +12,8 @@ export default class BenchmarkReporter {
     const sample = attachment?.body ? JSON.parse(attachment.body.toString("utf8")) : null;
     this.rows.push({
       project: test.parent.project().name,
-      fixture: test.title,
+      fixture: test.title.split(" ")[0],
+      qualityPreset: test.title.split(" ")[1],
       status: result.status,
       sample,
       performance: sample ? evaluatePerformance(sample) : null,
@@ -22,13 +23,13 @@ export default class BenchmarkReporter {
   onEnd(result) {
     const matrix = process.env.CNC_RENDER_BENCH_MATRIX ?? "software";
     const projects = benchmarkProjects(matrix);
-    const parity = compareBenchmarkMatrix(this.rows, projects);
+    const parity = compareBenchmarkMatrix(this.rows, projects, BENCHMARK_QUALITIES);
     const output = process.env.CNC_RENDER_BENCH_REPORT;
     if (!output) throw new Error("CNC_RENDER_BENCH_REPORT is required.");
     let artifact = null;
     try { artifact = JSON.parse(readFileSync(resolve(root, "dist/pages/release.json"), "utf8")); } catch { /* Build failure is reported, never passed. */ }
     const report = {
-      reportVersion: 1,
+      reportVersion: 2,
       capturedAtUtc: new Date().toISOString(),
       scope: "local-pages-reference-candidate",
       matrix,
@@ -36,6 +37,8 @@ export default class BenchmarkReporter {
       functionalStatus: parity.every((item) => item.status === "pass") && this.rows.every((row) =>
         functionalSamplePassed(row.sample, projects.find((project) => project.name === row.project)?.backend)) ? "pass" : "fail",
       releaseStatus: "incomplete",
+      performanceStatus: this.rows.some((row) => row.sample?.gpuClass === "hardware-candidate" &&
+        (row.performance.mediumFps === "fail" || row.performance.highPreset === "fail" || row.performance.coldShell !== "pass")) ? "fail" : "pass",
       artifact,
       host: { os: platform(), osRelease: release(), cpu: cpus()[0]?.model ?? "unknown", logicalCpus: cpus().length, physicalMemoryBytes: totalmem(), node: process.version },
       policy: { mediumTargetFps: 60, highMinimumFps: 30, coldShellMaximumMs: 5000, defaultMemoryMaximumBytes: 600_000_000, precisionMemoryRecommendedBytes: 1_500_000_000 },
@@ -49,6 +52,6 @@ export default class BenchmarkReporter {
     mkdirSync(dirname(output), { recursive: true });
     writeFileSync(output, JSON.stringify(report, null, 2) + "\n");
     console.info(`[benchmark] ${output}: gates=${report.gateStatus}, functional=${report.functionalStatus}, release=incomplete`);
-    if (report.gateStatus !== "pass" || report.functionalStatus !== "pass") return { status: "failed" };
+    if (report.gateStatus !== "pass" || report.functionalStatus !== "pass" || report.performanceStatus !== "pass") return { status: "failed" };
   }
 }

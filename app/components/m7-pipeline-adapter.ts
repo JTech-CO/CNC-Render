@@ -32,6 +32,7 @@ export interface M7PipelineBrowserState extends CoordinatorSnapshot {
 }
 
 export interface M7PipelineRunOptions {
+  readonly qualityPreset?: "balanced" | "precision";
   readonly source?: string;
   readonly startPaused?: boolean;
   readonly breakpoints?: number[];
@@ -236,15 +237,9 @@ export function attachM7Pipeline(
     restoredCheckpointVisible = false;
     const before = renderer.getDiagnostics().telemetry.framesRendered;
     applyRenderUpdate(renderer, update);
-    if (summary.collision) {
-      renderer.setCollisionMarker([
-        summary.collision.positionMm.xMm,
-        summary.collision.positionMm.yMm,
-        summary.collision.positionMm.zMm,
-      ]);
-    }
     pendingRender = waitForNextRenderedFrame(renderer, before)
       .then((frame) => {
+        if (coordinator.getSnapshot().activeRunId !== summary.runId) return frame;
         renderedOnFrame = frame;
         viewport.dataset.pipelineRenderedFrame = String(frame);
         return frame;
@@ -253,6 +248,24 @@ export function attachM7Pipeline(
   });
 
   const unsubscribeGeneral = coordinator.onGeneralSummary((summary) => {
+    // A collision can stop before removing any Stock and therefore carry no
+    // binary render patch. Terminal summaries must independently mark the scene.
+    if (summary.collision && viewport.dataset.pipelineCollisionReceivedFrame === undefined) {
+      const before = renderer.getDiagnostics().telemetry.framesRendered;
+      viewport.dataset.pipelineCollisionReceivedFrame = String(before);
+      renderer.setCollisionMarker([
+        summary.collision.positionMm.xMm,
+        summary.collision.positionMm.yMm,
+        summary.collision.positionMm.zMm,
+      ]);
+      pendingRender = waitForNextRenderedFrame(renderer, before).then((frame) => {
+        if (coordinator.getSnapshot().activeRunId !== summary.runId) return frame;
+        renderedOnFrame = frame;
+        viewport.dataset.pipelineRenderedFrame = String(frame);
+        viewport.dataset.pipelineCollisionRenderedFrame = String(frame);
+        return frame;
+      });
+    }
     if (
       (summary.completed || summary.stopped) &&
       playbackStartedAtMs !== null &&
@@ -356,13 +369,17 @@ export function attachM7Pipeline(
     viewport.dataset.pipelinePlaybackElapsedS = "0";
     delete viewport.dataset.pipelineRenderedFrame;
     delete viewport.dataset.pipelineFinalHash;
+    delete viewport.dataset.pipelineCollisionReceivedFrame;
+    delete viewport.dataset.pipelineCollisionRenderedFrame;
     const runId = crypto.randomUUID();
     const template = createM7PipelineFixture(
       selectedFixture,
       runId,
       millingConfiguration,
       millingOperation,
+      options.qualityPreset,
     );
+    viewport.dataset.pipelineQualityPreset = template.process.preset;
     const run: CoordinatorRunRequest = {
       ...template,
       source: options.source ?? template.source,

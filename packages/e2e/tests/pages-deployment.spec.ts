@@ -29,6 +29,8 @@ test("GitHub Pages preserves styled, clickable workspace behavior", async ({
   const pageErrors: string[] = [];
   const consoleErrors: string[] = [];
   const workerUrls: string[] = [];
+  const requestUrls: string[] = [];
+  page.on("request", (request) => requestUrls.push(request.url()));
   page.on("worker", (worker) => workerUrls.push(worker.url()));
   page.on("pageerror", (error) => pageErrors.push(error.message));
   page.on("console", (message) => {
@@ -38,6 +40,7 @@ test("GitHub Pages preserves styled, clickable workspace behavior", async ({
   });
 
   await page.goto("./?renderer=webgl2");
+  await expect(page.locator('meta[http-equiv="Content-Security-Policy"]')).toHaveAttribute("content", /connect-src 'self';/u);
   const viewport = page.getByTestId("machine-viewport");
   await expect(viewport).toHaveAttribute("data-ready", "true");
   await expect(page.locator(".milestone-label")).toContainText("v0.9.0");
@@ -130,4 +133,6 @@ test("GitHub Pages preserves styled, clickable workspace behavior", async ({
 
   expect(pageErrors).toEqual([]);
   expect(consoleErrors).toEqual([]);
+  const origin = new URL(page.url()).origin;
+  expect(requestUrls.filter((url) => /^https?:/u.test(url) && new URL(url).origin !== origin)).toEqual([]);
 });

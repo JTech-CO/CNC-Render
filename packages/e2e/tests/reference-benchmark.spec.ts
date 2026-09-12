@@ -1,9 +1,10 @@
 import { expect, test } from "@playwright/test";
-import { BENCHMARK_FIXTURES, BENCHMARK_WINDOW_MS, classifyGpu, frameStatistics } from "../../../scripts/benchmark-contract.mjs";
+import { BENCHMARK_FIXTURES, BENCHMARK_QUALITIES, BENCHMARK_WINDOW_MS, classifyGpu, frameStatistics } from "../../../scripts/benchmark-contract.mjs";
 import type { M7PipelineFixture } from "@cnc-render/simulation";
 
 for (const fixture of BENCHMARK_FIXTURES) {
-  test(fixture, async ({ page, browser }, testInfo) => {
+ for (const qualityPreset of BENCHMARK_QUALITIES) {
+  test(`${fixture} ${qualityPreset}`, async ({ page, browser }, testInfo) => {
     const backend = testInfo.project.metadata.backend as string;
     const errors: string[] = [];
     page.on("pageerror", () => errors.push("pageerror"));
@@ -24,10 +25,10 @@ for (const fixture of BENCHMARK_FIXTURES) {
       const extension = gl?.getExtension("WEBGL_debug_renderer_info");
       return gl && extension ? String(gl.getParameter(extension.UNMASKED_RENDERER_WEBGL)) : "";
     }, backend);
-    const result = await page.evaluate(async ({ selectedFixture, durationMs }) => {
+    const result = await page.evaluate(async ({ selectedFixture, durationMs, qualityPreset }) => {
       const scene = window.__CNC_RENDER_M3__!;
       const pipeline = window.__CNC_RENDER_M7__!;
-      await pipeline.runPipelineFixture(selectedFixture, { playbackSpeed: 100, executionMode: "fast-forward" });
+      await pipeline.runPipelineFixture(selectedFixture, { qualityPreset, playbackSpeed: 100, executionMode: "fast-forward" });
       scene.setView("isometric");
       scene.fit();
       await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
@@ -56,7 +57,7 @@ for (const fixture of BENCHMARK_FIXTURES) {
       let maximumLongTasksPerRun = 0;
       try {
         do {
-          summary = await pipeline.runPipelineFixture(selectedFixture, { playbackSpeed: 100, executionMode: "realtime" });
+          summary = await pipeline.runPipelineFixture(selectedFixture, { qualityPreset, playbackSpeed: 100, executionMode: "realtime" });
           const semantic = JSON.stringify([summary.finalSemanticHashSha256, summary.stockHashSha256, summary.toolPositionMm, summary.diagnosticCodes]);
           if (repetitions === 0) firstSemantic = semantic;
           else deterministic &&= firstSemantic === semantic;
@@ -90,9 +91,11 @@ for (const fixture of BENCHMARK_FIXTURES) {
           removedVolumeMm3: summary!.removedVolumeMm3,
         },
       };
-    }, { selectedFixture: fixture as M7PipelineFixture, durationMs: BENCHMARK_WINDOW_MS });
+    }, { selectedFixture: fixture as M7PipelineFixture, durationMs: BENCHMARK_WINDOW_MS, qualityPreset: qualityPreset as "balanced" | "precision" });
     const { timestamps, ...measurement } = result;
     const sample = {
+      fixture,
+      qualityPreset,
       ...measurement,
       pageErrorCount: errors.length,
       frames: frameStatistics(timestamps, result.framesRendered, result.elapsedMs),
@@ -103,7 +106,7 @@ for (const fixture of BENCHMARK_FIXTURES) {
       gpuClass: classifyGpu(Boolean(testInfo.project.metadata.softwareRequested), adapter),
       shellReadyMs,
       loadScope: "fresh-context-localhost-no-network-throttling",
-      workload: "balanced-representative-plus-continuous-camera",
+      workload: `${qualityPreset}-representative-plus-continuous-camera`,
       workloadVersion: 1,
       seed: 7,
       cameraDegreesPerSecond: 15,
@@ -116,10 +119,12 @@ for (const fixture of BENCHMARK_FIXTURES) {
     expect(result.actualBackend).toBe(backend);
     expect(result.semantic.completed).toBe(true);
     expect(result.semantic.removedVolumeMm3).toBeGreaterThan(0);
+    expect(result.stock?.cells).toBe(fixture === "milling" ? qualityPreset === "precision" ? 4500 : 1125 : qualityPreset === "precision" ? 240 : 120);
     expect(result.semantic.stockHashSha256).toMatch(/^[a-f0-9]{64}$/u);
     expect(result.deterministic).toBe(true);
     expect(result.reactCommitDelta).toBe(0);
     expect(result.maximumMainHandlerMs).toBeLessThan(50);
     expect(result.maximumLongTasksPerRun).toBeLessThanOrEqual(1);
   });
+ }
 }

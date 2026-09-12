@@ -1,11 +1,120 @@
 ﻿# CNC Render Progress
 
 - Current phase: M12 성능·폴백·보안·CI·릴리스 게이트 진행 중
-- Status: 기준 benchmark v1·18조합 로컬 gate 통과 — M12 전체 완료/공개 릴리스 아님
-- Last completed: M12 기준 benchmark·Chrome/Edge/Chromium 대표 공정 matrix와 JSON 증거
-- Next task: 기준 장비 승인·cold 성능 반복성·High/전체 메모리·남은 브라우저/릴리스 gate
-- Open questions: 없음
-- Known regressions: 기능 회귀 없음; 초기 Chrome 성능 예산 초과 2건의 변동성 추가 검증 필요
+- Status: 최종 로컬 gate 모두 통과 — 원격 CI·병합·배포 대기, M12 전체 완료 아님
+- Last completed: 전체 회귀·실장비 24조합·메모리 8조합·broadband LCP 3회
+- Next task: 커밋·푸시·PR → 원격 CI → 병합·Pages 릴리스 검증
+- Open questions: 없음 — 사용자가 브라우저 고정 비용 제외 앱 사용량(Worker/WASM/GPU 포함) 산정을 승인
+- Known regressions: 현재 새 gate 실패 없음; cold blank 초기화 비용 포함 시 약 819 MB인 원본도 보존, 원격 CI 미실행
+
+## M12 최종 로컬 검증 (2026-09-12)
+
+- `pnpm verify`: unit 306/41 files, contracts 64/16, parity 69/10, lint·경계
+  151 modules/353 dependencies·typecheck·Cargo check·production build 통과.
+  Rust fmt/clippy/test도 통과했다.
+- 전체 WebGPU/WebGL 2 E2E 88 passed/2 opt-in soak skipped, visual 5 passed,
+  a11y 및 Pages 전체 suite passed, bundle gate passed. 시각 기준 이미지는 변경하지 않았다.
+- `benchmark-reference-final.json`: Chrome/Edge × 두 backend × 세 공정 × 두 프리셋
+  24/24 통과. 최저 FPS balanced 119.028, precision 112.013; cold shell 최대
+  1585.8 ms, handler 최대 21.7 ms, long task 0, React commit 증가 0.
+  모든 브라우저/backend 간 같은 프리셋의 기능·Stock 결과가 일치했다.
+- `lighthouse-final.json`: 새 Chrome 3회 LCP 925.0/948.5/979.1 ms, 모두 2500 ms 이내.
+  로컬 production Pages·10 Mbps/40 ms 조건이며 공개 CDN 네트워크 측정은 아니다.
+- `docs/verification/m12-reference-evidence.json`은 로컬 측정의 PID를 제거한 압축 증거다.
+  `node scripts/check-reference-evidence.mjs`가 압축을 풀고 24개 성능 결과, 8개 메모리
+  산술·한도 및 런타임 지문을 재검증한다. 현재 통과. CI가 원본 envelope와 읽기 쉬운
+  JSON을 함께 보존한다. 이는 독립 하드웨어 인증/서명이 아니며 sourceDirty 원출처를 유지한다.
+- 원격 CI는 software benchmark·Lighthouse·핵심 Fixture/visual baseline 보존까지 수행한다.
+  런타임 파일 변경 시 기준 장비 증거를 다시 측정해야 한다. clean commit의 Pages
+  버전·SHA·WASM 검사는 커밋 이후 수행하며, DoD 10/11 확인 전 완료로 올리지 않는다.
+- 잔여 범위 제한: Firefox/Safari 미인증, 60초 대표 공정 외 장시간·대형 임의 프로젝트 미보증,
+  binary STL만 수용, telemetry/SAB 비활성. 사용자 승인 배포 대상은 GitHub Pages다.
+
+## M12 앱 귀속 메모리·소프트웨어 성능 재개
+
+- 사용자 승인: 600 MB/1.5 GB 기준은 유지하고 브라우저 고정 비용을 제외한 앱 귀속 사용량을 산정한다.
+  CPU private commit 합과 WDDM GPU 보고값 각각의 양의 증가량을 합하며 서로 상쇄하지 않는다.
+  기준값은 빈 브라우저 3회 최솟값이고 잘못된 값/미측정은 실패한다. 산정 단위 테스트 5개 통과.
+- cold blank 기준 Chrome WebGPU balanced는 815.841 MB, 버퍼 재사용 후 818.778 MB,
+  탐지 컨텍스트 정리 후 819.073 MB로 미통과했다. 이전 보고서를 각기 다른 이름으로 보존했다.
+- Stock은 동일 격자에서 geometry/material/버퍼를 재사용한다. 밀링/선삭 각 한 개만 보관하고,
+  비활성 Stock의 선택/patch를 금지하며 최종 폐기와 격자 변경 시 교체 폐기를 테스트한다.
+  형상·revision 초기화 포함 5개 테스트 통과. 해상도·재료 제거 계산을 변경하지 않았다.
+- 기능 탐지용 WebGL 컨텍스트는 실제 렌더러와 같은 high-performance 선호도를 사용하고 즉시 해제한다.
+  지원 여부/폴백 불변식 테스트 2개 통과.
+- `benchmark-software-v5.json`: WebGPU/WebGL 2 × 3공정 × 2프리셋 12/12 통과,
+  최대 handler 42.5 ms, long task 최대 0, 모든 기능/Stock 동등성 통과. v3/v4 실패도 보존한다.
+- `profile-reference.mjs`는 새 작업용 브라우저의 memory-infra/CPU 진단 추적만 로컬 저장한다.
+  계측된 실행은 성능 gate로 사용하지 않는다. GPU 프로세스 native malloc이 큰 비중이며,
+  JS heap만으로 전체 사용량을 대체하지 않는다. 원시 추적의 환경 메타데이터는 공개하지 않는다.
+- CNC 코드/자산이 없는 1×1 vanilla GPU 컨텍스트를 초기화·폐기한 뒤 빈 브라우저 고정 비용을
+  분리했다. cold blank 단계 중에도 native GPU 초기화가 진행되는 것을 관측했다.
+  최초 자산 요청 0 검사에서 브라우저 자동 favicon 요청을 발견해 빈 data icon으로 차단했다.
+  검사 자체를 완화하지 않았으며 매 case 새 browser로 이전 앱 캐시를 배제했다.
+- 최종 메모리 8/8 통과: Chrome GPU/GL2 balanced 476.05/356.00 MB,
+  precision 454.59/354.24 MB; Edge GPU/GL2 balanced 504.30/368.85 MB,
+  precision 526.73/421.54 MB. 각 60초 이상, 30–40 samples, 127–363회 세 공정 반복.
+  총 브라우저 메모리가 아니라 초기화된 브라우저 고정 비용을 제외한 앱 귀속 관측값이다.
+- 측정 런타임 지문: git-normalized-source-sha256-v1 / 189 files /
+  `de53d7d17126ea552dff880efb90d119d36c66e37e8e4db97f88a4e3bb8e6e76`.
+  최종 실장비 FPS 재측정 후 sanitized evidence를 CI Artifact로 보존하고 코드 불일치를 차단한다.
+- 아직 커밋·푸시·PR·원격 CI·병합·배포는 진행하지 않았다.
+
+## M12 완료 작업 재개 (2026-09-12)
+
+### 추가 검증과 발견
+
+- Medium/High를 실제 balanced/precision WASM 계약으로 연결했다. `benchmark-reference-v2.json`
+  Chrome/Edge × WebGPU/WebGL 2 × 3공정 × 2프리셋 24 passed. 최저 FPS Medium 119.706,
+  High 119.086; cold localhost shell 최대 1341.1 ms. 이 측정은 아래 리소스 수명 수정 전이다.
+- Lighthouse 13.4.1, 새 Chrome 프로필 3회, 1440×900/DPR1, 10 Mbps/40 ms, CPU×1:
+  LCP 814.9/795.3/820.4 ms 모두 2500 ms 이내. CLI 임시 프로필 정리 EPERM은
+  작업 전용 Playwright 프로필 소유 방식으로 해결했다. `.cache/lighthouse-*`는 git 제외 로컬 프로필이다.
+- 60초 반복 공정에서 이전 Stock이 selectableObjects와 WebGPU material/shadow 캐시에
+  남는 경로를 확인했다. 선택 참조 해제, 동적 material 소유/폐기, 공정별 Mesh 2개 재사용을 구현했고
+  교체 60회·폐기·식별자 재사용 단위 테스트 3개를 통과했다.
+- 현재 메모리식은 모든 CDP 브라우저 프로세스의 max(privateCommit, workingSet) 합 +
+  WDDM dedicated/shared GPU 값이다. 고정 브라우저 비용과 공유 메모리 중복 가능성이 있으므로
+  실제 앱 메모리라고 표현하지 않는다. 기존 600 MB/1.5 GB 기준은 변경하지 않았다.
+- Chrome WebGPU 보수적 관측 상한: 선택 참조 수정 전 2.797 GB/126회,
+  선택 참조만 수정 5.286 GB/338회, material 폐기 추가 4.990 GB/331회,
+  Mesh 식별자 재사용 후 1.560 GB/318회(시작 1.341→종료 1.465 GB).
+  고정 60초 동안의 반복 횟수가 달라 비율을 직접 비교하지 않으며 누수 완전 해소로 선언하지 않는다.
+- Chrome WebGL 2: 빈 브라우저 보수적 기준 약 580 MB, 328회 반복 상한 1.273 GB.
+  memory JSON 원본과 수정 단계별 복사본을 artifacts에 보존했다. 아직 메모리 gate는 실패다.
+- M12 메모리 기준을 앱 사용량(Worker/WASM/GPU 포함)으로 산정할지 브라우저 전체로
+  산정할지 사용자 확인을 요청했다. 응답 전 산정식을 바꿔 통과 처리하지 않는다.
+- 전체 CI를 두 backend 전체 E2E·전체 visual·a11y·Lighthouse로 강화했다.
+  Worker 충돌 수신 프레임과 반영 프레임 차이 1을 검사하도록 보강했다. 원격 CI/병합은 미실행이다.
+- `pnpm verify` 통과: unit 288/37 files, contracts 64/16 files, parity 69/10 files,
+  lint·경계 150 modules/351 dependencies·typecheck·Cargo check·production build.
+  최초 테스트 Three 타입 참조 오류는 렌더러 공개 타입 참조로 수정했다.
+- 전체 WebGPU/WebGL 2 E2E 88 passed/2 opt-in soak skipped, visual 5 passed,
+  a11y 6 passed/3 별도 visual project skipped, Pages 2 passed.
+  Stock patch 없는 충돌 이벤트에서도 marker를 다음 렌더 프레임에 반영하도록 수정했고,
+  실제 충돌 위치와 수신→반영 정확히 1프레임 차이를 검증했다.
+  카메라 invalidation 검사는 동기 호출 병합 대신 10개 실제 완료 프레임에서 기존 불변식을 검사한다.
+- 리소스 수명 수정 후 전체 성능 v3는 34/36 통과, 모든 기능/Stock 동등성 통과.
+  software Chromium High 밀링의 handler 57.9/51.4 ms가 50 ms 미만 기준을 넘었다.
+  셀별 임시 배열 생성을 제거한 후 기존 모든 정점·winding·경계 셀·patch 동일성 테스트 3개와
+  typecheck를 통과했다.
+- 최종 `benchmark-reference-v4.json`: 27 passed/9 failed. 실장비 Chrome/Edge 24조합과
+  모든 기능/Stock 동등성은 통과했지만 software Chromium의 handler/long task 예산은
+  9조합에서 실패했다. 최대 handler 994.7 ms, 공정당 long task 최대 85회.
+  v3 실패가 해결되었다고 선언하지 않으며 v3/v4 원본을 함께 보존한다.
+  실장비 cold shell 최대 1536.9 ms. 최종 geometry 변경은 정점 동일성 테스트로 검증했고,
+  전체 E2E/visual 결과는 그 직전 리소스·충돌 수정 상태의 결과다.
+  원격 CI·커밋·푸시·PR·병합·재배포는 아직 수행하지 않았다.
+- 마지막 코드 기준 `pnpm lint`, `pnpm test:unit` 289/37 files, `pnpm check:bundle` 통과.
+  CSS gzip 21420/81920 B, WOFF2 0/409600 B; G-code Lab lazy 경계 통과.
+  WASM은 857623 B 및 기존 SHA-256을 유지했다. 메모리 산정 범위 회신과 software 성능
+  프로파일링이 남아 있으므로 완료·병합으로 승격하지 않는다.
+
+- 사용자가 M12 완료 후 커밋·푸시·병합을 승인했다. 현재 브랜치의 미병합 M10/M11 선행 변경도 전체 CI 대상으로 포함한다.
+- 기준 장비로 현재 PC(i7-13620H, 64GB RAM, Chrome/NVIDIA RTX 4060 Laptop 및 Edge/Intel UHD, 1440×900·DPR 1)를 사용자 승인받았다. 승인과 실제 gate 통과는 별개다.
+- 업로드 크기·확장자·MIME 사전 검사, binary STL 삼각형/구조/비유한 수 검사, ZIP 폭탄/손상 회귀를 보강했다. 현재 모델 경계는 binary STL만 수용하며 OBJ/glTF/CAD 디코딩·UI 업로드는 제공하지 않는다.
+- Pages CSP는 외부 연결/스크립트/프레임을 차단하고 same-origin WASM/Worker를 허용한다. Pages E2E에서 Monaco·WASM·실행·내보내기와 외부 HTTP 요청 0을 확인했다. 실제 배포 검증은 아직 남았다.
+- 검증: `pnpm security:test-uploads` 9+11 tests, `pnpm test:pages` 2 tests 통과. M12 전체 완료 아님.
 
 ## M12 커밋·푸시 인계 (2026-09-12)
 

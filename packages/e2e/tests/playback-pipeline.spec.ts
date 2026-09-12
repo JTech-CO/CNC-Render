@@ -221,6 +221,15 @@ test.describe("M7 Worker/WASM playback pipeline", () => {
       code: "collision.tool.fixture",
       sourceLine: 5,
     });
+    await expect(viewport).toHaveAttribute("data-pipeline-collision-received-frame", /^\d+$/u);
+    await expect(viewport).toHaveAttribute("data-pipeline-collision-rendered-frame", /^\d+$/u);
+    expect(Number(await viewport.getAttribute("data-pipeline-collision-rendered-frame")) -
+      Number(await viewport.getAttribute("data-pipeline-collision-received-frame"))).toBe(1);
+    expect(await page.evaluate(() => window.__CNC_RENDER_M3__?.getDiagnostics().collisionMarkerMm)).toEqual([
+      result.terminal.collision!.positionMm.xMm,
+      result.terminal.collision!.positionMm.yMm,
+      result.terminal.collision!.positionMm.zMm,
+    ]);
     expect(result.terminal.currentStep).toBeLessThan(result.terminal.totalSteps);
     expect(result.state.renderedOnFrame).toBeGreaterThan(
       result.state.baselineRenderFrame ?? 0,

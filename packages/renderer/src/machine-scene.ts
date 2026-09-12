@@ -612,6 +612,10 @@ export function createMachineScene(): MachineScene {
   );
   let partialStockSurface: PartialStockSurface | null = null;
   let rotationalStockSurface: PartialRotationalStockSurface | null = null;
+  // Keep object identities bounded: WebGPU shadow passes use a shared override
+  // material whose render-object cache otherwise retains every replaced mesh.
+  let reusableMillingMesh: Mesh | undefined;
+  let reusableTurningMesh: Mesh | undefined;
   addToolAssembly(
     millingHolderGroup,
     millingCutterGroup,
@@ -716,6 +720,12 @@ export function createMachineScene(): MachineScene {
 
   const fitBounds = new Box3().setFromObject(contentRoot);
 
+  const releaseStockMesh = (mesh: Object3D): void => {
+    const index = selectableObjects.indexOf(mesh);
+    if (index >= 0) selectableObjects.splice(index, 1);
+    stockLayer.remove(mesh);
+  };
+
   return {
     scene,
     contentRoot,
@@ -767,28 +777,27 @@ export function createMachineScene(): MachineScene {
     },
     configureStockSurface(descriptor) {
       applyPresentationMode("milling");
-      if (partialStockSurface) {
-        partialStockSurface.mesh.visible = false;
-        stockLayer.remove(partialStockSurface.mesh);
-        partialStockSurface.dispose();
-      }
       if (rotationalStockSurface) {
-        stockLayer.remove(rotationalStockSurface.mesh);
-        rotationalStockSurface.dispose();
-        rotationalStockSurface = null;
+        rotationalStockSurface.mesh.visible = false;
+        releaseStockMesh(rotationalStockSurface.mesh);
       }
       educationStock.visible = false;
-      partialStockSurface = new PartialStockSurface(
-        descriptor,
-        materials.stock,
-      );
+      if (!partialStockSurface?.reset(descriptor)) {
+        if (partialStockSurface) {
+          releaseStockMesh(partialStockSurface.mesh);
+          partialStockSurface.dispose();
+        }
+        partialStockSurface = new PartialStockSurface(descriptor, materials.stock, reusableMillingMesh);
+      }
+      reusableMillingMesh = partialStockSurface.mesh;
+      partialStockSurface.mesh.visible = true;
       tagObject(partialStockSurface.mesh, "stock", true);
       stockLayer.add(partialStockSurface.mesh);
-      selectableObjects.push(partialStockSurface.mesh);
+      if (!selectableObjects.includes(partialStockSurface.mesh)) selectableObjects.push(partialStockSurface.mesh);
       return partialStockSurface.getDiagnostics();
     },
     applyStockSurfacePatches(patches) {
-      if (!partialStockSurface) {
+      if (!partialStockSurface?.mesh.visible) {
         throw new Error(
           "Configure the Stock surface before applying partial patches.",
         );
@@ -798,26 +807,26 @@ export function createMachineScene(): MachineScene {
     configureRotationalStockSurface(descriptor) {
       applyPresentationMode("turning");
       if (partialStockSurface) {
-        stockLayer.remove(partialStockSurface.mesh);
-        partialStockSurface.dispose();
-        partialStockSurface = null;
-      }
-      if (rotationalStockSurface) {
-        stockLayer.remove(rotationalStockSurface.mesh);
-        rotationalStockSurface.dispose();
+        partialStockSurface.mesh.visible = false;
+        releaseStockMesh(partialStockSurface.mesh);
       }
       educationStock.visible = false;
-      rotationalStockSurface = new PartialRotationalStockSurface(
-        descriptor,
-        materials.stock,
-      );
+      if (!rotationalStockSurface?.reset(descriptor)) {
+        if (rotationalStockSurface) {
+          releaseStockMesh(rotationalStockSurface.mesh);
+          rotationalStockSurface.dispose();
+        }
+        rotationalStockSurface = new PartialRotationalStockSurface(descriptor, materials.stock, reusableTurningMesh);
+      }
+      reusableTurningMesh = rotationalStockSurface.mesh;
+      rotationalStockSurface.mesh.visible = true;
       tagObject(rotationalStockSurface.mesh, "stock", true);
       stockLayer.add(rotationalStockSurface.mesh);
-      selectableObjects.push(rotationalStockSurface.mesh);
+      if (!selectableObjects.includes(rotationalStockSurface.mesh)) selectableObjects.push(rotationalStockSurface.mesh);
       return rotationalStockSurface.getDiagnostics();
     },
     applyRotationalStockSurfacePatches(patches) {
-      if (!rotationalStockSurface) {
+      if (!rotationalStockSurface?.mesh.visible) {
         throw new Error(
           "Configure the rotational Stock surface before applying profile patches.",
         );
@@ -825,10 +834,10 @@ export function createMachineScene(): MachineScene {
       return rotationalStockSurface.applyPatches(patches);
     },
     getRotationalStockSurfaceDiagnostics() {
-      return rotationalStockSurface?.getDiagnostics() ?? null;
+      return rotationalStockSurface?.mesh.visible ? rotationalStockSurface.getDiagnostics() : null;
     },
     getStockSurfaceDiagnostics() {
-      return partialStockSurface?.getDiagnostics() ?? null;
+      return partialStockSurface?.mesh.visible ? partialStockSurface.getDiagnostics() : null;
     },
     finishStockSurfaceUpload() {
       if (stockLayer.visible && partialStockSurface?.mesh.visible) {
@@ -866,8 +875,22 @@ export function createMachineScene(): MachineScene {
       collisionMarker.visible = true;
     },
     dispose() {
+      // Cached inactive surfaces are detached, so dispose them explicitly too.
+      if (partialStockSurface) {
+        releaseStockMesh(partialStockSurface.mesh);
+        partialStockSurface.dispose();
+      }
+      if (rotationalStockSurface) {
+        releaseStockMesh(rotationalStockSurface.mesh);
+        rotationalStockSurface.dispose();
+      }
       disposeObjectResources(scene);
       scene.clear();
+      selectableObjects.length = 0;
+      partialStockSurface = null;
+      rotationalStockSurface = null;
+      reusableMillingMesh = undefined;
+      reusableTurningMesh = undefined;
     },
   };
 }

@@ -101,20 +101,25 @@ test.describe("viewport renderer shell", () => {
       };
     });
 
-    await page.evaluate(() => {
+    // Demand rendering coalesces synchronous invalidations. Exercise ten actual
+    // completed frames, retaining all 200 camera changes and the zero-commit gate.
+    for (let batch = 0; batch < 10; batch += 1) {
+     const beforeFrame = Number(await viewport.getAttribute("data-render-frames"));
+     await page.evaluate(() => {
       const harness = window.__CNC_RENDER_M3__;
       if (!harness) {
         throw new Error("M3 browser harness is unavailable.");
       }
-      for (let index = 0; index < 200; index += 1) {
+      for (let index = 0; index < 20; index += 1) {
         harness.orbit(0.25, index % 2 === 0 ? 0.05 : -0.05);
       }
-    });
-    await expect
+     });
+     await expect
       .poll(async () =>
         Number(await viewport.getAttribute("data-render-frames")),
       )
-      .toBeGreaterThan(baseline.diagnostics.telemetry.framesRendered);
+      .toBeGreaterThan(beforeFrame);
+    }
 
     const current = await page.evaluate(() => {
       const harness = window.__CNC_RENDER_M3__;

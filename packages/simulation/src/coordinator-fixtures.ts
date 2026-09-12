@@ -466,20 +466,29 @@ export function createM7PipelineFixture(
   runId: string,
   configuration: M7MillingConfigurationInput = {},
   operation: M7MillingOperationParametersInput = {},
+  preset: "balanced" | "precision" = "balanced",
 ): CoordinatorRunRequest {
+  if (preset !== "balanced" && preset !== "precision") {
+    throw new RangeError("Unsupported pipeline quality preset");
+  }
+  let run: CoordinatorRunRequest;
   switch (fixture) {
     case "milling":
-      return millingRun(runId, false, configuration, operation);
+      run = millingRun(runId, false, configuration, operation); break;
     case "turning":
-      return turningRun(runId, "turning");
+      run = turningRun(runId, "turning"); break;
     case "drilling":
-      return turningRun(runId, "drilling");
+      run = turningRun(runId, "drilling"); break;
     case "collision-stop":
-      return millingRun(
+      run = millingRun(
         runId,
         true,
         DEFAULT_M7_MILLING_CONFIGURATION,
         DEFAULT_M7_MILLING_OPERATION_PARAMETERS,
       );
+      break;
   }
+  // Rust applies the documented 0.5 resolution multiplier for Precision.
+  // Source, stock dimensions, cutter and seed remain identical to Medium.
+  return { ...run, process: { ...run.process, preset } };
 }

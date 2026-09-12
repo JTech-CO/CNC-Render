@@ -62,7 +62,7 @@ const result = spawnSync(
   ],
   {
     cwd: fileURLToPath(new URL(".", import.meta.url)),
-    env: process.env,
+    env: { ...process.env, CNC_RENDER_E2E_SUITE: suiteName },
     stdio: "inherit",
   },
 );

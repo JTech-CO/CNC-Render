@@ -10,6 +10,13 @@ import { describe, expect, it } from "vitest";
 const RUN_ID = "79000000-0000-4000-8000-000000000001";
 
 describe("M7 configurable milling fixture", () => {
+  it.each(["milling", "turning", "drilling", "collision-stop"] as const)("passes real precision to the %s Worker contract without changing machining inputs", (fixture) => {
+    const medium = createM7PipelineFixture(fixture, RUN_ID);
+    const high = createM7PipelineFixture(fixture, RUN_ID, {}, {}, "precision");
+    expect(medium.process.preset).toBe("balanced");
+    expect(high.process.preset).toBe("precision");
+    expect({ ...high, process: { ...high.process, preset: "balanced" } }).toEqual(medium);
+  });
   it("preserves the default representative program", () => {
     const run = createM7PipelineFixture("milling", RUN_ID);
 

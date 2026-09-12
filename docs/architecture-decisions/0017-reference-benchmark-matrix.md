@@ -7,6 +7,10 @@
 
 ## 결정
 
+> 2026-09-12 후속: [ADR 0018](0018-release-hardening-and-resource-gates.md)이 High 경로,
+> 사용자 기준 장비 승인, Lighthouse 및 메모리 검증을 추가한다. 아래 초기 v1의
+> High 미구현/장비 미승인 설명은 당시 상태이며, 전체 릴리스 미완료 판단은 유지한다.
+
 1. 기존 `pnpm bench`의 Node smoke budget을 유지한다. `--report`를 지정하면 전체
    Node gate 뒤 production Pages에서 별도의 Playwright benchmark matrix를 실행한다.
    Node wall-clock gate도 간섭을 피하도록 파일 단위 직렬 실행하며 임계값은 바꾸지 않는다.

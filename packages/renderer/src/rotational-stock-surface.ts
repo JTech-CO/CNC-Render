@@ -107,6 +107,7 @@ export class PartialRotationalStockSurface {
   constructor(
     descriptor: RotationalStockSurfaceDescriptor,
     material?: Material,
+    reusableMesh?: Mesh,
   ) {
     this.#validateDescriptor(descriptor);
     this.#descriptor = descriptor;
@@ -136,8 +137,12 @@ export class PartialRotationalStockSurface {
     this.#ownedMaterial =
       material === undefined
         ? new MeshStandardMaterial({ color: 0xfdfdfb, roughness: 0.7 })
-        : null;
-    this.mesh = new Mesh(this.geometry, material ?? this.#ownedMaterial!);
+        : material.clone();
+    // Dispose per-surface WebGPU render objects without disposing the scene material.
+    this.mesh = reusableMesh ?? new Mesh(this.geometry, this.#ownedMaterial!);
+    this.mesh.geometry = this.geometry;
+    this.mesh.material = this.#ownedMaterial!;
+    this.mesh.visible = true;
     this.mesh.name = "m6-partial-rotational-stock-surface";
     this.mesh.castShadow = true;
     this.mesh.receiveShadow = true;
@@ -221,6 +226,29 @@ export class PartialRotationalStockSurface {
 
   finishUpload(): void {
     this.#positionAttribute.clearUpdateRanges();
+  }
+
+  reset(descriptor: RotationalStockSurfaceDescriptor): boolean {
+    this.#validateDescriptor(descriptor);
+    const previous = this.#descriptor;
+    if (descriptor.axisCenterMm.xMm !== previous.axisCenterMm.xMm || descriptor.axisCenterMm.yMm !== previous.axisCenterMm.yMm ||
+      descriptor.minimumZMm !== previous.minimumZMm || descriptor.maximumZMm !== previous.maximumZMm ||
+      descriptor.axialCells !== previous.axialCells || descriptor.radialSegments !== previous.radialSegments || descriptor.resolutionMm !== previous.resolutionMm) return false;
+    this.#innerRadiusMm.set(descriptor.innerRadiusMm);
+    this.#outerRadiusMm.set(descriptor.outerRadiusMm);
+    for (let cell = 0; cell < descriptor.axialCells; cell++) this.#writeCell(cell, this.#innerRadiusMm[cell], this.#outerRadiusMm[cell]);
+    this.#positionAttribute.clearUpdateRanges();
+    this.#positionAttribute.addUpdateRange(0, this.#positions.length);
+    this.#positionAttribute.needsUpdate = true;
+    this.geometry.computeVertexNormals();
+    this.geometry.computeBoundingBox();
+    this.geometry.computeBoundingSphere();
+    this.#revision = 0;
+    this.#partialBufferUpdates = 0;
+    this.#lastUpdatedCells = 0;
+    this.#totalUpdatedCells = 0;
+    this.#uploadedBytes = this.#positions.byteLength;
+    return true;
   }
 
   getDiagnostics(): RotationalStockSurfaceDiagnostics {

@@ -1,4 +1,5 @@
 export const BENCHMARK_FIXTURES = ["milling", "turning", "drilling"];
+export const BENCHMARK_QUALITIES = ["balanced", "precision"];
 export const BENCHMARK_BROWSERS = ["chromium", "chrome", "msedge"];
 export const BENCHMARK_BACKENDS = ["webgpu", "webgl2"];
 export const BENCHMARK_WINDOW_MS = 8_000;
@@ -47,19 +48,28 @@ export function evaluatePerformance(sample) {
   const hardware = sample.gpuClass === "hardware-candidate";
   const fps = sample.frames.renderedFps;
   const shell = sample.shellReadyMs;
+  const high = sample.qualityPreset === "precision";
+  const fpsGate = (threshold) => !hardware ? "not-qualified" : !Number.isFinite(fps) || fps <= 0 ? "not-measured" : fps >= threshold ? "pass" : "fail";
   return {
-    mediumFps: !hardware ? "not-qualified" : !Number.isFinite(fps) || fps <= 0 ? "not-measured" : fps >= 60 ? "pass" : "fail",
+    mediumFps: high ? "not-applicable" : fpsGate(60),
     coldShell: !Number.isFinite(shell) || shell <= 0 ? "not-measured" : shell <= 5000 ? "pass" : "fail",
     // performance.memory excludes GPU and Worker heaps; it cannot prove total memory.
     totalMemory: "not-measured",
-    highPreset: "not-implemented",
+    highPreset: high ? fpsGate(30) : "not-measured",
     landingLcp: "not-measured",
     referenceHardwareApproval: "pending",
   };
 }
 
-export function compareBenchmarkMatrix(rows, projects) {
+export function compareBenchmarkMatrix(rows, projects, qualities = ["balanced"]) {
   if (projects.length === 0) throw new Error("Benchmark matrix must not be empty.");
+  return qualities.flatMap((qualityPreset) => {
+    const qualityRows = rows.filter((row) => (row.qualityPreset ?? "balanced") === qualityPreset);
+    return compareQualityMatrix(qualityRows, projects).map((result) => ({ ...result, qualityPreset }));
+  });
+}
+
+function compareQualityMatrix(rows, projects) {
   return BENCHMARK_FIXTURES.map((fixture) => {
     if (projects.some((project) => rows.filter((row) => row.project === project.name && row.fixture === fixture).length !== 1)) {
       return { fixture, status: "incomplete", reason: "missing-or-duplicate-execution" };
