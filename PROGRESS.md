@@ -1,11 +1,32 @@
 ﻿# CNC Render Progress
 
 - Current phase: M12 성능·폴백·보안·CI·릴리스 게이트 진행 중
-- Status: 실행별 Long Task 판정·누적 보존 구현 및 푸시 완료; M12 로딩 지연 원인 확인 중
-- Last completed: 전체 회귀·실장비 24조합·메모리 8조합·broadband LCP 3회
-- Next task: 검증된 변경 커밋·푸시 → PR #13 CI → 병합·Pages → M13
-- Open questions: 없음. 실행별 Long Task 판정·전체 누적 보존 및 앱 귀속 메모리 산정 승인됨.
-- Known regressions: clean-release 로컬 LCP 3회 중 1회 6273.8 ms로 2500 ms 초과. M12 완료·병합 보류
+- Status: 2edb5f6 전체 CI·현재 후보 clean-release 통과; 이전 단발성 LCP 지연 처리 결정 대기
+- Last completed: CI 35449919292 전체 통과, 로컬 Pages 2·LCP 3회·clean release SHA/WASM 검증
+- Next task: 미해결 P2 위험 처리 결정 → 최종 head CI 확인 → PR #13 병합·Pages 검증
+- Open questions: 과거 LCP 6273.8 ms 단발 지연을 알려진 P2 이슈로 보존하고 통과 후보를 병합할지 사용자 확인 중. 승인 전 예외 처리하지 않음.
+- Known regressions: 과거 clean-release LCP 1회 초과는 원인 미확정. 현재 후보의 로컬 3회 및 CI 3회 통과와 분리해 보존
+
+## 2026-09-20 M12 병합 전 재검증
+
+- 사용자 요청: M12 전체 완료·병합. PR #13의 코드 head `2edb5f6`은 CLEAN/MERGEABLE이며,
+  최신 전체 CI [35449919292](https://github.com/JTech-CO/CNC-Render/actions/runs/35449919292)가
+  성공했다. unit 343, contracts 64, parity 69, Rust/fuzz, software matrix, visual 5,
+  E2E 88(기존 opt-in soak 2 skipped), a11y 6, bundle, 보안, 기준 장비 증거 검증,
+  Pages 2, Lighthouse와 clean release 검사가 모두 통과했다. PR에서는 배포 job이 정상적으로 skipped다.
+- 최신 CI LCP는 750.951/758.220/753.814 ms다. 원본 trace·DevTools log·보고서는 CI artifact와
+  `artifacts/ci-35449919292/lighthouse`에 보존한다. software 원본도 해당 CI 디렉터리에 보존한다.
+  직전 `5d18e29` CI 35449592501도 성공했으며 LCP 720.054/714.362/740.468 ms였다.
+- 현재 `2edb5f6`의 로컬 strict clean-release 재검증: Pages 2, LCP 1122.4/1086.9/956.0 ms,
+  v0.9.0 / schema 1 / engine 0.9.0, sourceDirty=false, commit SHA·WASM 해시 모두 일치.
+  `lighthouse-m12-release-candidate*`에 보존한다. CI 환경 변수를 사용한 로컬 재현이므로
+  JSON scope의 CI 표기를 원격 runner 또는 독립 장비 증거로 해석하지 않는다.
+- 과거 6273.8 ms 지연의 전후 3분 Windows 이벤트에서 GPU 재시작·Chrome/DWM 오류는
+  발견되지 않았다. 이는 원인 규명 또는 지연 부재의 증거가 아니다. 진단 9회와 현재 후보 통과를
+  이유로 유효 실패를 삭제하거나 2.5초 기준을 완화하지 않는다.
+- 알려진 P2로 문서화·승인하는 릴리스 조건 적용 여부를 사용자에게 요청했다. 답변 전에는
+  승인된 위험으로 기록하지 않고 M12 완료·병합·공개 배포를 보류한다. PR 설명은 최신 수치와
+  이 조건으로 갱신했다. 기존 M10 stash와 다른 브랜치에는 손대지 않았다.
 
 ## 2026-09-19 M12 재개 확인
 
