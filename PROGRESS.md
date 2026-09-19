@@ -1,11 +1,54 @@
 ﻿# CNC Render Progress
 
-- Current phase: M12 성능·폴백·보안·CI·릴리스 게이트 진행 중
-- Status: 2edb5f6 전체 CI·현재 후보 clean-release 통과; 이전 단발성 LCP 지연 처리 결정 대기
-- Last completed: CI 35449919292 전체 통과, 로컬 Pages 2·LCP 3회·clean release SHA/WASM 검증
-- Next task: 미해결 P2 위험 처리 결정 → 최종 head CI 확인 → PR #13 병합·Pages 검증
-- Open questions: 과거 LCP 6273.8 ms 단발 지연을 알려진 P2 이슈로 보존하고 통과 후보를 병합할지 사용자 확인 중. 승인 전 예외 처리하지 않음.
-- Known regressions: 과거 clean-release LCP 1회 초과는 원인 미확정. 현재 후보의 로컬 3회 및 CI 3회 통과와 분리해 보존
+- Current phase: M12 성능·폴백·보안·CI·릴리스 게이트 완료
+- Status: complete — PR #13 병합, main CI·Pages 배포·공개 기능/출처 검증 통과
+- Last completed: 43db00c 공개 Pages 검증 2개, WASM MIME/해시 일치 및 M12 병합 브랜치 정리
+- Next task: M13 3+2축·동시 5축의 machine plugin contract부터 별도 검증 단위로 진행
+- Open questions: 없음. 2026-09-20 사용자가 단발성 LCP 지연을 미해결 P2로 보존하고 검증 통과 후보를 병합·배포하는 것을 승인함.
+- Known regressions: 과거 LCP 6273.8 ms 1회 초과는 원인 미확정인 승인된 P2. 해결됨으로 닫지 않으며 2.5초 기준·실패 증거를 유지
+
+## 2026-09-20 M12 릴리스 완료
+
+- 사용자가 알려진 P2 위험의 보존 및 최종 CI 통과 후 병합·Pages 게시를 승인했다.
+  승인 기록은 기존 PR과 이 문서에 유지한다. 별도 공개 GitHub 이슈는 생성하지 않았다.
+- 최종 PR head `901a011`의 전체 CI
+  [35450789759](https://github.com/JTech-CO/CNC-Render/actions/runs/35450789759) 통과 후
+  [PR #13](https://github.com/JTech-CO/CNC-Render/pull/13)을 main에 병합했다.
+  병합 커밋은 `43db00c83f2ce54a5771a458f382371eaa94b233`이다.
+- main 전체 CI와 Pages 게시
+  [35451660934](https://github.com/JTech-CO/CNC-Render/actions/runs/35451660934)도 성공했다.
+  PR LCP 750.315/767.066/745.926 ms, main LCP 773.612/783.719/782.089 ms로
+  각각 고정 3회 모두 기존 2500 ms 기준을 통과했다. 기준 장비 측정과 CI 수치를 혼합하지 않는다.
+- [공개 Pages](https://jtech-co.github.io/CNC-Render/)에서 `pages-deployment.spec.ts` 2개가
+  통과했다. 스타일·도움말·탭 전환·Monaco/전용 분석 Worker·WASM 절삭·결과 비교·JSON 저장을
+  확인했으며 page/console 오류와 외부 HTTP 요청이 없었다.
+- 공개 `release.json`: v0.9.0 / schema 1 / engine 0.9.0, 위 병합 SHA,
+  sourceDirty=false. WASM은 `application/wasm`, 857607 bytes,
+  SHA-256 `497b6a767ecf3d4c9ecda61281f89dd4bc73a8d6601821906215dc5aabeccc15`로
+  해당 Linux CI 산출물과 일치했다. Windows 로컬 WASM 바이트/해시와 구분하여 기록한다.
+- 로컬 기준 브랜치를 main으로 동기화하고 완전 병합된 `codex/m12-release-gates`만
+  로컬·원격에서 삭제했다. 커밋은 main/PR 이력에 남아 복구 가능하다. 기존 M10 stash와
+  다른 브랜치는 보존했다. M13 코드는 아직 구현하지 않았다.
+
+### M12 DoD 판정
+
+| 항목 | 확인 결과 |
+|---|---|
+| 로딩 | 현재 후보 로컬 1122.4/1086.9/956.0 ms, 위 PR/main CI 3회 모두 통과. cold shell 최대 1652.5 ms. 과거 단발 지연은 승인 P2로 유지 |
+| 대표 FPS | 승인된 기준 장비 24조합, 기본 최소 117.867 / 고정밀 최소 119.522 FPS |
+| 메모리 | 승인된 앱 귀속 산식의 유효 8조합 통과, 기본 최대 481.92 MB / 고정밀 최대 512.95 MB. 기존 600 MB/1.5 GB 한도 유지 |
+| 충돌 표시 | Worker collision-stop 및 다음 1렌더 프레임 표시 E2E 통과 |
+| 백엔드 동등성 | 같은 프리셋의 Toolpath·축·진단·Stock 결과 일치, software 12조합 및 reference 24조합 통과 |
+| 브라우저 | 승인 장비 Chrome/Edge 대표 공정 검증. Firefox/실제 Safari는 미검증 제한을 지원 매트릭스에 명시 |
+| 업로드 방어 | 크기·MIME·확장자·구조·CRC·압축 폭탄·binary STL 삼각형/손상 검증 통과 |
+| SAB/헤더 | SAB 미사용, ArrayBuffer/Transferable 경로. 공개 CSP와 same-origin Worker/WASM 동작 검증, COOP/COEP 지원으로 표현하지 않음 |
+| 개인정보 | cloud persistence/telemetry 비활성, 검증에서 외부 HTTP 요청 0 |
+| CI | unit 343/contracts 64/parity 69, Rust/fuzz, visual 5, E2E 88, a11y 6, bundle/보안/성능/Pages/출처 검사 통과. 기존 opt-in soak 2개는 별도 범위 |
+| 배포 출처 | 공개 버전·commit SHA·schema·engine·WASM MIME/해시와 CI 산출물 일치 |
+
+- 남은 P2의 원인 수정 또는 모든 장비·임의 대형 프로젝트·장시간 실행 성능 보증까지 완료한
+  것은 아니다. 이후 LCP 실패도 그대로 실패로 판정한다. 이 완료 기록은 실제 공개 검증을
+  마친 위 병합 산출물을 기준으로 하며, 후속 문서 커밋은 런타임 지문을 바꾸지 않는다.
 
 ## 2026-09-20 M12 병합 전 재검증
 
