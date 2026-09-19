@@ -39,19 +39,23 @@ test.describe("viewport renderer shell", () => {
   test("viewport keeps six semantic layers independently controllable", async ({
     page,
   }, testInfo) => {
-    await openViewport(page, testInfo);
+    const viewport = await openViewport(page, testInfo);
     const layers = page.locator(".layer-row");
     await expect(layers).toHaveCount(6);
 
     const canvas = page.getByTestId("machine-canvas");
+    await expect.poll(async () => Number(await viewport.getAttribute("data-render-frames"))).toBeGreaterThan(0);
     const before = await canvas.screenshot();
+    await testInfo.attach("stock-visible", { body: before, contentType: "image/png" });
+    const beforeFrame = Number(await viewport.getAttribute("data-render-frames"));
     const stockToggle = page.locator('[data-layer-id="stock"] input');
     await stockToggle.uncheck();
     await expect(stockToggle).not.toBeChecked();
-    await page.waitForTimeout(120);
-    const after = await canvas.screenshot();
-
-    expect(after.equals(before)).toBe(false);
+    await expect.poll(async () => Number(await viewport.getAttribute("data-render-frames"))).toBeGreaterThan(beforeFrame);
+    // GPU submission and compositor presentation need not finish together.
+    // Keep the actual pixel-change gate; a blank canvas must still fail.
+    await expect.poll(async () => (await canvas.screenshot()).equals(before)).toBe(false);
+    await testInfo.attach("stock-hidden", { body: await canvas.screenshot(), contentType: "image/png" });
   });
 
   test("viewport camera presets, fit, orbit, pan and zoom stay in range", async ({
@@ -101,20 +105,25 @@ test.describe("viewport renderer shell", () => {
       };
     });
 
-    await page.evaluate(() => {
+    // Demand rendering coalesces synchronous invalidations. Exercise ten actual
+    // completed frames, retaining all 200 camera changes and the zero-commit gate.
+    for (let batch = 0; batch < 10; batch += 1) {
+     const beforeFrame = Number(await viewport.getAttribute("data-render-frames"));
+     await page.evaluate(() => {
       const harness = window.__CNC_RENDER_M3__;
       if (!harness) {
         throw new Error("M3 browser harness is unavailable.");
       }
-      for (let index = 0; index < 200; index += 1) {
+      for (let index = 0; index < 20; index += 1) {
         harness.orbit(0.25, index % 2 === 0 ? 0.05 : -0.05);
       }
-    });
-    await expect
+     });
+     await expect
       .poll(async () =>
         Number(await viewport.getAttribute("data-render-frames")),
       )
-      .toBeGreaterThan(baseline.diagnostics.telemetry.framesRendered);
+      .toBeGreaterThan(beforeFrame);
+    }
 
     const current = await page.evaluate(() => {
       const harness = window.__CNC_RENDER_M3__;

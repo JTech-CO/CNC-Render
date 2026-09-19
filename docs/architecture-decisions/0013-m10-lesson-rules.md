@@ -1,0 +1,82 @@
+# ADR 0013 — M10 강의 스키마와 결정론적 단계 판정
+
+- 상태: 승인
+- 날짜: 2026-08-12
+- 마일스톤: M10 — 튜토리얼·샌드박스 MVP(E2)
+
+## 배경
+
+M9의 학습 영역은 대표 절삭 공정을 실행할 수 있지만 정식 강의의 단계, 허용 행동,
+성공·실패 이유와 복구 경로를 표현하지 않는다. M10에서는 평면 밀링, 외경 선삭,
+드릴링이 같은 실제 엔진 경로를 사용해야 하며, 동일한 결과 증거가 언제나 같은 판정을
+만들어야 한다. React나 렌더러 상태를 직접 읽는 판정은 프레임 타이밍과 화면 구현에
+따라 결과가 달라지고 모듈 경계도 무너뜨린다.
+
+## 결정
+
+1. 강의 콘텐츠는 `content/lessons/<locale>/`의 versioned JSON으로 작성하고
+   `packages/lesson-engine`의 strict Zod 스키마로 로드한다. 알 수 없는 필드,
+   비유한 수치, 중복 ID·허용 행동과 역행하는 단계 순서를 거부한다.
+2. 모든 정식 강의는 준비, 설정, 실행, 측정, 평가 단계를 순서대로 포함한다.
+   첫 범위는 한국어와 E2 등급이며, 근사 항목과 산업용 검증이 아니라는 제한을
+   콘텐츠 자체에 명시한다.
+3. 단계는 허용 행동과 성공·실패 규칙을 선언한다. 비허용 행동은 hard block하지 않고
+   `guided-warning`으로 이유와 `restore-step-checkpoint` 복구 경로를 반환한다.
+4. 판정 입력은 선택 ID, 완료 이벤트와 단위가 이름에 포함된 유한 수치 증거로 제한한다.
+   대형 배열, Stock 필드와 렌더 프레임 상태를 강의 엔진에 전달하지 않는다.
+5. 실패 규칙은 콘텐츠 작성 순서대로 먼저 평가하고 첫 일치 이유를 반환한다.
+   실패가 없을 때 성공 규칙의 미충족 ID를 작성 순서대로 반환한다. 같은 강의와 증거는
+   실행 시각, 브라우저와 렌더 backend에 관계없이 같은 결과를 만든다.
+6. `packages/lesson-engine`은 UI, simulation, renderer, storage와 앱을 import하지
+   않는 순수 규칙 계층으로 둔다. 실제 엔진 어댑터는 후속 작업 단위에서 Worker/WASM
+   요약을 명시적 증거로 변환한다.
+
+## 대안 검토
+
+- React 컴포넌트 안에서 단계별 조건문을 실행하는 방식은 화면과 규칙을 결합하고
+  튜토리얼별 회귀 테스트를 어렵게 하므로 선택하지 않았다.
+- 순서 밖 행동을 disabled 처리하는 방식은 자유 실습과 학습자의 원인 이해를 막으므로
+  선택하지 않았다.
+- 실제 재생 경과 시간을 판정에 사용하는 방식은 시스템 부하에 따라 달라지므로
+  선택하지 않았다. 시간 채점은 결정론적 `logicalTimeS`만 사용한다.
+
+## 결과와 제약
+
+- 첫 fixture인 평면 밀링은 잘못된 공구, 5 mm 초과 절입과 충돌을 서로 다른 이유로
+  판정하고 준비부터 평가까지의 성공 조건을 선언한다.
+- 이 ADR 범위에는 점수 공식, 힌트 선택, 선삭·드릴링 콘텐츠, 샌드박스 operation
+  생성, 실제 Worker/WASM 증거 어댑터와 튜토리얼 UI가 포함되지 않는다.
+- 후속 M10 단위는 이 계약을 확장하되 임계값 완화나 렌더 상태 참조 없이
+  parity 및 E2E gate를 추가해야 한다.
+
+## 후속 구현 기록 — 2026-08-14
+
+- 초기 승인 시 제외했던 외경 선삭과 센터 드릴링 콘텐츠를 각각 strict 5단계
+  한국어 E2 Lesson으로 추가했다. 두 Lesson은 선반·원통 소재·3 jaw chuck를
+  공유하고 외경 insert/종방향 선삭과 Ø16 twist drill/80 mm 드릴링 선택 ID를
+  별도로 검증한다.
+- Web foundation의 공정별 controller는 준비→설정→실행→측정→평가 전이를
+  공유하되 terminal Worker/WASM 요약의 fixture ID, 공정 종류, 제거 체적과
+  측정 target/process/feature가 선택 Lesson과 일치하지 않으면 기록을 거부한다.
+- 학습 UI는 세 Lesson controller 중 하나를 명시적으로 선택한다. 실행 중에는
+  선택을 잠그고, 단계 전이 시에만 작은 snapshot을 React에 전달한다. renderer
+  frame과 실제 재생 경과는 계속 판정 입력이 아니다.
+- 이 후속 기록으로 선삭·드릴링 콘텐츠와 정식 UI/E2E 제외 범위는 해소됐다.
+  샌드박스 operation 생성·편집·저장과 힌트 정책 확장은 여전히 후속 M10 범위다.
+
+## 후속 구현 기록 — 2026-09-04
+
+- `tutorial-success`와 `tutorial-failure` visual baseline은 전용 WebGL 2 project에서
+  글꼴·포커스를 고정한 Lesson 결과 영역을 비교한다. 성공은 최종 3D 결과와 실제
+  Worker/WASM 제거·측정·100점 증거를 유지하고, 실패는 작성된 `setup.wrong-tool`
+  이유와 `restore-step-checkpoint` 복구 동작을 함께 검증한다.
+- 샌드박스 controller는 `Operation` strict schema를 유지하면서 대표 평면 밀링의
+  생성·편집·commit·discard와 최대 50개 revision의 durable undo/redo를 기록한다.
+  동일 operation ID와 단조 증가 sequence가 아닌 journal은 복원을 거부한다.
+- React에는 form과 작은 controller snapshot만 두며 실행은 기존 전용 Worker와
+  Rust/WASM 경로를 사용한다. 저장 시 같은 operation으로 fast-forward checkpoint를
+  다시 만들고 project와 canonical journal을 한 immutable generation에 기록한다.
+- 첫 샌드박스는 E2 수직 절편으로 Training VMC, Aluminum 6061, Ø20 mm 평엔드밀,
+  표준/소형 직육면체 Stock과 X/Y 왕복을 제공한다. balanced 8 mm 격자에서 0 체적
+  절삭을 허용하지 않도록 절입 깊이는 4–5 mm로 제한하며 이 범위를 UI에 표시한다.
+  더 많은 기계·재료·공구와 자유 공구경로는 후속 범위다.

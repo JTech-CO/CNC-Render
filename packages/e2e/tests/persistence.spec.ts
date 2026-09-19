@@ -172,4 +172,41 @@ test.describe("M8 browser persistence pipeline", () => {
     expect(result.diagnosticCode).toBe("storage.import.crc-mismatch");
     expect(result.defaultUploadLimitBytes).toBe(100 * 1024 * 1024);
   });
+
+  test("drilling fixture saves and restores a turning-profile checkpoint", async ({
+    page,
+  }, testInfo) => {
+    const viewport = await openM8Persistence(page, testInfo);
+    const saved = await page.evaluate(async () => {
+      const harness = window.__CNC_RENDER_M8__;
+      if (!harness) {
+        throw new Error("M8 browser harness is unavailable.");
+      }
+      return harness.saveFixture("drilling");
+    });
+
+    expect(saved.currentStep).toBeGreaterThan(0);
+    expect(saved.logicalTimeS).toBeGreaterThan(0);
+    expect(saved.checkpointByteLength).toBeGreaterThan(0);
+    await expect(viewport).toHaveAttribute("data-persistence-state", "saved");
+
+    const loaded = await page.evaluate(async () => {
+      const harness = window.__CNC_RENDER_M8__;
+      if (!harness) {
+        throw new Error("M8 browser harness is unavailable.");
+      }
+      return harness.loadPersistedProject();
+    });
+
+    expect(loaded.componentHashes).toEqual(saved.componentHashes);
+    expect(loaded.stateSemanticHashSha256).toBe(
+      saved.stateSemanticHashSha256,
+    );
+    expect(loaded.stockHashSha256).toBe(saved.stockHashSha256);
+    expect(loaded.renderedOnFrame).toBeGreaterThan(0);
+    await expect(viewport).toHaveAttribute(
+      "data-pipeline-state",
+      "checkpoint-restored",
+    );
+  });
 });

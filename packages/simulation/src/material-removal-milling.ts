@@ -6,6 +6,8 @@ import {
   type Vec3Mm,
 } from "@cnc-render/contracts";
 
+import { minimumSweptFlatEndTipZMm } from "./milling-sweep-geometry";
+
 const DEFAULT_BRICK_SIZE_DEXELS = 16;
 const DEFAULT_MEMORY_CAP_BYTES = 64 * 1024 * 1024;
 const MAX_COMPLETED_SWEEP_CACHE_ENTRIES = 1_024;
@@ -379,7 +381,12 @@ export class SparseDexelMillingEngine {
           column += 1
         ) {
           const xMm = this.#cellCenter(column, "x");
-          const minimumTipZMm = this.#minimumSweptTipZ(sweep, xMm, yMm);
+          const minimumTipZMm = minimumSweptFlatEndTipZMm(
+            sweep,
+            this.#cutterRadiusMm,
+            xMm,
+            yMm,
+          );
           if (minimumTipZMm === null || minimumTipZMm >= topZMm) {
             continue;
           }
@@ -714,50 +721,6 @@ export class SparseDexelMillingEngine {
         this.#completedSweepKeys.delete(oldest);
       }
     }
-  }
-
-  #minimumSweptTipZ(
-    sweep: MillingSweep,
-    xMm: number,
-    yMm: number,
-  ): number | null {
-    const deltaX = sweep.endMm.xMm - sweep.startMm.xMm;
-    const deltaY = sweep.endMm.yMm - sweep.startMm.yMm;
-    const deltaZ = sweep.endMm.zMm - sweep.startMm.zMm;
-    const lengthSquared = deltaX * deltaX + deltaY * deltaY;
-    const radiusSquared = this.#cutterRadiusMm * this.#cutterRadiusMm;
-
-    if (lengthSquared <= NUMERIC_EPSILON) {
-      const distanceSquared =
-        (xMm - sweep.startMm.xMm) ** 2 +
-        (yMm - sweep.startMm.yMm) ** 2;
-      return distanceSquared <= radiusSquared + NUMERIC_EPSILON
-        ? Math.min(sweep.startMm.zMm, sweep.endMm.zMm)
-        : null;
-    }
-
-    const projection =
-      ((xMm - sweep.startMm.xMm) * deltaX +
-        (yMm - sweep.startMm.yMm) * deltaY) /
-      lengthSquared;
-    const closestX = sweep.startMm.xMm + projection * deltaX;
-    const closestY = sweep.startMm.yMm + projection * deltaY;
-    const perpendicularDistanceSquared =
-      (xMm - closestX) ** 2 + (yMm - closestY) ** 2;
-    if (perpendicularDistanceSquared > radiusSquared + NUMERIC_EPSILON) {
-      return null;
-    }
-
-    const extent = Math.sqrt(
-      Math.max(0, (radiusSquared - perpendicularDistanceSquared) / lengthSquared),
-    );
-    const minimumT = Math.max(0, projection - extent);
-    const maximumT = Math.min(1, projection + extent);
-    if (minimumT > maximumT + NUMERIC_EPSILON) {
-      return null;
-    }
-    const selectedT = deltaZ >= 0 ? minimumT : maximumT;
-    return sweep.startMm.zMm + selectedT * deltaZ;
   }
 
   #indexRange(

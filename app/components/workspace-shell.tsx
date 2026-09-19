@@ -144,8 +144,8 @@ export function WorkspaceShell() {
         <section className="help-section">
           <h3>작업 영역</h3>
           <p>
-            장면은 3D 설정, 코드는 현재 G-code, 학습은 실행 단계 안내,
-            결과는 실행 요약을 표시합니다. 고급 편집 기능은 아직 제공되지 않습니다.
+            장면은 3D 설정, 코드는 G-code 편집·줄 실행·진단, 학습은 단계별 실습을
+            제공합니다. 결과에서 완료 Stock을 측정·비교하고 리포트를 저장할 수 있습니다.
           </p>
         </section>
         <section className="help-section">

@@ -52,8 +52,13 @@ export class SyntheticCoordinatorWorker {
   onerror: ((event: ErrorEvent) => void) | null = null;
   terminated = false;
 
+  readonly #fullSnapshotRender: boolean;
   #activeRun: CoordinatorRunRequest | null = null;
   #eventSequence = 0;
+
+  constructor(options: { readonly fullSnapshotRender?: boolean } = {}) {
+    this.#fullSnapshotRender = options.fullSnapshotRender ?? false;
+  }
 
   postMessage(input: unknown): void {
     const command = CoordinatorCommandSchema.parse(input);
@@ -89,6 +94,10 @@ export class SyntheticCoordinatorWorker {
       case "simulation.snapshot":
         if (this.#activeRun) {
           this.#eventSequence += 1;
+          if (command.type === "simulation.snapshot" && this.#fullSnapshotRender) {
+            this.#emitFullSnapshot(this.#activeRun, command.messageId);
+            return;
+          }
           this.emitRunUpdate(
             this.#activeRun,
             this.#eventSequence,
@@ -142,10 +151,80 @@ export class SyntheticCoordinatorWorker {
     });
   }
 
-  #emit(input: unknown): void {
+  #emitFullSnapshot(run: CoordinatorRunRequest, replyTo: string): void {
+    if (run.process.processType !== "milling") {
+      throw new TypeError("Synthetic full snapshots currently require milling.");
+    }
+    const { sizeMm, positionMm, baseResolutionMm } = run.process.stock;
+    const columns = Math.ceil(sizeMm.xMm / baseResolutionMm);
+    const rows = Math.ceil(sizeMm.yMm / baseResolutionMm);
+    const minimum = {
+      xMm: positionMm.xMm - sizeMm.xMm / 2,
+      yMm: positionMm.yMm - sizeMm.yMm / 2,
+      zMm: positionMm.zMm - sizeMm.zMm / 2,
+    };
+    const maximum = {
+      xMm: positionMm.xMm + sizeMm.xMm / 2,
+      yMm: positionMm.yMm + sizeMm.yMm / 2,
+      zMm: positionMm.zMm + sizeMm.zMm / 2,
+    };
+    const topZMm = new Float32Array(columns * rows).fill(maximum.zMm);
+    const binary = topZMm.buffer.slice(0);
+    const summary: CoordinatorCoreSummary = {
+      ...createSyntheticCoordinatorSummary(
+        run,
+        this.#eventSequence,
+        "snapshot",
+      ),
+      render: {
+        renderType: "milling-full",
+        boundsMm: { minimum, maximum },
+        columns,
+        rows,
+        resolutionMm: baseResolutionMm,
+      },
+      binaryLayout: [
+        {
+          binaryKind: "milling.top-z-mm",
+          offset: 0,
+          byteLength: binary.byteLength,
+          elementType: "float32",
+        },
+      ],
+      binaryByteLength: binary.byteLength,
+    };
+    this.#emit(
+      {
+        protocolVersion: 1,
+        messageId: crypto.randomUUID(),
+        replyTo,
+        kind: "event",
+        type: "simulation.update",
+        runId: run.runId,
+        sequence: this.#eventSequence,
+        payload: {
+          summary,
+          binarySlices: [
+            {
+              handleId: "70000000-0000-4000-8000-000000000399",
+              binaryKind: "milling.top-z-mm",
+              byteOffset: 0,
+              byteLength: binary.byteLength,
+              elementType: "float32",
+              ownership: "receiver",
+              transferMode: "transferable",
+            },
+          ],
+        },
+      },
+      binary,
+    );
+  }
+
+  #emit(input: unknown, binary: ArrayBuffer | null = null): void {
     const message = CoordinatorEventSchema.parse(input);
     this.onmessage?.({
-      data: { message, binary: null },
+      data: { message, binary },
     } as MessageEvent<unknown>);
   }
 }

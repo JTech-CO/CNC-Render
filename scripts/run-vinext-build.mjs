@@ -2,10 +2,12 @@ import { spawnSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { readReleaseIdentity, validateReleaseMetadata, writeReleaseMetadata } from "./release-metadata.mjs";
 
 const vinextEntryPath = fileURLToPath(import.meta.resolve("vinext"));
 const vinextCliPath = join(dirname(vinextEntryPath), "cli.js");
 const workspacePath = process.cwd();
+const releaseIdentity = readReleaseIdentity();
 const buildArguments = ["build", ...process.argv.slice(2)];
 const wasmBuild = spawnSync(
   process.execPath,
@@ -34,6 +36,9 @@ function publishWasmToClientBundle() {
   const outputPath = join(outputDirectory, "cnc_render_wasm.wasm");
   mkdirSync(outputDirectory, { recursive: true });
   copyFileSync(sourcePath, outputPath);
+  const clientDirectory = join(workspacePath, "dist", "client");
+  writeReleaseMetadata(clientDirectory, "client", releaseIdentity);
+  validateReleaseMetadata(clientDirectory, "client");
   console.info("[build] Published /wasm/cnc_render_wasm.wasm.");
 }
 const needsShortWindowsPath =

@@ -5,6 +5,8 @@ import { dirname, resolve } from "node:path";
 const packageDirectory = dirname(fileURLToPath(import.meta.url));
 const workspaceDirectory = resolve(packageDirectory, "../..");
 const baseURL = "http://127.0.0.1:43173";
+const suite = process.env.CNC_RENDER_E2E_SUITE ?? "direct";
+if (!["e2e", "visual", "a11y", "direct"].includes(suite)) throw new Error("Invalid E2E artifact suite");
 const softwareRenderingArguments = [
   "--use-angle=swiftshader",
   "--enable-unsafe-swiftshader",
@@ -26,9 +28,9 @@ export default defineConfig({
     },
   },
   reporter: process.env.CI
-    ? [["github"], ["html", { open: "never" }]]
+    ? [["github"], ["html", { open: "never", outputFolder: resolve(workspaceDirectory, "playwright-report", suite) }]]
     : [["line"]],
-  outputDir: resolve(workspaceDirectory, "test-results"),
+  outputDir: resolve(workspaceDirectory, "test-results", suite),
   snapshotPathTemplate: "{testDir}/__screenshots__/{arg}{ext}",
   use: {
     baseURL,
@@ -55,6 +57,7 @@ export default defineConfig({
             ...softwareRenderingArguments,
             "--enable-unsafe-webgpu",
             "--enable-features=Vulkan",
+            ...(process.platform === "linux" ? ["--enable-gpu", "--ignore-gpu-blocklist", "--use-vulkan=swiftshader"] : []),
           ],
         },
         viewport: { width: 1_440, height: 900 },

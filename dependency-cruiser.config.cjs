@@ -1,11 +1,13 @@
 const packageTarget = (name) =>
   `^(?:packages/${name}(?:/|$)|(?:node_modules/)?@cnc-render/${name}(?:/|$))`;
 
-const implementationPackageNames = "ui|simulation|renderer|storage";
+const implementationPackageNames =
+  "ui|lesson-engine|simulation|renderer|storage";
 const implementationPackages = `(?:${implementationPackageNames})`;
-const coreSource = "^packages/(?:simulation|renderer|storage)(?:/|$)";
+const corePackageNames = "lesson-engine|simulation|renderer|storage";
+const coreSource = `^packages/(?:${corePackageNames})(?:/|$)`;
 const coreTarget =
-  "^(?:packages/(?:simulation|renderer|storage)(?:/|$)|(?:node_modules/)?@cnc-render/(?:simulation|renderer|storage)(?:/|$))";
+  `^(?:packages/(?:${corePackageNames})(?:/|$)|(?:node_modules/)?@cnc-render/(?:${corePackageNames})(?:/|$))`;
 const adapterTarget =
   "^(?:packages/(?:renderer|storage)(?:/|$)|(?:node_modules/)?@cnc-render/(?:renderer|storage)(?:/|$))";
 
@@ -67,6 +69,18 @@ module.exports = {
       },
       to: {
         path: adapterTarget,
+      },
+    },
+    {
+      name: "no-lesson-engine-to-runtime",
+      severity: "error",
+      comment:
+        "Lesson validation and authored rules stay deterministic and cannot reach UI, simulation, renderer, or storage implementations.",
+      from: {
+        path: "^packages/lesson-engine(?:/|$)",
+      },
+      to: {
+        path: "^(?:packages/(?:ui|simulation|renderer|storage)(?:/|$)|(?:node_modules/)?@cnc-render/(?:ui|simulation|renderer|storage)(?:/|$))",
       },
     },
     {

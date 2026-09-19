@@ -31,6 +31,7 @@ import { domainMmToScene } from "./coordinate-space";
 import {
   createMachineScene,
   DEFAULT_VIEWPORT_BACKGROUND,
+  type MachinePresentationMode,
   type MachineScene,
 } from "./machine-scene";
 import type {
@@ -44,6 +45,7 @@ import type {
   StockSurfacePatch,
 } from "./stock-surface";
 import { ViewportControls } from "./viewport-controls";
+import { DiagnosticMarkers, type SpatialDiagnosticMarker } from "./diagnostic-markers";
 
 type RenderResult = Promise<void> | void;
 
@@ -89,6 +91,7 @@ export interface WorkcellCameraSnapshot {
 }
 
 export interface WorkcellRendererOptions {
+  readonly onDiagnosticSelect?: (id: string) => void;
   readonly canvas: HTMLCanvasElement;
   readonly preference?: RendererPreference;
   readonly pixelRatio?: number;
@@ -103,6 +106,7 @@ export interface WorkcellRendererDiagnostics {
   readonly collisionMarkerMm: readonly [number, number, number] | null;
   readonly stockSurface: StockSurfaceBufferDiagnostics | null;
   readonly rotationalStockSurface: RotationalStockSurfaceDiagnostics | null;
+  readonly presentationMode: MachinePresentationMode;
 }
 
 const MINIMUM_FOCUS_DISTANCE_MM = 180;
@@ -145,6 +149,8 @@ function rendererResourceSnapshot(
 }
 
 export class WorkcellRenderer {
+  readonly #diagnosticMarkers = new DiagnosticMarkers();
+  readonly #onDiagnosticSelect?: (id: string) => void;
   readonly #canvas: HTMLCanvasElement;
   readonly #preference: RendererPreference;
   readonly #pixelRatio: number;
@@ -178,6 +184,7 @@ export class WorkcellRenderer {
   #collisionMarkerMm: readonly [number, number, number] | null = null;
 
   constructor(options: WorkcellRendererOptions) {
+    this.#onDiagnosticSelect = options.onDiagnosticSelect;
     this.#canvas = options.canvas;
     this.#preference = options.preference ?? "auto";
     this.#pixelRatio = Math.min(
@@ -208,6 +215,7 @@ export class WorkcellRenderer {
     }
 
     this.#machineScene = createMachineScene();
+    this.#machineScene.scene.add(this.#diagnosticMarkers.group);
     this.#renderer = await this.#createRenderer(this.#backend.mode);
     this.#configureRenderer(this.#renderer);
     this.#configureCamera();
@@ -400,6 +408,21 @@ export class WorkcellRenderer {
     this.#fitBounds(new Box3().setFromObject(group));
   }
 
+  setDiagnosticMarkers(markers: readonly SpatialDiagnosticMarker[], selectedId: string | null = null): void {
+    this.#diagnosticMarkers.set(markers, selectedId);
+    this.invalidate();
+  }
+
+  focusDiagnostic(id: string): void {
+    const point = this.#diagnosticMarkers.position(id);
+    if (point) this.#fitBounds(new Box3().setFromCenterAndSize(point, new Vector3(100, 100, 100)));
+  }
+
+  getDiagnosticScreenPosition(id: string): readonly [number, number] | null {
+    return this.#diagnosticMarkers.screenPosition(id, this.#camera, this.#canvas.getBoundingClientRect(),
+      { width: window.innerWidth, height: window.innerHeight });
+  }
+
   #fitBounds(bounds: Box3): void {
     const controls = this.#controls;
     if (!controls || bounds.isEmpty()) {
@@ -505,6 +528,18 @@ export class WorkcellRenderer {
     this.#onStatus?.(this.#status());
   }
 
+  setPresentationMode(mode: MachinePresentationMode): void {
+    this.#machineScene?.setPresentationMode(mode);
+    this.invalidate();
+  }
+
+  setMillingToolpath(
+    pointsMm: readonly (readonly [number, number, number])[],
+  ): void {
+    this.#machineScene?.setMillingToolpath(pointsMm);
+    this.invalidate();
+  }
+
   configureStockSurface(
     descriptor: StockSurfaceDescriptor,
   ): StockSurfaceBufferDiagnostics {
@@ -607,7 +642,10 @@ export class WorkcellRenderer {
     }
 
     const bounds = this.#canvas.getBoundingClientRect();
-    if (bounds.width <= 0 || bounds.height <= 0) {
+    if (![clientX, clientY, bounds.left, bounds.top, bounds.width, bounds.height].every(Number.isFinite)
+      || bounds.width <= 0 || bounds.height <= 0
+      || clientX < bounds.left || clientY < bounds.top
+      || clientX >= bounds.right || clientY >= bounds.bottom) {
       return null;
     }
 
@@ -615,7 +653,15 @@ export class WorkcellRenderer {
       ((clientX - bounds.left) / bounds.width) * 2 - 1,
       -((clientY - bounds.top) / bounds.height) * 2 + 1,
     );
+    this.#camera.updateWorldMatrix(true, false);
+    this.#diagnosticMarkers.group.updateWorldMatrix(true, true);
     this.#raycaster.setFromCamera(this.#pointer, this.#camera);
+    const diagnostic = this.#raycaster.intersectObjects(this.#diagnosticMarkers.group.children, false)[0];
+    if (diagnostic) {
+      this.#onDiagnosticSelect?.(String(diagnostic.object.userData.diagnosticId));
+      this.invalidate();
+      return this.#selectedLayer;
+    }
     const hit = this.#raycaster
       .intersectObjects(machineScene.selectableObjects, false)
       .find((intersection) => intersection.object.visible);
@@ -747,6 +793,7 @@ export class WorkcellRenderer {
       stockSurface: this.#machineScene?.getStockSurfaceDiagnostics() ?? null,
       rotationalStockSurface:
         this.#machineScene?.getRotationalStockSurfaceDiagnostics() ?? null,
+      presentationMode: this.#machineScene?.presentationMode ?? "milling",
     };
   }
 
@@ -770,6 +817,7 @@ export class WorkcellRenderer {
       this.#handleControlsChange,
     );
     this.#controls?.dispose();
+    this.#diagnosticMarkers.dispose();
     this.#machineScene?.dispose();
     this.#renderer?.dispose();
     this.#controls = null;

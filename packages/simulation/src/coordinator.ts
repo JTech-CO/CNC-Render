@@ -106,6 +106,7 @@ type RenderListener = (
 ) => void;
 
 interface ReplyWaiter {
+  readonly commandType: CoordinatorCommand["type"];
   readonly resolve: (packet: CoordinatorTransportPacket) => void;
   readonly reject: (error: Error) => void;
   readonly timer: ReturnType<typeof setTimeout>;
@@ -305,6 +306,10 @@ function renderUpdate(
   );
 }
 
+type CoordinatorCommandInput<T extends CoordinatorCommand> = T extends CoordinatorCommand
+  ? Omit<T, "protocolVersion" | "messageId" | "replyTo" | "kind">
+  : never;
+
 function terminalStatus(summary: CoordinatorCoreSummary): CoordinatorPlaybackStatus {
   if (summary.stopped) {
     return "stopped";
@@ -312,12 +317,16 @@ function terminalStatus(summary: CoordinatorCoreSummary): CoordinatorPlaybackSta
   if (summary.completed) {
     return "completed";
   }
+  if (summary.paused) {
+    return "paused";
+  }
   return "running";
 }
 
 export class SimulationCoordinator {
   readonly #workerFactory: WorkerFactory;
   readonly #generalListeners = new Set<SummaryListener>();
+  readonly #statusListeners = new Set<(status: CoordinatorPlaybackStatus) => void>();
   readonly #axisListeners = new Set<SummaryListener>();
   readonly #renderListeners = new Set<RenderListener>();
   readonly #replyWaiters = new Map<string, ReplyWaiter>();
@@ -357,6 +366,11 @@ export class SimulationCoordinator {
     return () => this.#generalListeners.delete(listener);
   }
 
+  onStatusChange(listener: (status: CoordinatorPlaybackStatus) => void): () => void {
+    this.#statusListeners.add(listener);
+    return () => this.#statusListeners.delete(listener);
+  }
+
   onAxisSummary(listener: SummaryListener): () => void {
     this.#axisListeners.add(listener);
     return () => this.#axisListeners.delete(listener);
@@ -372,6 +386,8 @@ export class SimulationCoordinator {
     options: {
       readonly playbackSpeed: number;
       readonly executionMode: CoordinatorExecutionMode;
+      readonly startPaused?: boolean;
+      readonly breakpoints?: readonly number[];
     },
   ): Promise<CoordinatorCoreSummary> {
     await this.#readyPromise;
@@ -382,7 +398,7 @@ export class SimulationCoordinator {
     this.#commandSequence = 1;
     this.#lastEventSequence = 0;
     this.#summary = null;
-    this.#status = "starting";
+    this.#setStatus("starting");
     const command = this.#command({
       type: "simulation.start",
       runId: run.runId,
@@ -390,6 +406,8 @@ export class SimulationCoordinator {
       payload: {
         executionMode: options.executionMode,
         playbackSpeed: options.playbackSpeed,
+        startPaused: options.startPaused,
+        breakpoints: options.breakpoints ? [...options.breakpoints] : undefined,
         run,
       },
     });
@@ -418,7 +436,7 @@ export class SimulationCoordinator {
         "Pause did not return a stable snapshot.",
       );
     }
-    this.#status = "paused";
+    this.#setStatus(terminalStatus({ ...event.payload.summary, paused: true }));
     return event.payload.summary;
   }
 
@@ -431,7 +449,7 @@ export class SimulationCoordinator {
       payload: { playbackSpeed },
     });
     this.#worker.postMessage(command);
-    this.#status = "running";
+    this.#setStatus("running");
   }
 
   async snapshot(): Promise<CoordinatorCoreSummary> {
@@ -448,6 +466,28 @@ export class SimulationCoordinator {
         "coordinator.snapshot.reply-invalid",
         "Snapshot command did not return simulation state.",
       );
+    }
+    return event.payload.summary;
+  }
+
+  async stepSourceLine(): Promise<CoordinatorCoreSummary> {
+    const event = await this.#sendWithReply(this.#command({
+      type: "simulation.step-source-line", runId: this.#requireRun(),
+      sequence: this.#nextCommandSequence(), payload: {},
+    }));
+    if (event.type !== "simulation.update") {
+      throw new SimulationCoordinatorError("coordinator.step.reply-invalid", "Source-line step did not return a snapshot.");
+    }
+    return event.payload.summary;
+  }
+
+  async setBreakpoints(lines: readonly number[]): Promise<CoordinatorCoreSummary> {
+    const event = await this.#sendWithReply(this.#command({
+      type: "simulation.breakpoints", runId: this.#requireRun(),
+      sequence: this.#nextCommandSequence(), payload: { lines: [...lines] },
+    }));
+    if (event.type !== "simulation.update") {
+      throw new SimulationCoordinatorError("coordinator.breakpoints.reply-invalid", "Breakpoints did not return a snapshot.");
     }
     return event.payload.summary;
   }
@@ -503,7 +543,7 @@ export class SimulationCoordinator {
       );
     }
     this.#activeRunId = null;
-    this.#status = "cancelled";
+    this.#setStatus("cancelled");
   }
 
   async restartWorker(): Promise<void> {
@@ -516,7 +556,7 @@ export class SimulationCoordinator {
     this.#worker.terminate();
     this.#activeRunId = null;
     this.#summary = null;
-    this.#status = "starting";
+    this.#setStatus("starting");
     this.#spawnWorker();
     await this.#readyPromise;
   }
@@ -550,6 +590,10 @@ export class SimulationCoordinator {
     });
   }
 
+  beginMainThreadPerformanceWindow(): void {
+    this.#metrics.maximumMainHandlerMs = 0;
+  }
+
   getSnapshot(): CoordinatorSnapshot {
     return {
       status: this.#status,
@@ -568,6 +612,13 @@ export class SimulationCoordinator {
     );
     this.#worker.terminate();
     this.#activeRunId = null;
+    this.#setStatus("cancelled");
+  }
+
+  #setStatus(status: CoordinatorPlaybackStatus): void {
+    if (this.#status === status) return;
+    this.#status = status;
+    for (const listener of this.#statusListeners) listener(status);
   }
 
   #spawnWorker(): void {
@@ -585,7 +636,7 @@ export class SimulationCoordinator {
         "coordinator.worker.error",
         event.message || "The simulation Worker failed.",
       );
-      this.#status = "error";
+      this.#setStatus("error");
       this.#rejectPending(error);
     };
     const handshake = this.#command({
@@ -625,6 +676,9 @@ export class SimulationCoordinator {
           rawPacket.binary instanceof ArrayBuffer ? rawPacket.binary : null,
       };
       this.#metrics.workerMessages += 1;
+      const replyCommandType = message.replyTo
+        ? this.#replyWaiters.get(message.replyTo)?.commandType
+        : undefined;
 
       if (
         message.runId !== null &&
@@ -653,7 +707,7 @@ export class SimulationCoordinator {
           this.#settleReply(message.replyTo, error);
         }
         if (!message.payload.recoverable) {
-          this.#status = "error";
+          this.#setStatus("error");
           this.#rejectTerminal(error);
         }
         return;
@@ -668,9 +722,9 @@ export class SimulationCoordinator {
           );
         }
         this.#summary = summary;
-        this.#status = terminalStatus(summary);
+        this.#setStatus(terminalStatus(summary));
         const update = renderUpdate(packet, summary);
-        if (update) {
+        if (update && replyCommandType !== "simulation.snapshot" && replyCommandType !== "simulation.breakpoints") {
           this.#metrics.renderUpdates += 1;
           for (const listener of this.#renderListeners) {
             listener(update, summary);
@@ -685,6 +739,10 @@ export class SimulationCoordinator {
       if (message.replyTo) {
         this.#settleReply(message.replyTo, packet);
       }
+      if (message.type === "run.disposed") {
+        this.#activeRunId = null;
+        this.#setStatus("cancelled");
+      }
     } catch (error) {
       const normalized =
         error instanceof Error
@@ -693,7 +751,7 @@ export class SimulationCoordinator {
               "coordinator.message.failed",
               String(error),
             );
-      this.#status = "error";
+      this.#setStatus("error");
       this.#rejectPending(normalized);
     } finally {
       this.#metrics.maximumMainHandlerMs = Math.max(
@@ -705,7 +763,7 @@ export class SimulationCoordinator {
 
   #sampleUi(summary: CoordinatorCoreSummary): void {
     const now = performance.now();
-    const terminal = summary.completed || summary.stopped;
+    const terminal = summary.completed || summary.stopped || summary.paused;
     if (terminal || now - this.#lastGeneralSampleMs >= GENERAL_UI_INTERVAL_MS) {
       this.#lastGeneralSampleMs = now;
       this.#metrics.generalUiSamples += 1;
@@ -723,9 +781,7 @@ export class SimulationCoordinator {
   }
 
   #command(
-    input:
-      | Omit<Extract<CoordinatorCommand, { type: "coordinator.handshake" }>, "protocolVersion" | "messageId" | "replyTo" | "kind">
-      | Omit<Exclude<CoordinatorCommand, { type: "coordinator.handshake" }>, "protocolVersion" | "messageId" | "replyTo" | "kind">,
+    input: CoordinatorCommandInput<CoordinatorCommand>,
   ): CoordinatorCommand {
     return CoordinatorCommandSchema.parse({
       protocolVersion: 1,
@@ -758,7 +814,12 @@ export class SimulationCoordinator {
           ),
         );
       }, DEFAULT_TIMEOUT_MS);
-      this.#replyWaiters.set(command.messageId, { resolve, reject, timer });
+      this.#replyWaiters.set(command.messageId, {
+        commandType: command.type,
+        resolve,
+        reject,
+        timer,
+      });
     });
     this.#worker.postMessage(command);
     return promise;

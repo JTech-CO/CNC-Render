@@ -23,6 +23,7 @@ import {
 import { persistenceFailure } from "./errors";
 import { migrateProjectBytes } from "./migrations";
 import { decodeZip, encodeDeterministicZip } from "./zip";
+import { validateImportedModel, validateProjectUploadMetadata } from "./upload-security";
 
 export interface ProjectContainerResource {
   readonly path: string;
@@ -454,6 +455,9 @@ export async function importProjectContainer(
     if (entry.path !== PROJECT_CONTAINER_PROJECT_PATH) {
       const bytes = archiveEntries.get(entry.path);
       if (bytes) {
+        if (["machine-model", "stock-model", "target-model"].includes(entry.role)) {
+          validateImportedModel(entry.path, entry.mediaType, bytes);
+        }
         resources.set(entry.path, cloneBytes(bytes));
       }
     }
@@ -473,4 +477,13 @@ export function projectContainerDebugJson(
   manifest: ProjectContainerManifest,
 ): string {
   return canonicalJson(asJsonValue(manifest));
+}
+
+export async function importProjectFile(file: File): Promise<ImportedProjectContainer> {
+  validateProjectUploadMetadata(file);
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  if (bytes.byteLength !== file.size) {
+    throw persistenceFailure("storage.import.entry-size-mismatch", "import", "Project upload changed while reading.");
+  }
+  return importProjectContainer(bytes, { fileName: file.name, mediaType: file.type || undefined });
 }

@@ -9,9 +9,14 @@ function supportedWebgl2(documentObject: Document): boolean {
   const canvas = documentObject.createElement("canvas");
 
   try {
-    return canvas.getContext("webgl2", {
+    const context = canvas.getContext("webgl2", {
       failIfMajorPerformanceCaveat: false,
-    }) !== null;
+      powerPreference: "high-performance",
+    });
+    // This canvas is only a capability probe, not the workcell canvas. Release
+    // its driver resources immediately, even when WebGPU will render the scene.
+    context?.getExtension("WEBGL_lose_context")?.loseContext();
+    return context !== null;
   } catch {
     return false;
   }

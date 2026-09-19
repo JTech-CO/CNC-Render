@@ -22,6 +22,9 @@
       "@/*": ["./*"],
       "@cnc-render/web/foundation": ["./apps/web/src/foundation.ts"],
       "@cnc-render/contracts": ["./packages/contracts/src/index.ts"],
+      "@cnc-render/lesson-engine": [
+        "./packages/lesson-engine/src/index.ts"
+      ],
       "@cnc-render/ui": ["./packages/ui/src/index.ts"],
       "@cnc-render/simulation": ["./packages/simulation/src/index.ts"],
       "@cnc-render/renderer/workcell": [

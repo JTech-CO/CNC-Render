@@ -5,16 +5,25 @@ import type {
 import type { WorkcellRenderer } from "@cnc-render/renderer/workcell";
 import {
   SimulationCoordinator,
+  createM7MillingToolpathPoints,
   createM7PipelineFixture,
+  resolveM7MillingConfiguration,
+  resolveM7MillingOperationParameters,
   type CoordinatorCheckpoint,
   type CoordinatorExecutionMode,
   type CoordinatorRenderUpdate,
   type CoordinatorSnapshot,
+  type M7MillingConfiguration,
+  type M7MillingConfigurationInput,
+  type M7MillingOperationParameters,
+  type M7MillingOperationParametersInput,
   type M7PipelineFixture,
 } from "@cnc-render/simulation";
 
 export interface M7PipelineBrowserState extends CoordinatorSnapshot {
   readonly fixture: M7PipelineFixture | null;
+  readonly millingOperation: M7MillingOperationParameters;
+  readonly millingConfiguration: M7MillingConfiguration;
   readonly baselineRenderFrame: number | null;
   readonly renderedOnFrame: number | null;
   readonly playbackElapsedS: number;
@@ -22,7 +31,20 @@ export interface M7PipelineBrowserState extends CoordinatorSnapshot {
   readonly maximumLongTaskMs: number;
 }
 
+export interface M7PipelineRunOptions {
+  readonly qualityPreset?: "balanced" | "precision";
+  readonly source?: string;
+  readonly startPaused?: boolean;
+  readonly breakpoints?: number[];
+  readonly playbackSpeed?: number;
+  readonly executionMode?: CoordinatorExecutionMode;
+  readonly millingOperation?: M7MillingOperationParametersInput;
+  readonly millingConfiguration?: M7MillingConfigurationInput;
+}
+
 export interface M7PipelineUiObserver {
+  readonly onCheckpointRestored?: () => void;
+  readonly onStatusChange?: (status: CoordinatorSnapshot["status"]) => void;
   readonly onGeneralSummary?: (
     summary: CoordinatorCoreSummary,
     playbackElapsedS: number,
@@ -30,20 +52,23 @@ export interface M7PipelineUiObserver {
   readonly onAxisSummary?: (summary: CoordinatorCoreSummary) => void;
 }
 
+interface PlaybackPerformanceWindow {
+  readonly startedAtMs: number;
+  endedAtMs: number | null;
+}
+
 export interface M7PipelineHarness {
+  isRestoredCheckpointVisible(): boolean;
+  getPipelineSource(): string | null;
+  stepPipelineSourceLine(): Promise<CoordinatorCoreSummary>;
+  setPipelineBreakpoints(lines: number[]): Promise<CoordinatorCoreSummary>;
   startPipelineFixture(
     fixture: M7PipelineFixture,
-    options?: {
-      readonly playbackSpeed?: number;
-      readonly executionMode?: CoordinatorExecutionMode;
-    },
+    options?: M7PipelineRunOptions,
   ): Promise<CoordinatorCoreSummary>;
   runPipelineFixture(
     fixture: M7PipelineFixture,
-    options?: {
-      readonly playbackSpeed?: number;
-      readonly executionMode?: CoordinatorExecutionMode;
-    },
+    options?: M7PipelineRunOptions,
   ): Promise<CoordinatorCoreSummary>;
   pausePipeline(): Promise<CoordinatorCoreSummary>;
   resumePipeline(playbackSpeed?: number): void;
@@ -140,7 +165,12 @@ export function attachM7Pipeline(
   observer: M7PipelineUiObserver = {},
 ): { readonly harness: M7PipelineHarness; dispose(): void } {
   const coordinator = new SimulationCoordinator();
+  const unsubscribeStatus = coordinator.onStatusChange((status) => observer.onStatusChange?.(status));
   let fixture: M7PipelineFixture | null = null;
+  let activeSource: string | null = null;
+  let restoredCheckpointVisible = false;
+  let millingOperation = resolveM7MillingOperationParameters();
+  let millingConfiguration = resolveM7MillingConfiguration();
   let baselineRenderFrame: number | null = null;
   let renderedOnFrame: number | null = null;
   let pendingRender: Promise<number> | null = null;
@@ -148,6 +178,42 @@ export function attachM7Pipeline(
   let playbackEndedAtMs: number | null = null;
   let longTasksOver50Ms = 0;
   let maximumLongTaskMs = 0;
+  let performanceMeasurementStarted = false;
+  let activePerformanceWindow: PlaybackPerformanceWindow | null = null;
+  const playbackPerformanceWindows: PlaybackPerformanceWindow[] = [];
+  let longTaskObserver: PerformanceObserver | null = null;
+
+  const recordPlaybackLongTasks = (
+    entries: readonly PerformanceEntry[],
+  ): void => {
+    for (const entry of entries) {
+      const belongsToPlayback = playbackPerformanceWindows.some(
+        ({ startedAtMs, endedAtMs }) =>
+          entry.startTime >= startedAtMs &&
+          (endedAtMs === null || entry.startTime <= endedAtMs),
+      );
+      if (!belongsToPlayback) {
+        continue;
+      }
+      maximumLongTaskMs = Math.max(maximumLongTaskMs, entry.duration);
+      if (entry.duration > 50) {
+        longTasksOver50Ms += 1;
+      }
+    }
+  };
+
+  const endPerformanceWindow = (endedAtMs = performance.now()): void => {
+    if (activePerformanceWindow && activePerformanceWindow.endedAtMs === null) {
+      activePerformanceWindow.endedAtMs = endedAtMs;
+    }
+    activePerformanceWindow = null;
+  };
+
+  const flushLongTaskRecords = (): void => {
+    if (longTaskObserver) {
+      recordPlaybackLongTasks(longTaskObserver.takeRecords());
+    }
+  };
 
   const playbackElapsedS = (): number => {
     if (playbackStartedAtMs === null) {
@@ -159,32 +225,21 @@ export function attachM7Pipeline(
     );
   };
 
-  let observingLongTasks = false;
-  const longTaskObserver =
+  longTaskObserver =
     typeof PerformanceObserver !== "undefined" &&
     PerformanceObserver.supportedEntryTypes.includes("longtask")
       ? new PerformanceObserver((list) => {
-          for (const entry of list.getEntries()) {
-            maximumLongTaskMs = Math.max(maximumLongTaskMs, entry.duration);
-            if (entry.duration > 50) {
-              longTasksOver50Ms += 1;
-            }
-          }
+          recordPlaybackLongTasks(list.getEntries());
         })
       : null;
 
   const unsubscribeRender = coordinator.onRender((update, summary) => {
+    restoredCheckpointVisible = false;
     const before = renderer.getDiagnostics().telemetry.framesRendered;
     applyRenderUpdate(renderer, update);
-    if (summary.collision) {
-      renderer.setCollisionMarker([
-        summary.collision.positionMm.xMm,
-        summary.collision.positionMm.yMm,
-        summary.collision.positionMm.zMm,
-      ]);
-    }
     pendingRender = waitForNextRenderedFrame(renderer, before)
       .then((frame) => {
+        if (coordinator.getSnapshot().activeRunId !== summary.runId) return frame;
         renderedOnFrame = frame;
         viewport.dataset.pipelineRenderedFrame = String(frame);
         return frame;
@@ -193,15 +248,34 @@ export function attachM7Pipeline(
   });
 
   const unsubscribeGeneral = coordinator.onGeneralSummary((summary) => {
+    // A collision can stop before removing any Stock and therefore carry no
+    // binary render patch. Terminal summaries must independently mark the scene.
+    if (summary.collision && viewport.dataset.pipelineCollisionReceivedFrame === undefined) {
+      const before = renderer.getDiagnostics().telemetry.framesRendered;
+      viewport.dataset.pipelineCollisionReceivedFrame = String(before);
+      renderer.setCollisionMarker([
+        summary.collision.positionMm.xMm,
+        summary.collision.positionMm.yMm,
+        summary.collision.positionMm.zMm,
+      ]);
+      pendingRender = waitForNextRenderedFrame(renderer, before).then((frame) => {
+        if (coordinator.getSnapshot().activeRunId !== summary.runId) return frame;
+        renderedOnFrame = frame;
+        viewport.dataset.pipelineRenderedFrame = String(frame);
+        viewport.dataset.pipelineCollisionRenderedFrame = String(frame);
+        return frame;
+      });
+    }
     if (
       (summary.completed || summary.stopped) &&
       playbackStartedAtMs !== null &&
       playbackEndedAtMs === null
     ) {
       playbackEndedAtMs = performance.now();
+      endPerformanceWindow(playbackEndedAtMs);
     }
     const elapsedS = playbackElapsedS();
-    viewport.dataset.pipelineState = summary.stopped
+    viewport.dataset.pipelineState = summary.paused ? "paused" : summary.stopped
       ? "stopped"
       : summary.completed
         ? "completed"
@@ -241,41 +315,97 @@ export function attachM7Pipeline(
 
   async function start(
     selectedFixture: M7PipelineFixture,
-    options: {
-      readonly playbackSpeed?: number;
-      readonly executionMode?: CoordinatorExecutionMode;
-    } = {},
+    options: M7PipelineRunOptions = {},
   ): Promise<CoordinatorCoreSummary> {
     fixture = selectedFixture;
-    if (longTaskObserver && !observingLongTasks) {
-      longTaskObserver.takeRecords();
-      longTaskObserver.observe({ entryTypes: ["longtask"] });
-      observingLongTasks = true;
+    millingConfiguration = resolveM7MillingConfiguration(
+      selectedFixture === "milling" ? options.millingConfiguration : {},
+    );
+    millingOperation = resolveM7MillingOperationParameters(
+      selectedFixture === "milling" ? options.millingOperation : {},
+    );
+    if (!performanceMeasurementStarted) {
+      coordinator.beginMainThreadPerformanceWindow();
+      longTaskObserver?.takeRecords();
+      longTaskObserver?.observe({ entryTypes: ["longtask"] });
+      performanceMeasurementStarted = true;
     }
+    flushLongTaskRecords();
     baselineRenderFrame =
       renderer.getDiagnostics().telemetry.framesRendered;
     renderedOnFrame = null;
     pendingRender = null;
     playbackStartedAtMs = performance.now();
     playbackEndedAtMs = null;
+    activePerformanceWindow = {
+      startedAtMs: playbackStartedAtMs,
+      endedAtMs: null,
+    };
+    playbackPerformanceWindows.push(activePerformanceWindow);
+    if (playbackPerformanceWindows.length > 4) {
+      playbackPerformanceWindows.shift();
+    }
     renderer.setCollisionMarker(null);
+    renderer.setPresentationMode(
+      selectedFixture === "turning" || selectedFixture === "drilling"
+        ? "turning"
+        : "milling",
+    );
+    if (
+      selectedFixture === "milling" ||
+      selectedFixture === "collision-stop"
+    ) {
+      renderer.setMillingToolpath(
+        createM7MillingToolpathPoints(millingConfiguration, millingOperation),
+      );
+    }
     viewport.dataset.pipelineState = "starting";
     viewport.dataset.pipelineFixture = selectedFixture;
+    viewport.dataset.pipelineStockPreset = millingConfiguration.stockPreset;
+    viewport.dataset.pipelineCutDirection = millingConfiguration.cutDirection;
+    viewport.dataset.pipelineCuttingFeed = String(millingOperation.cuttingFeedMmPerMin);
+    viewport.dataset.pipelineSpindleSpeed = String(millingOperation.spindleSpeedRpm);
+    viewport.dataset.pipelineCutDepth = String(millingOperation.depthOfCutMm);
     viewport.dataset.pipelinePlaybackElapsedS = "0";
     delete viewport.dataset.pipelineRenderedFrame;
     delete viewport.dataset.pipelineFinalHash;
+    delete viewport.dataset.pipelineCollisionReceivedFrame;
+    delete viewport.dataset.pipelineCollisionRenderedFrame;
     const runId = crypto.randomUUID();
-    const run: CoordinatorRunRequest = createM7PipelineFixture(
+    const template = createM7PipelineFixture(
       selectedFixture,
       runId,
+      millingConfiguration,
+      millingOperation,
+      options.qualityPreset,
     );
-    return coordinator.start(run, {
+    viewport.dataset.pipelineQualityPreset = template.process.preset;
+    const run: CoordinatorRunRequest = {
+      ...template,
+      source: options.source ?? template.source,
+    };
+    activeSource = run.source;
+    // Custom programs must not retain the representative fixture's guide.
+    if (options.source !== undefined && run.process.processType === "milling") {
+      renderer.setMillingToolpath([]);
+    }
+    const initialized = await coordinator.start(run, {
       playbackSpeed: options.playbackSpeed ?? 1,
       executionMode: options.executionMode ?? "realtime",
+      startPaused: options.startPaused,
+      breakpoints: options.breakpoints,
     });
+    if (selectedFixture === "turning" || selectedFixture === "drilling") {
+      renderer.focusLayer("stock");
+    }
+    return initialized;
   }
 
   const harness: M7PipelineHarness = {
+    isRestoredCheckpointVisible: () => restoredCheckpointVisible,
+    getPipelineSource: () => activeSource,
+    stepPipelineSourceLine: () => coordinator.stepSourceLine(),
+    setPipelineBreakpoints: (lines) => coordinator.setBreakpoints(lines),
     startPipelineFixture: start,
     async runPipelineFixture(selectedFixture, options) {
       const initialized = await start(selectedFixture, options);
@@ -291,10 +421,14 @@ export function attachM7Pipeline(
       if (playbackStartedAtMs !== null && playbackEndedAtMs === null) {
         playbackEndedAtMs = performance.now();
       }
+      endPerformanceWindow(playbackEndedAtMs ?? performance.now());
+      flushLongTaskRecords();
       viewport.dataset.pipelinePlaybackElapsedS = String(playbackElapsedS());
     },
     capturePipelineCheckpoint: () => coordinator.checkpoint(),
     async renderPipelineCheckpoint(checkpoint) {
+      restoredCheckpointVisible = true;
+      observer.onCheckpointRestored?.();
       const before = renderer.getDiagnostics().telemetry.framesRendered;
       applyRenderUpdate(renderer, checkpoint.render);
       const frame = await waitForNextRenderedFrame(renderer, before);
@@ -309,23 +443,31 @@ export function attachM7Pipeline(
       return frame;
     },
     restartPipelineWorker: () => coordinator.restartWorker(),
-    getPipelineState: () => ({
-      ...coordinator.getSnapshot(),
-      fixture,
-      baselineRenderFrame,
-      renderedOnFrame,
-      playbackElapsedS: playbackElapsedS(),
-      longTasksOver50Ms,
-      maximumLongTaskMs,
-    }),
+    getPipelineState: () => {
+      flushLongTaskRecords();
+      return {
+        ...coordinator.getSnapshot(),
+        fixture,
+        millingConfiguration,
+        millingOperation,
+        baselineRenderFrame,
+        renderedOnFrame,
+        playbackElapsedS: playbackElapsedS(),
+        longTasksOver50Ms,
+        maximumLongTaskMs,
+      };
+    },
   };
 
   return {
     harness,
     dispose() {
+      unsubscribeStatus();
       unsubscribeRender();
       unsubscribeGeneral();
       unsubscribeAxis();
+      endPerformanceWindow();
+      flushLongTaskRecords();
       longTaskObserver?.disconnect();
       coordinator.dispose();
     },
