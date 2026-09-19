@@ -17,7 +17,7 @@ export default defineConfig({
     timeout: 10_000,
   },
   reporter: process.env.CI
-    ? [["github"], ["html", { open: "never" }]]
+    ? [["github"], ["html", { open: "never", outputFolder: resolve(workspaceDirectory, "playwright-report/pages") }]]
     : [["line"]],
   outputDir: resolve(workspaceDirectory, "test-results/pages"),
   use: {

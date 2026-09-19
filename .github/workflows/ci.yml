@@ -100,17 +100,6 @@ jobs:
           pnpm test:a11y
           pnpm check:bundle
 
-      - name: Preserve browser diagnostics
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: browser-diagnostics
-          path: |
-            test-results/
-            playwright-report/
-          if-no-files-found: warn
-          retention-days: 30
-
       - name: Verify approved-host performance evidence against runtime sources
         run: node scripts/check-reference-evidence.mjs
 
@@ -151,6 +140,17 @@ jobs:
 
       - name: Verify broadband cold entrypoint LCP
         run: pnpm lighthouse -- --output-path=artifacts/lighthouse.html
+
+      - name: Preserve browser diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-diagnostics
+          path: |
+            test-results/
+            playwright-report/
+          if-no-files-found: warn
+          retention-days: 30
 
       - name: Preserve loading evidence
         if: always()

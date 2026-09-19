@@ -1,13 +1,26 @@
 ﻿# CNC Render Progress
 
 - Current phase: M12 성능·폴백·보안·CI·릴리스 게이트 진행 중
-- Status: 실행별 Long Task 판정·누적 보존 및 최종 로컬 회귀 통과; PR #13 새 CI·릴리스 검증 대기
+- Status: 2cea36e 커밋·푸시; CI 성능/브라우저 통과, Pages HTML 보고서 경로로 인한 clean-release 차단 수정 중
 - Last completed: 전체 회귀·실장비 24조합·메모리 8조합·broadband LCP 3회
 - Next task: 검증된 변경 커밋·푸시 → PR #13 CI → 병합·Pages → M13
 - Open questions: 없음. 실행별 Long Task 판정·전체 누적 보존 및 앱 귀속 메모리 산정 승인됨.
-- Known regressions: 이전 CI 34701348298 실패 후 새 원격 검증 대기. 기존 실장비 증거는 현재 런타임 완료 증거가 아님
+- Known regressions: CI 35447911674는 Pages HTML 보고서가 미추적 경로에 생성되어 Lighthouse 시작 전 clean-release 검사에서 중단됨
 
 ## 2026-09-19 M12 재개 확인
+
+- `2cea36e` 커밋·푸시 후 CI `35447911674`: verify, 보안, Rust/fuzz, software 12,
+  visual 5, E2E 88, a11y 6, 기준 장비 증거 일치, Pages 2 모두 통과했다.
+  Linux software handler 최대 17.4 ms, 실행별 long task 최대 0, 전체 누적 최대 1이었다.
+  Lighthouse는 수치 측정 전에 clean-release guard에서 차단됐다.
+- 같은 CI 모드를 로컬 재현해 `packages/e2e/playwright-report/index.html` 생성을 확인했다.
+  Pages reporter에 루트 `playwright-report/pages`를 지정하고 네 suite의 보고서 경로가
+  실제 Git ignore 대상인지 검증한다. clean-release guard를 약화하거나 파일을 숨기는
+  포괄적인 ignore는 추가하지 않는다. 잘못된 위치의 재현 보고서는 artifacts로 옮겨 보존한다.
+- 보고서 경로 회귀 4개·typecheck·targeted lint·기준 장비 증거 일치 통과. 브라우저 진단
+  업로드는 Pages/로딩 검사 뒤의 `always()` 단계로 이동해 Pages 보고서도 보존한다.
+  수정 커밋 후 깨끗한 작업 폴더에서 CI 모드 Pages→Lighthouse→release 검증을 재현한다.
+- 추가 로컬 보안 20개, Rust fmt/clippy/test, 60초 fuzz 9,692 cases도 통과했다.
 
 - 사용자 승인에 따라 Long Task 집계를 실행별로 변경한다. warmup도 별도 <=1 gate로 유지하며,
   실행별 값·최대값·전체 관찰 누적·실행 사이 발생분·앱 생애 누적을 모두 보존한다.
