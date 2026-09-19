@@ -40,7 +40,7 @@ try {
     const context = await chromium.launchPersistentContext(profile, { channel: "chrome", headless: true, args: [`--remote-debugging-port=${port}`] });
     const runOutput = output.replace(/\.html$/u, `-${iteration}.json`);
     const args = [resolve(root, "node_modules/lighthouse/cli/index.js"), url,
-      "--quiet", "--no-enable-error-reporting", "--only-categories=performance", "--preset=desktop",
+      "--save-assets", "--quiet", "--no-enable-error-reporting", "--only-categories=performance", "--preset=desktop",
       `--port=${port}`, "--throttling-method=devtools",
       "--throttling.requestLatencyMs=40", "--throttling.downloadThroughputKbps=10240",
       "--throttling.uploadThroughputKbps=10240", "--throttling.cpuSlowdownMultiplier=1",

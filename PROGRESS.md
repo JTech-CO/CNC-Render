@@ -1,13 +1,29 @@
 ﻿# CNC Render Progress
 
 - Current phase: M12 성능·폴백·보안·CI·릴리스 게이트 진행 중
-- Status: 2cea36e 커밋·푸시; CI 성능/브라우저 통과, Pages HTML 보고서 경로로 인한 clean-release 차단 수정 중
+- Status: 실행별 Long Task 판정·누적 보존 구현 및 푸시 완료; M12 로딩 지연 원인 확인 중
 - Last completed: 전체 회귀·실장비 24조합·메모리 8조합·broadband LCP 3회
 - Next task: 검증된 변경 커밋·푸시 → PR #13 CI → 병합·Pages → M13
 - Open questions: 없음. 실행별 Long Task 판정·전체 누적 보존 및 앱 귀속 메모리 산정 승인됨.
-- Known regressions: CI 35447911674는 Pages HTML 보고서가 미추적 경로에 생성되어 Lighthouse 시작 전 clean-release 검사에서 중단됨
+- Known regressions: clean-release 로컬 LCP 3회 중 1회 6273.8 ms로 2500 ms 초과. M12 완료·병합 보류
 
 ## 2026-09-19 M12 재개 확인
+
+- `5d18e29` 보고서 경로 수정 후 CI 모드 로컬 Pages 2개와 Lighthouse 빌드의 clean-release
+  검사는 통과했다. 실제 LCP는 967.0/6273.8/1073.0 ms로 실패했다. 실패 보고서
+  `artifacts/lighthouse-clean-release*`를 유지한다. release identity 후속 명령은 실행되지 않았다.
+- 느린 실행은 FCP/LCP 이전 5066.551 ms의 Unattributable main-thread task를 포함한다.
+  네트워크와 JS 실행 시간만으로 설명되지 않으며 아직 원인을 확정하지 않았다.
+  별도 trace 진단 3회는 968.9/982.0/961.9 ms였지만 기존 실패를 취소하거나 완료 증거로
+  대체하지 않는다. 이후 고정 6회 진단은 963.7/934.9/988.7/1039.6/942.4/978.2 ms였고,
+  5초 지연이 재현되지 않았다. `artifacts/lcp-diagnostic-six*`에 6회 전체 trace·보고서를 보존한다.
+  원인을 확인하지 못했으므로 실패를 해소 또는 면제하지 않는다.
+- 앞으로 정상/실패 모두 Lighthouse 원본 trace와 DevTools log를 `--save-assets`로 저장한다.
+  기존 CI `artifacts/lighthouse*` 업로드에 포함된다. 3회 전부 <=2500 ms 기준은 그대로다.
+- 보고서 경로 수정 `5d18e29`는 푸시했고 PR #13 CI `35449592501`이 실행 중이다.
+  로컬 LCP 문제 해결과 원격 CI·공개 배포 검증 전에는 M12 완료 또는 M13 진입으로 기록하지 않는다.
+- trace 보존·진단 기록 추가 후 전체 unit 343개, Lighthouse script syntax/lint,
+  doc-terms, 기준 장비 증거/현재 런타임 지문 검증과 diff check를 통과했다.
 
 - `2cea36e` 커밋·푸시 후 CI `35447911674`: verify, 보안, Rust/fuzz, software 12,
   visual 5, E2E 88, a11y 6, 기준 장비 증거 일치, Pages 2 모두 통과했다.
