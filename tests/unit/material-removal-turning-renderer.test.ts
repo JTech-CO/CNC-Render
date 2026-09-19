@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
   PartialRotationalStockSurface,
   RotationalStockSurfaceInputError,
@@ -40,12 +40,27 @@ function legacyPositions(model: ReturnType<typeof descriptor>): Float32Array {
   return new Float32Array(positions);
 }
 
+function expectLegacyGeometry(surface: PartialRotationalStockSurface, model: ReturnType<typeof descriptor>): void {
+  const reference = surface.geometry.clone();
+  const positions = legacyPositions(model);
+  (reference.getAttribute("position").array as Float32Array).set(positions);
+  reference.deleteAttribute("normal");
+  reference.computeVertexNormals();
+  reference.computeBoundingBox();
+  reference.computeBoundingSphere();
+  expect(surface.geometry.getAttribute("position").array).toEqual(positions);
+  expect(surface.geometry.getAttribute("normal").array).toEqual(reference.getAttribute("normal").array);
+  expect(surface.geometry.boundingBox).toEqual(reference.boundingBox);
+  expect(surface.geometry.boundingSphere).toEqual(reference.boundingSphere);
+  reference.dispose();
+}
+
 describe("M6 partial rotational Stock renderer", () => {
   it.each([8, 24, 128])("retains exact legacy vertices and winding at %i radial segments", (radialSegments) => {
     const model = { ...descriptor(), radialSegments, maximumZMm: 1.5, axisCenterMm: { xMm: 1.25, yMm: -2.5 },
       innerRadiusMm: new Float32Array([0, 1, 1, 0]), outerRadiusMm: new Float32Array([4, 2.5, 1, 0]) };
     const surface = new PartialRotationalStockSurface(model);
-    expect(surface.geometry.getAttribute("position").array).toEqual(legacyPositions(model));
+    expectLegacyGeometry(surface, model);
     surface.applyPatches([{ revision: 1, cellIndices: new Uint32Array([0]), innerRadiusMm: new Float32Array([0.5]), outerRadiusMm: new Float32Array([3]) }]);
     model.innerRadiusMm[0] = 0.5; model.outerRadiusMm[0] = 3;
     expect(surface.geometry.getAttribute("position").array).toEqual(legacyPositions(model));
@@ -55,25 +70,51 @@ describe("M6 partial rotational Stock renderer", () => {
   it("reuses derived data only for identical full profiles and recomputes changed profiles", () => {
     const model = descriptor();
     const surface = new PartialRotationalStockSurface(model);
-    const normals = vi.spyOn(surface.geometry, "computeVertexNormals");
-    const box = vi.spyOn(surface.geometry, "computeBoundingBox");
-    const sphere = vi.spyOn(surface.geometry, "computeBoundingSphere");
+    const normals = surface.geometry.getAttribute("normal");
+    if (!("version" in normals)) throw new Error("Expected a non-interleaved normal attribute");
+    const initialNormalVersion = normals.version;
     surface.applyPatches([{ revision: 1, cellIndices: new Uint32Array([1]), innerRadiusMm: new Float32Array([1]), outerRadiusMm: new Float32Array([2]) }]);
     expect(surface.reset(model)).toBe(true);
-    expect(normals).not.toHaveBeenCalled(); expect(box).not.toHaveBeenCalled(); expect(sphere).not.toHaveBeenCalled();
+    expect(normals.version).toBe(initialNormalVersion);
     const changed = { ...model, innerRadiusMm: new Float32Array([1, 1, 0, 0]), outerRadiusMm: new Float32Array([3, 3, 2, 2]) };
     expect(surface.reset(changed)).toBe(true);
-    expect(normals).toHaveBeenCalledTimes(1); expect(box).toHaveBeenCalledTimes(1); expect(sphere).toHaveBeenCalledTimes(1);
-    const fresh = new PartialRotationalStockSurface(changed);
-    expect(surface.geometry.getAttribute("position").array).toEqual(fresh.geometry.getAttribute("position").array);
-    expect(surface.geometry.getAttribute("normal").array).toEqual(fresh.geometry.getAttribute("normal").array);
-    expect(surface.geometry.boundingBox).toEqual(fresh.geometry.boundingBox);
-    expect(surface.geometry.boundingSphere).toEqual(fresh.geometry.boundingSphere);
+    expect(normals.version).toBe(initialNormalVersion + 1);
+    expectLegacyGeometry(surface, changed);
     surface.reset(changed);
-    expect(normals).toHaveBeenCalledTimes(1);
+    expect(normals.version).toBe(initialNormalVersion + 1);
     surface.reset(model);
-    expect(normals).toHaveBeenCalledTimes(2);
-    surface.dispose(); fresh.dispose();
+    expect(normals.version).toBe(initialNormalVersion + 2);
+    expectLegacyGeometry(surface, model);
+    surface.dispose();
+  });
+
+  it.each([8, 9, 17, 24, 37, 128])("matches Three normals and exact bounds for irregular profiles with %i segments", (radialSegments) => {
+    for (const scale of [0.000001, 0.03125, 1, 1000]) {
+      const model = { ...descriptor(), radialSegments, axialCells: 7, resolutionMm: scale,
+        minimumZMm: -3.5 * scale, maximumZMm: 2.8 * scale,
+        axisCenterMm: { xMm: 1000.123 * scale, yMm: -987.654 * scale },
+        innerRadiusMm: new Float32Array([0, 0.25, 0.875, 0, 0.375, 0.5, 0].map((value) => value * scale)),
+        outerRadiusMm: new Float32Array([2.5, 3.75, 0.875, 0, 1.5, 0.75, 2.375].map((value) => value * scale)) };
+      const surface = new PartialRotationalStockSurface(model);
+      expectLegacyGeometry(surface, model);
+      surface.dispose();
+    }
+  });
+
+  it.each([0.125, 0.2, 0.333333])("reuses repeated profiles without axial rounding drift at %f mm resolution", (resolutionMm) => {
+    const model = { ...descriptor(), radialSegments: 37, axialCells: 11, resolutionMm,
+      minimumZMm: 1000000.3, maximumZMm: 1000000.3 + 10.4 * resolutionMm,
+      axisCenterMm: { xMm: 1.234, yMm: -4.567 },
+      innerRadiusMm: new Float32Array(11).fill(1.25), outerRadiusMm: new Float32Array(11).fill(10.125) };
+    const surface = new PartialRotationalStockSurface(model);
+    expectLegacyGeometry(surface, model);
+    surface.applyPatches([{ revision: 1, cellIndices: new Uint32Array([4]), innerRadiusMm: new Float32Array([2]), outerRadiusMm: new Float32Array([8]) }]);
+    surface.reset(model);
+    expectLegacyGeometry(surface, model);
+    const stepped = { ...model, outerRadiusMm: new Float32Array([2, 2, 2, 2, 15, 15, 15, 15, 3, 3, 3]) };
+    surface.reset(stepped);
+    expectLegacyGeometry(surface, stepped);
+    surface.dispose();
   });
 
   it("keeps one BufferGeometry and updates only changed axial cells", () => {

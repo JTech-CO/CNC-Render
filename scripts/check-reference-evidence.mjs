@@ -1,9 +1,9 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { gunzipSync } from "node:zlib";
+import { decodeReferenceEvidence } from "./reference-evidence-envelope.mjs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runtimeFingerprint } from "./runtime-fingerprint.mjs";
-import { benchmarkProjects, BENCHMARK_QUALITIES, compareBenchmarkMatrix, evaluatePerformance, functionalSamplePassed } from "./benchmark-contract.mjs";
+import { benchmarkProjects, BENCHMARK_QUALITIES, compareBenchmarkMatrix, evaluatePerformance, functionalSamplePassed, validateLongTaskEvidence } from "./benchmark-contract.mjs";
 import { attributedMemory, emptyBrowserBaseline } from "./memory-contract.mjs";
 
 function requireCondition(condition, message) {
@@ -41,18 +41,18 @@ export function validateReferenceEvidence(evidence, currentFingerprint) {
   requireCondition(compareBenchmarkMatrix(report.executions, projects, BENCHMARK_QUALITIES).every((row) => row.status === "pass"), "benchmark parity mismatch");
   for (const row of report.executions) {
     const sample = row.sample;
-    requireCondition(row.status === "passed" && sample?.gpuClass === "hardware-candidate" && functionalSamplePassed(sample, projects.find((project) => project.name === row.project)?.backend), "invalid hardware case");
+    requireCondition(row.status === "passed" && sample?.gpuClass === "hardware-candidate" && sample.qualityPreset === row.qualityPreset && functionalSamplePassed(sample, projects.find((project) => project.name === row.project)?.backend), "invalid hardware case");
     const performance = evaluatePerformance(sample);
-    requireCondition(performance.mediumFps !== "fail" && performance.highPreset !== "fail" && performance.coldShell === "pass", "hardware performance budget exceeded");
-    requireCondition(sample.maximumMainHandlerMs < 50 && sample.maximumLongTasksPerRun <= 1 && sample.reactCommitDelta === 0, "main-thread budget exceeded");
+    const fpsStatus = sample.qualityPreset === "precision" ? performance.highPreset : performance.mediumFps;
+    requireCondition(fpsStatus === "pass" && performance.coldShell === "pass", "hardware performance budget exceeded or unmeasured");
+    requireCondition(Number.isFinite(sample.maximumMainHandlerMs) && sample.maximumMainHandlerMs >= 0 && sample.maximumMainHandlerMs < 50 && validateLongTaskEvidence(sample) && sample.reactCommitDelta === 0, "main-thread budget exceeded");
   }
   validateMemoryEvidence(evidence.memory);
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const envelope = JSON.parse(readFileSync(resolve("docs/verification/m12-reference-evidence.json"), "utf8"));
-  requireCondition(envelope.schemaVersion === 1 && envelope.encoding === "gzip-base64", "unsupported evidence envelope");
-  const evidence = JSON.parse(gunzipSync(Buffer.from(envelope.payload, "base64"), { maxOutputLength: 2_000_000 }).toString("utf8"));
+  const evidence = decodeReferenceEvidence(envelope);
   validateReferenceEvidence(evidence, runtimeFingerprint());
   mkdirSync("artifacts", { recursive: true });
   writeFileSync("artifacts/approved-host-reference-evidence.json", JSON.stringify(evidence, null, 2) + "\n");

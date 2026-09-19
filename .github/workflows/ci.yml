@@ -89,6 +89,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y xvfb xauth libvulkan1 mesa-vulkan-drivers
 
+      - name: Run M12 software benchmark and backend matrix
+        run: xvfb-run -a pnpm bench -- --report=artifacts/benchmark-report.json --matrix=software
+
       - name: Run complete browser, visual and accessibility gates
         run: |
           pnpm test:visual
@@ -107,9 +110,6 @@ jobs:
             playwright-report/
           if-no-files-found: warn
           retention-days: 30
-
-      - name: Run M12 software benchmark and backend matrix
-        run: xvfb-run -a pnpm bench -- --report=artifacts/benchmark-report.json --matrix=software
 
       - name: Verify approved-host performance evidence against runtime sources
         run: node scripts/check-reference-evidence.mjs

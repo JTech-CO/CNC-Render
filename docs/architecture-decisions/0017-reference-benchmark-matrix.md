@@ -50,6 +50,44 @@
 
 ## 사용
 
+### 2026-09-19 실행별 Long Task 판정 (사용자 승인)
+
+- 앱 생애 누적 `longTasksOver50Ms`를 실행별 최대값으로 잘못 사용하던 판정식을 수정한다.
+  각 realtime 실행에 영향을 준 50 ms 초과 task의 개수를 계산하고 그 최대값에 <=1을 적용한다.
+  warmup도 별도 실행으로 기록하며 동일한 <=1 기준을 적용한다. handler <50 ms는 그대로다.
+- 독립 PerformanceObserver의 원본 시작 시각·길이와 실행 구간을 보존한다. observer 전달 지연은
+  귀속에 영향을 주지 않는다. task와 실행의 반열린 시간 구간이 최초로 겹치는 실행에 한 번만
+  귀속한다. 종료 task 안의 Promise continuation이 다음 실행을 시작해도 중복 집계하지 않는다.
+  warmup + 실행별 합계 + 실행 사이 발생분은 전체 관찰 누적과 정확히 일치한다.
+- `longTaskAggregationVersion: 2`, 실행별 배열·최대값·warmup 값과 관찰 전체 누적을 저장한다.
+  실행 사이 발생분 및 앱 자체의 기존 생애 누적도 별도 보존한다. 누적값에 실행당 한도를 적용하지 않는다.
+  원본 구간에서 집계를 다시 계산해 증거 산술을 검증하므로 구형/누락/변조 증거는 통과할 수 없다.
+- FPS 관찰 창, 공정 반복 횟수 결정, warmup 작업량, handler 기준은 바꾸지 않는다.
+  기존 실패 보고서는 유지하고 새 판정은 새 측정으로 검증한다.
+
+### 2026-09-19 Windows software 스케줄링 보정
+
+- Playwright 1.63.0 / Chromium 153으로 고정한다. Chrome/Edge 153 지원은
+  [공식 릴리스](https://playwright.dev/docs/release-notes#version-163)를 따른다.
+- Windows Chromium은 GPU 프로세스를 `AboveNormal`로 올린다
+  ([Chromium 소스](https://chromium.googlesource.com/chromium/src.git/+/refs/tags/141.0.7390.112/content/gpu/gpu_main.cc)).
+  SwiftShader는 CPU에서 GPU 작업을 실행하므로 Normal인 renderer/Worker를 밀어낼 수 있다.
+  로컬 trace에서 171 ms 메시지 처리의 스레드 CPU 시간은 1.5 ms였으며, 장기 선삭 진단의
+  long task 99회가 작업 전용 GPU를 Normal로 맞춘 동일 60초 진단에서 0회로 줄었다.
+  진단은 gate 대신 사용하지 않는다.
+- **Windows의 명시적 software benchmark만** CDP가 반환한 단일 GPU PID를 사용해
+  Normal로 맞춘다. 실행 파일 전체 경로와 `--type=gpu-process`를 교차 검사하고, 예기치 않은
+  우선순위·식별 실패는 테스트 실패다. 사용자 브라우저·다른 프로세스·전원 설정은 변경하지 않는다.
+  작업 브라우저 종료와 함께 설정도 소멸한다. 실제 GPU reference 및 Linux CI는 변경하지 않는다.
+- shell readiness는 기존 시점에 측정하고, 스케줄링 보정은 첫 Fixture 실행 전에 적용한다.
+  보고서 `softwareGpuScheduling`에 정책·전후 우선순위를 남긴다. 화질, 격자, warmup,
+  최소 8초 관찰, handler <50 ms, long task <=1, 60/30 FPS 및 메모리 한도는 그대로다.
+- 별도 GPU fence 및 새 브라우저 프로세스/공정 실험은 실패를 해결하지 못해 제거했다.
+  기존 fresh-context 매트릭스와 프로파일 원본·실패 보고서는 유지한다.
+- Chromium 140 → 153의 Windows 문자 굵기·줄바꿈 차이는 동일 앱/이전 브라우저 대조와
+  이미지 직접 비교로 확인했다. G-code 오류·Lesson 성공/실패 3개 기준 이미지만 갱신하며
+  겹침·잘림 검증과 1% pixel 한도는 유지한다. machine/heatmap 기준은 그대로다.
+
 ```sh
 pnpm bench
 pnpm bench -- --report=artifacts/benchmark-software.json --matrix=software

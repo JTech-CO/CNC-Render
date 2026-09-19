@@ -1,8 +1,10 @@
 import {
+  Box3,
   BufferAttribute,
   BufferGeometry,
   Mesh,
   MeshStandardMaterial,
+  Sphere,
   type Material,
 } from "three";
 
@@ -14,6 +16,8 @@ const SEGMENT_TRIANGLE_CORNERS = new Uint8Array([
   0, 1, 2, 0, 2, 3, 5, 4, 7, 5, 7, 6,
   4, 0, 1, 4, 1, 5, 7, 6, 2, 7, 2, 3,
 ]);
+// One occurrence of each of the eight corners in the 24-vertex triangle soup.
+const SEGMENT_UNIQUE_FLOAT_OFFSETS = new Uint8Array([0, 3, 6, 15, 18, 21, 24, 33]);
 
 export interface RotationalStockSurfaceDescriptor {
   readonly axisCenterMm: { readonly xMm: number; readonly yMm: number };
@@ -109,19 +113,11 @@ export class PartialRotationalStockSurface {
     this.#positions = new Float32Array(
       descriptor.axialCells * this.#floatsPerCell,
     );
-    for (let cellIndex = 0; cellIndex < descriptor.axialCells; cellIndex += 1) {
-      this.#writeCell(
-        cellIndex,
-        this.#innerRadiusMm[cellIndex],
-        this.#outerRadiusMm[cellIndex],
-      );
-    }
+    this.#writeFullProfile();
     this.geometry = new BufferGeometry();
     this.#positionAttribute = new BufferAttribute(this.#positions, 3);
     this.geometry.setAttribute("position", this.#positionAttribute);
-    this.geometry.computeVertexNormals();
-    this.geometry.computeBoundingBox();
-    this.geometry.computeBoundingSphere();
+    this.#recomputeDerivedGeometry();
     this.#ownedMaterial =
       material === undefined
         ? new MeshStandardMaterial({ color: 0xfdfdfb, roughness: 0.7 })
@@ -226,7 +222,7 @@ export class PartialRotationalStockSurface {
       descriptor.outerRadiusMm.every((radius, cell) => radius === this.#derivedOuterRadiusMm[cell]);
     this.#innerRadiusMm.set(descriptor.innerRadiusMm);
     this.#outerRadiusMm.set(descriptor.outerRadiusMm);
-    for (let cell = 0; cell < descriptor.axialCells; cell++) this.#writeCell(cell, this.#innerRadiusMm[cell], this.#outerRadiusMm[cell]);
+    this.#writeFullProfile();
     this.#positionAttribute.clearUpdateRanges();
     this.#positionAttribute.addUpdateRange(0, this.#positions.length);
     this.#positionAttribute.needsUpdate = true;
@@ -234,9 +230,7 @@ export class PartialRotationalStockSurface {
     // An identical reset restores exactly that profile: its derived data is still
     // valid. A different full profile must recompute all three, then replace keys.
     if (!sameDerivedProfile) {
-      this.geometry.computeVertexNormals();
-      this.geometry.computeBoundingBox();
-      this.geometry.computeBoundingSphere();
+      this.#recomputeDerivedGeometry();
       this.#derivedInnerRadiusMm.set(descriptor.innerRadiusMm);
       this.#derivedOuterRadiusMm.set(descriptor.outerRadiusMm);
     }
@@ -304,6 +298,110 @@ export class PartialRotationalStockSurface {
         "Profile radii must satisfy 0 <= inner <= outer.",
       );
     }
+  }
+
+  #samePreviousRadii(cell: number): boolean {
+    return cell > 0 && Object.is(this.#innerRadiusMm[cell], this.#innerRadiusMm[cell - 1]) &&
+      Object.is(this.#outerRadiusMm[cell], this.#outerRadiusMm[cell - 1]);
+  }
+
+  #writeFullProfile(): void {
+    const { axialCells, radialSegments, minimumZMm, maximumZMm, resolutionMm } = this.#descriptor;
+    for (let cell = 0; cell < axialCells; cell++) {
+      if (!this.#samePreviousRadii(cell)) {
+        this.#writeCell(cell, this.#innerRadiusMm[cell], this.#outerRadiusMm[cell]);
+        continue;
+      }
+      let offset = cell * this.#floatsPerCell;
+      this.#positions.copyWithin(offset, offset - this.#floatsPerCell, offset);
+      const z0 = minimumZMm + cell * resolutionMm;
+      const z1 = Math.min(maximumZMm, z0 + resolutionMm);
+      // Reuse identical radial coordinates, but assign absolute axial values:
+      // translating already-rounded Float32 values would accumulate drift.
+      for (let segment = 0; segment < radialSegments; segment++) {
+        for (const corner of SEGMENT_TRIANGLE_CORNERS) {
+          this.#positions[offset + 1] = (corner & 2) ? z1 : z0;
+          offset += 3;
+        }
+      }
+    }
+  }
+
+  #recomputeDerivedGeometry(): void {
+    const positions = this.#positions;
+    let normalAttribute = this.geometry.getAttribute("normal") as BufferAttribute | undefined;
+    if (!normalAttribute) {
+      normalAttribute = new BufferAttribute(new Float32Array(positions.length), 3);
+      this.geometry.setAttribute("normal", normalAttribute);
+    }
+    const normals = normalAttribute.array as Float32Array;
+    for (let cell = 0; cell < this.#descriptor.axialCells; cell++) {
+      const start = cell * this.#floatsPerCell;
+      const previous = start - this.#floatsPerCell;
+      // Translation preserves the cross products only if the *stored* Float32
+      // cell height is identical. Clipped/quantized cells use the exact path.
+      if (this.#samePreviousRadii(cell) && Object.is(positions[start + 7] - positions[start + 1], positions[previous + 7] - positions[previous + 1])) {
+        normals.copyWithin(start, previous, start);
+        continue;
+      }
+      for (let offset = start; offset < start + this.#floatsPerCell; offset += 9) {
+      const cbX = positions[offset + 6] - positions[offset + 3];
+      const cbY = positions[offset + 7] - positions[offset + 4];
+      const cbZ = positions[offset + 8] - positions[offset + 5];
+      const abX = positions[offset] - positions[offset + 3];
+      const abY = positions[offset + 1] - positions[offset + 4];
+      const abZ = positions[offset + 2] - positions[offset + 5];
+      // Match Three's Float32 cross-product storage before normalizeNormals().
+      // A non-indexed triangle has one flat normal, not three distinct normals.
+      const x = Math.fround(cbY * abZ - cbZ * abY);
+      const y = Math.fround(cbZ * abX - cbX * abZ);
+      const z = Math.fround(cbX * abY - cbY * abX);
+      const inverseLength = 1 / (Math.sqrt(x * x + y * y + z * z) || 1);
+      const nx = x * inverseLength, ny = y * inverseLength, nz = z * inverseLength;
+      for (let vertex = 0; vertex < 9; vertex += 3) {
+        normals[offset + vertex] = nx;
+        normals[offset + vertex + 1] = ny;
+        normals[offset + vertex + 2] = nz;
+      }
+      }
+    }
+    normalAttribute.needsUpdate = true;
+
+    const bounds = this.geometry.boundingBox ?? new Box3();
+    bounds.makeEmpty();
+    const segmentFloats = SEGMENT_TRIANGLE_CORNERS.length * 3;
+    for (let cell = 0; cell < this.#descriptor.axialCells; cell++) {
+      // Equal-radius runs have identical radial coordinates and monotonic axial
+      // coordinates. Their AABB and farthest sphere point lie at run endpoints.
+      if (this.#samePreviousRadii(cell) && cell + 1 < this.#descriptor.axialCells && this.#samePreviousRadii(cell + 1)) continue;
+      for (let segment = cell * this.#floatsPerCell; segment < (cell + 1) * this.#floatsPerCell; segment += segmentFloats) {
+      for (const corner of SEGMENT_UNIQUE_FLOAT_OFFSETS) {
+        const offset = segment + corner;
+        const x = positions[offset], y = positions[offset + 1], z = positions[offset + 2];
+        bounds.min.x = Math.min(bounds.min.x, x); bounds.max.x = Math.max(bounds.max.x, x);
+        bounds.min.y = Math.min(bounds.min.y, y); bounds.max.y = Math.max(bounds.max.y, y);
+        bounds.min.z = Math.min(bounds.min.z, z); bounds.max.z = Math.max(bounds.max.z, z);
+      }
+      }
+    }
+    this.geometry.boundingBox = bounds;
+    const sphere = this.geometry.boundingSphere ?? new Sphere();
+    bounds.getCenter(sphere.center);
+    let maximumRadiusSq = 0;
+    for (let cell = 0; cell < this.#descriptor.axialCells; cell++) {
+      if (this.#samePreviousRadii(cell) && cell + 1 < this.#descriptor.axialCells && this.#samePreviousRadii(cell + 1)) continue;
+      for (let segment = cell * this.#floatsPerCell; segment < (cell + 1) * this.#floatsPerCell; segment += segmentFloats) {
+      for (const corner of SEGMENT_UNIQUE_FLOAT_OFFSETS) {
+        const offset = segment + corner;
+        const dx = sphere.center.x - positions[offset];
+        const dy = sphere.center.y - positions[offset + 1];
+        const dz = sphere.center.z - positions[offset + 2];
+        maximumRadiusSq = Math.max(maximumRadiusSq, dx * dx + dy * dy + dz * dz);
+      }
+      }
+    }
+    sphere.radius = Math.sqrt(maximumRadiusSq);
+    this.geometry.boundingSphere = sphere;
   }
 
   #writeCell(cellIndex: number, innerRadiusMm: number, outerRadiusMm: number): void {

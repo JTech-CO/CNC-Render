@@ -1,5 +1,5 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { gzipSync } from "node:zlib";
+import { encodeReferenceEvidence } from "./reference-evidence-envelope.mjs";
 import { benchmarkProjects, BENCHMARK_QUALITIES } from "./benchmark-contract.mjs";
 import { runtimeFingerprint } from "./runtime-fingerprint.mjs";
 import { validateReferenceEvidence } from "./check-reference-evidence.mjs";
@@ -23,9 +23,7 @@ const evidence = { schemaVersion: 1, collectedAtUtc: new Date().toISOString(),
   scope: "User-approved reference PC; measured unchanged runtime inputs, not a browser-wide or industrial certification",
   runtimeFingerprint: identity, benchmark, memory };
 validateReferenceEvidence(evidence, identity);
-const envelope = { schemaVersion: 1, encoding: "gzip-base64", runtimeFingerprint: identity,
-  description: "Run node scripts/check-reference-evidence.mjs to validate and expand the sanitized report into artifacts/approved-host-reference-evidence.json",
-  payload: gzipSync(JSON.stringify(evidence), { level: 9 }).toString("base64") };
+const envelope = encodeReferenceEvidence(evidence);
 mkdirSync("artifacts", { recursive: true });
 writeFileSync("artifacts/reference-evidence-envelope.json", JSON.stringify(envelope, null, 2) + "\n");
 console.info(`[reference-evidence] ${memory.length} memory cases, ${benchmark.executions.length} hardware cases; source ${identity.sha256}`);

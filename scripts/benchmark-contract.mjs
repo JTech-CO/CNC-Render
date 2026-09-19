@@ -5,6 +5,47 @@ export const BENCHMARK_BACKENDS = ["webgpu", "webgl2"];
 export const BENCHMARK_WINDOW_MS = 8_000;
 export const BENCHMARK_VIEWPORT = { width: 1440, height: 900 };
 
+// Entry timestamps, not observer delivery times, determine execution attribution.
+// Promise continuations can start the next execution before the current task ends.
+// Attribute each task once, to the first execution it overlaps, never both runs.
+export function aggregateLongTasks(entries, executions) {
+  if (!Array.isArray(entries) || !Array.isArray(executions) || executions.length < 2 ||
+      executions.some((run, index) => !run || run.kind !== (index === 0 ? "warmup" : "realtime") ||
+        !Number.isFinite(run.startMs) || run.startMs < 0 || !Number.isFinite(run.endMs) || run.endMs <= run.startMs ||
+        (index > 0 && run.startMs < executions[index - 1].endMs)) ||
+      entries.some((entry) => !entry || !Number.isFinite(entry.startTime) || entry.startTime < 0 ||
+        !Number.isFinite(entry.duration) || entry.duration <= 0 || !Number.isFinite(entry.startTime + entry.duration))) {
+    throw new Error("Invalid long-task execution evidence.");
+  }
+  const tasks = entries.filter((entry) => entry.duration > 50);
+  const overlaps = (task, run) => task.startTime < run.endMs && task.startTime + task.duration > run.startMs;
+  const counts = executions.map(() => 0);
+  let betweenExecutionLongTasksOver50Ms = 0;
+  for (const task of tasks) {
+    const index = executions.findIndex((run) => overlaps(task, run));
+    if (index === -1) betweenExecutionLongTasksOver50Ms += 1;
+    else counts[index] += 1;
+  }
+  return {
+    longTaskAggregationVersion: 2,
+    warmupLongTasksOver50Ms: counts[0],
+    longTasksOver50MsPerRun: counts.slice(1),
+    maximumLongTasksPerRun: Math.max(...counts.slice(1)),
+    totalObservedLongTasksOver50Ms: tasks.length,
+    betweenExecutionLongTasksOver50Ms,
+  };
+}
+
+export function validateLongTaskEvidence(sample) {
+  const expected = aggregateLongTasks(sample.longTaskEntries, sample.executionWindows);
+  if (sample.repetitions !== expected.longTasksOver50MsPerRun.length ||
+      !Number.isSafeInteger(sample.totalPlaybackLongTasksOver50Ms) || sample.totalPlaybackLongTasksOver50Ms < 0 ||
+      Object.entries(expected).some(([key, value]) => JSON.stringify(sample[key]) !== JSON.stringify(value))) {
+    throw new Error("Long-task evidence arithmetic mismatch.");
+  }
+  return expected.warmupLongTasksOver50Ms <= 1 && expected.maximumLongTasksPerRun <= 1;
+}
+
 export function benchmarkProjects(matrix) {
   if (!["software", "reference", "all"].includes(matrix)) {
     throw new Error("Benchmark matrix must be software, reference or all.");

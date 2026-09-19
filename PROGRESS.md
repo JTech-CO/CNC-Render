@@ -1,11 +1,125 @@
 ﻿# CNC Render Progress
 
 - Current phase: M12 성능·폴백·보안·CI·릴리스 게이트 진행 중
-- Status: 회전 소재 최적화 후 로컬 전체 회귀·실장비/메모리/LCP 재검증 통과; 원격 CI 대기, 병합 보류
+- Status: 실행별 Long Task 판정·누적 보존 및 최종 로컬 회귀 통과; PR #13 새 CI·릴리스 검증 대기
 - Last completed: 전체 회귀·실장비 24조합·메모리 8조합·broadband LCP 3회
-- Next task: 커밋·푸시·PR → 원격 CI → 병합·Pages 릴리스 검증
-- Open questions: 없음 — 사용자가 브라우저 고정 비용 제외 앱 사용량(Worker/WASM/GPU 포함) 산정을 승인
-- Known regressions: 이전 CI software handler 초과는 로컬 수정 검증 통과; Linux 통합 CI 재판정 필요
+- Next task: 검증된 변경 커밋·푸시 → PR #13 CI → 병합·Pages → M13
+- Open questions: 없음. 실행별 Long Task 판정·전체 누적 보존 및 앱 귀속 메모리 산정 승인됨.
+- Known regressions: 이전 CI 34701348298 실패 후 새 원격 검증 대기. 기존 실장비 증거는 현재 런타임 완료 증거가 아님
+
+## 2026-09-19 M12 재개 확인
+
+- 사용자 승인에 따라 Long Task 집계를 실행별로 변경한다. warmup도 별도 <=1 gate로 유지하며,
+  실행별 값·최대값·전체 관찰 누적·실행 사이 발생분·앱 생애 누적을 모두 보존한다.
+  원본 task 시간/실행 구간에서 산술을 재검증한다. 구형 증거는 완료 근거로 재사용하지 않는다.
+  아래 승인 대기 기록은 당시 상태이며 지금은 해소됐다. 새 테스트/측정 결과는 확인 후 기록한다.
+- 실행별 집계 구현 후 단위 31개, typecheck, targeted eslint 통과. task 시간과 실행 구간,
+  실행별 배열, warmup, 전체 관찰 누적, 앱 자체 누적을 보고서에 남긴다.
+  최초 시도의 종료 task가 다음 실행 Promise continuation에 중복 귀속되는 문제는 실제 시간
+  샘플 회귀로 수정했다. task가 최초로 겹치는 실행에 한 번만 귀속하며 합계를 검증한다.
+  최초 실패 보고서 `benchmark-software-per-run.json`도 보존한다.
+- 최종 `benchmark-software-per-run-v2.json`: 12/12 및 기능·Stock 동등성 통과,
+  handler 최대 10.4 ms, warmup 모두 0. WebGPU precision turning은 관찰 누적 11회,
+  실행별 최대 1회로 통과했다. 앱 자체 누적은 활성 playback 구간만 세어 0이며 별도 보존한다.
+  최종 render 완료 대기까지 포함한 독립 관찰 값을 실제 gate로 사용한다.
+- 최신 Playwright/Chrome/Edge 기준으로 메모리 8조합·성능 24조합·LCP 재측정을 시작했다.
+- 최종 메모리 유효 8/8: Chrome GPU 기본/고정밀 455.54/462.69 MB, Chrome GL2
+  346.60/376.93 MB, Edge GPU 481.92/512.95 MB, Edge GL2 349.27/391.10 MB.
+  각 60초 이상·33–37개 샘플이다. 최초 Edge 2개 조합의 프로세스 종료 취득 오류는 원본을
+  별도 보존하고 새 브라우저로 해당 조합만 다시 취득했다. 유효 예산 실패를 재시도하지 않았다.
+- 기준 장비 24/24 및 가공 결과 동등성 통과: 최소 FPS 기본 117.867/고정밀 119.522,
+  cold shell 최대 1652.5 ms, handler 최대 10.8 ms, warmup·실행별·전체 long task 모두 0.
+  Chrome 153.0.8010.50 / Edge 153.0.4234.48, RTX 4060 Laptop / Intel UHD를 기록했다.
+- Lighthouse 3회 LCP 964.8/980.5/969.6 ms 통과. 새 런타임 지문 189 files /
+  `f00362e1f9450a2bc469f919691ab121e8cde07283f711594ce3423a48dfd7ab`.
+  실행별 원본 구간을 포함한 증거는 envelope v2의 8192자 이하 base64 청크로 저장한다.
+  v1 읽기 호환성·압축 해제 상한·구간 집계 산술을 검사하며 증거 단위 7개 통과했다.
+  전체 회귀와 원격 CI·공개 배포가 남아 있어 아직 M12 완료가 아니다.
+- 최종 `pnpm verify` 통과: 336 unit / 64 contracts / 69 parity, lint·typecheck·Rust check·build.
+  새 증거 저장 helper의 nullable 타입 오류는 수정 후 전체 verify로 재검증했다.
+- Chromium 153에서 Windows visual 3개가 문자 굵기·줄바꿈 차이로 실패했다. 동일 최신 앱을
+  이전 Chromium 140으로 실행한 대조에서는 기존 3개 baseline 모두 통과했다.
+  오류 화면·학습 성공/실패의 이전/실제/차이 이미지를 직접 확인해 겹침·잘림이 없음을 확인하고
+  Windows 3개만 갱신한다. machine/heatmap·Linux baseline과 1% 허용치는 변경하지 않는다.
+  최초 실패 이미지·trace와 대조 실험은 별도 로컬에 보존했다. 전체 UI 재검증 중이다.
+- 최종 UI 회귀: visual 5, E2E 88(기존 opt-in soak 2 skipped), a11y 6(별도 visual
+  project 3 skipped), Pages 2, bundle 모두 통과. PNG 갱신 후 업데이트 옵션 없이 재검증했다.
+- 증거 검증기는 미측정 FPS·음수/비유한 handler·프리셋 불일치·Long Task 집계 변조를
+  fail-closed한다. 최종 unit 339, typecheck, targeted lint, doc-terms, diff check 및
+  현재 런타임 증거 검증을 통과했다. 전체 계약 64/parity 69와 빌드도 통과 상태다.
+  M12 완료 표시는 새 원격 CI와 병합·공개 Pages 검증 후에만 한다.
+
+- PR #13 / `d787726`은 OPEN, 원격 CI `34701348298`은 FAILURE다. M12는 미완료이며,
+  사용자 요청에 따라 완료 후 커밋·푸시하고 M13으로 이어간다. M13의 5축 범위 승인은 받았지만
+  harness의 M12 완료 진입조건을 생략하지 않는다.
+- 현재 회전 소재 최적화 소스의 이전 로컬 검증은 verify 319 unit / 64 contracts /
+  69 parity, visual 5, 관련 E2E 34, a11y 6, Pages 2, bundle 통과다.
+  마지막 software는 5 passed / 7 failed였다(`benchmark-software-cold-geometry-final.json`).
+- 재현 `benchmark-software-20260919.json`: WebGPU 6개 통과, WebGL 2 6개 실패.
+  기능·Stock 동등성은 통과했지만 handler 최대 143.5 ms와 다수 long task가 남았다.
+  기존 50 ms 미만·long task 1회 이하 기준과 8초 관찰 창을 변경하지 않았다.
+- CPU 프로파일에서 WebGL clear 및 GC 대기가 반복 실행 후 증가했다. 비차단 GPU fence
+  실험은 이 문제를 해결하지 못해 새 helper·테스트와 렌더러 연결을 모두 제거했다.
+  설치 Chrome 153의 동일 SwiftShader 진단에서는 급증이 재현되지 않았으나 gate 대체 증거는 아니다.
+- 최신 Chrome/Edge 153 지원을 위해 Playwright를 1.55.0 → 1.63.0으로 정확히 고정했다.
+  lockfile 변경은 Playwright와 연결 peer 항목뿐이다. 공식 근거:
+  https://playwright.dev/docs/release-notes#version-163.
+  갱신 후 첫 software 3 passed / 9 failed 보고서도 보존한다(`benchmark-software-pw163.json`).
+  해당 실행에는 Edge 설치/관리자 승인 대기가 겹쳤으므로 격리된 최종 증거로 사용하지 않는다.
+  도구 업데이트만으로 성능 문제가 해결되었다고 판단하지 않는다.
+- Chrome 153.0.8010.50은 공식 활성 Stable 배포에 포함된다. Edge 153.0.4234.32는
+  공식 최신 153.0.4234.48보다 이전 버전이다. 사용자가 Edge 업데이트를 승인했다.
+  Microsoft MSI의 SHA256·서명을 검증했으며 일반 설치는 1925(관리자 권한 부족)/1603으로
+  실패했다. 이후 관리자 UAC 승인을 받아 설치 exit 0, 실제 버전 153.0.4234.48을 확인했다.
+  개인 브라우저 프로필은 사용하지 않는다.
+- 남은 항목: software 안정화, 최신 브라우저 전체 회귀, 최종 런타임의 기준 장비 성능·메모리·LCP
+  재측정 및 증거 갱신, 원격 CI 통과와 릴리스 검증. 미완료 상태로 완료 커밋·병합하지 않는다.
+- 업데이트 후 `pnpm verify` 재통과: 319 unit / 64 contracts / 69 parity 및 build.
+  격리 software는 11 passed / 1 failed(WebGL 2 precision turning long task 14).
+  fresh-browser-process 실험도 6 passed / 6 failed여서 되돌렸다. 두 보고서를 보존한다.
+- 60초 trace에서 긴 메시지·GC의 대부분은 CPU 작업이 아니라 off-CPU 시간이었다.
+  Windows GPU 프로세스 AboveNormal / renderer·Worker Normal, 절전 및 Job CPU 제한 없음.
+  작업 전용 SwiftShader GPU만 Normal로 맞춘 비교에서는 handler 13.3 ms, long task 0이었다.
+  실제 GPU 설정은 그대로 유지하며 Windows software 측정에만 소유권 검증을 거쳐 적용한다.
+  단위 회귀 4개 통과. 전체 게이트 재측정 중이며 ADR 0017에 조건을 명시했다.
+- 보정 통합 v1은 `Browser.getBrowserCommandLine`이 automation 플래그 부재로 거부되어
+  fail-closed했다. v2는 CDP browser/GPU PID와 실제 부모 PID·실행 파일 경로·GPU 명령줄을
+  교차 검증한다. raw PID·경로는 공개 보고서에 넣지 않는다.
+- `benchmark-software-normal-priority-v2.json`: 11 passed / 1 failed, 모든 기능·가공 결과
+  동등성과 handler <50 ms 통과. WebGL 2 전 조합 통과. WebGPU precision turning만
+  `maximumLongTasksPerRun=2`로 실패했다. 이 값은 실제로 앱 생애 누적값을 최대화한 것이다.
+  ADR의 '공정별'과 지표 이름의 'PerRun'에 맞춰 실행별로 고칠지, 반복 전체의 누적 상한을
+  유지할지 사용자에게 확인했다. 응답 전에 판정식을 변경하거나 통과로 간주하지 않는다.
+- 이 결정 전에는 완료 커밋·푸시·병합과 M13 착수를 보류한다. M13 백서와 기존 회전축
+  스키마만 사전 확인했으며 새 구현은 아직 없다. 효과 없는 임시 GPU fence, 프로세스 격리,
+  coordinator 계측 코드는 제거했다. 최종 기준 장비 증거는 아직 갱신하지 않았다.
+- 보정 v2의 전체 12조합 handler 최대는 8.7 ms였다. 새 helper·테스트·benchmark의
+  typecheck, targeted eslint, 문서 용어 검사도 통과했다. 추가 성능 한도 완화는 없다.
+
+## M12 최초 회전 소재 생성 성능 후속
+
+- `d787726` / CI `34701348298`: verify·G-code/fuzz·Rust·visual·전체 E2E·a11y·bundle
+  통과, software는 다시 7 passed/5 failed였다. 최대 handler 103 ms, long task 최대 2회.
+  모든 기능·가공 결과 동등성은 통과했으나 병합하지 않는다. 실패 보고서를 보존한다.
+- 동일 profile reset 캐시만으로는 최초 생성 비용이 남는다. 최초 생성의 삼각형 법선을
+  정점 3개마다 반복 정규화하지 않고 한 번 계산해 복제한다. Three.js의 중간 Float32
+  반올림도 유지한다. 경계는 같은 삼각형 soup의 중복 정점을 제외한 8개 코너만 순회한다.
+  위치·법선·경계 상자·경계 구를 독립 Three.js 기준과 완전히 비교한다.
+- 정점·법선·경계 회귀 13개 및 리소스 수명 5개 통과. 로컬 최초 고정밀 드릴링 진단:
+  WebGPU 12.3 ms / WebGL 2 18.4 ms; CPU×4 별도 진단 45.2/44.8 ms.
+  진단은 gate가 아니며 프로파일 원본을 로컬에 보존한다. 성능 지표·50 ms 기준·워밍업
+  집계 방식은 변경하지 않는다. 런타임 변경에 따른 기준 장비 증거 재측정이 필요하다.
+- CI software gate를 전체 브라우저 검사보다 먼저 실행하여 같은 실패를 일찍 검출한다.
+  검사 항목·한도·실패 판정은 그대로 유지한다.
+- 첫 추가 최적화의 verify 316/64/69, visual 5, 관련 WebGPU/WebGL 2 E2E 34 및
+  software 12/12 통과(최대 handler 32.5 ms, long task 0).
+- 이어서 같은 반경의 연속 셀은 radial 좌표를 버퍼 복사하고 axial 값만 절대 좌표로
+  기록한다. 법선은 실제 Float32 높이까지 같을 때만 복사한다. 동일 반경 구간은 경계
+  극값이 양 끝에 있으므로 내부 셀의 중복 경계 순회를 생략한다. 16개 기하 회귀와
+  5개 수명 테스트로 기존 정점·법선·경계 완전 일치, 소수 해상도 드리프트와 중간 굵은
+  구간을 검증했다. 최초 고정밀 드릴링 진단 GPU/GL2 7.3/5.9 ms, CPU×4 31.6/26.5 ms.
+- 최종 소스 지문 `07efdcc0723fbd66eb55d52a5fdcc2780424315d733d6d20f155ddfe5b0c886e`.
+  런타임이 바뀌었으므로 이전 승인 장비 증거는 별도로 보존하고 전체 재측정 중이다.
 
 ## M12 회전 소재 최적화 후 최종 로컬 증거 (2026-09-13)
 
