@@ -4,6 +4,7 @@ export * from "./coordinator";
 export * from "./domain";
 export * from "./events";
 export * from "./gcode-analysis";
+export * from "./machine-plugin";
 export * from "./persistence";
 export * from "./primitives";
 export * from "./project";

@@ -1,11 +1,35 @@
 ﻿# CNC Render Progress
 
-- Current phase: M12 성능·폴백·보안·CI·릴리스 게이트 완료
-- Status: complete — PR #13 병합, main CI·Pages 배포·공개 기능/출처 검증 통과
-- Last completed: 43db00c 공개 Pages 검증 2개, WASM MIME/해시 일치 및 M12 병합 브랜치 정리
-- Next task: M13 3+2축·동시 5축의 machine plugin contract부터 별도 검증 단위로 진행
-- Open questions: 없음. 2026-09-20 사용자가 단발성 LCP 지연을 미해결 P2로 보존하고 검증 통과 후보를 병합·배포하는 것을 승인함.
+- Current phase: M13 3+2축·동시 5축 확장 — machine plugin contract
+- Status: in progress — 첫 계약 단위 구현, M13 전체 DoD 미완료
+- Last completed: M13 세 구조 데이터 계약과 축 상태 검증, contracts 94·unit 343·typecheck·lint 통과
+- Next task: 회전축 FK·세 구조 Golden Pose 및 Rust/TypeScript parity
+- Open questions: 5축 제거 Precision 체적·잔삭 허용 기준은 해당 구현 단위에서 승인·고정 필요
 - Known regressions: 과거 LCP 6273.8 ms 1회 초과는 원인 미확정인 승인된 P2. 해결됨으로 닫지 않으며 2.5초 기준·실패 증거를 유지
+
+## 2026-09-24 M13 첫 단위 — 머신 플러그인 계약
+
+- 사용자 M13 진행 요청에 따라 `main`에서 `codex/m13-machine-plugin`을 생성했다.
+  기존 stash는 보존했으며 커밋·푸시·병합·공개 배포는 하지 않았다.
+- ADR 0019에 데이터 전용 플러그인 버전, 좌표·장착 변환, 모드/TCP 선언 및
+  비범위를 고정했다. 기존 MachineDefinition/linear/rotary schema를 재사용하고
+  M4의 3축 구현 및 프로젝트/Worker schema 1은 유지한다.
+- Table-Table / Head-Table / Head-Head의 disjoint root→leaf chain과 정확히
+  선형 3축+회전 2축을 검증한다. 입력 상태는 plugin/version/machine에 바인딩하고
+  mm/rad 혼용, 축 누락·중복, 한계 초과, 비유한값 및 미지원 모드/TCP를 거부한다.
+- 세 구조 fixture는 계약 검증용이다. FK/IK Golden Pose, 실제 TCP 제어,
+  충돌 안전 또는 S1 가공 검증을 통과한 것으로 취급하지 않는다.
+- 검증: contracts 94개(신규 30), unit 343개, typecheck 통과.
+  lint·모듈 경계·문서 용어·고정 toolchain 검사도 통과했다. 식별자 개행
+  거부 회귀 2개 추가 후 전체 계약·타입 검사와 변경 파일 lint도 재통과했다.
+  최초 신규 3개 테스트는 스키마의 키 순서 정렬을 원본 JSON 삽입 순서와 비교해
+  실패했다. 기존 canonicalJson 규칙으로 100회 왕복과 입력 비변경을 검증했다.
+- `check-reference-evidence`는 소스 지문 변경으로 실패했다. 이전 M12 증거와
+  기준은 그대로 보존하며 새 릴리스 전 승인 장비 재측정이 필요하다.
+- 남은 M13: 회전축 FK/IK·Golden/parity, TCP·결정론적 해 선택, 특이점·자세 급변·
+  rewind 진단, 5축 링크 충돌, 희소 복셀 제거, 3+2/동시 5축 UI 식별과 S1 lesson.
+  이 단위는 데이터 계약만 추가하므로 렌더러/E2E·Rust parity는 실행하지 않았다.
+  M13 DoD 1–8은 아직 완료 처리하지 않는다.
 
 ## 2026-09-20 M12 릴리스 완료
 
