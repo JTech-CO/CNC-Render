@@ -1,6 +1,8 @@
 # ADR 0019 — M13 머신 플러그인 계약
 
-- 상태: 첫 검증 단위 구현, M13 전체 DoD 미완료
+후속 구현: 국소 IK/TCP는 ADR 0020, bounded 다해 비용 선택은 ADR 0021을 참조한다.
+
+- 상태: 계약·회전축 FK/Golden/native parity 구현, M13 전체 DoD 미완료
 - 날짜: 2026-09-24
 - 참조: 기술 백서 §2.3.D·§4.5.3·§8 Phase 3·§9.3, QA harness M13, ADR 0006
 
@@ -34,8 +36,8 @@ React, Worker 및 Rust 계산 모듈에 의존하지 않는다. M4의 3축 계�
   공구 교체 시 장착 길이 보정이 필요하며 별도 spin 각도는 지정하지 않는다.
 - `workpieceMount`는 공작물 좌표계의 leaf-local 변환이며 rotation은
   Rz(zRad) × Ry(yRad) × Rx(xRad), position은 mm다.
-- 후속 FK의 공작물 기준 공구 pose는 inverse(base→workpiece) × (base→tool)다.
-  이번 단위에서는 해당 계산이나 Golden Pose 통과를 주장하지 않는다.
+- FK의 공작물 기준 공구 pose는 inverse(base→workpiece) × (base→tool)다.
+  후속 FK 단위에서 계산과 19개 독립 Golden Pose를 구현했다(아래 검증 범위 참조).
 
 ## 상태 검증
 
@@ -53,17 +55,40 @@ modulo 처리하지 않아 회전 한계나 이후 rewind 필요성을 숨기지
 
 ## 검증 및 후속 단위
 
+국소 IK·TCP 후속 구현과 그 제한은 ADR 0020을 따른다. 아래 FK 범위 설명을
+전체 5축 실행 지원이나 IK 전역 해 선택 보증으로 확대 해석하지 않는다.
+
 세 구조의 계약 fixture, 100회 canonical JSON 왕복, 단위·경계·유한값·연결·
 버전·capability의 잘못된 입력을 검증한다. WebGPU/WebGL 2 모두 동일한
 데이터 계약을 사용하며 이번 단위에는 렌더러별 신규 기능이 없다.
 
-다음은 회전축 FK와 독립적으로 계산한 세 구조 Golden Pose, Rust/TypeScript
-parity다. 이후 IK/TCP/결정론적 해 선택/특이점·rewind/5축 충돌/희소 복셀
+회전축 FK와 독립적으로 계산한 세 구조 Golden Pose, Rust/TypeScript native
+parity를 구현했다. 이후 IK/TCP/결정론적 해 선택/특이점·rewind/5축 충돌/희소 복셀
 제거/블레이드 또는 임펠러 S1 lesson을 차례로 구현한다. 제거 체적·잔삭의
 Precision 허용 기준은 해당 단위에서 승인·고정해야 하며 임의로 만들지 않는다.
 
 소스 지문이 바뀌었으므로 M12 기준 장비 증거는 이전 릴리스의 기록으로
 보존한다. 새 릴리스 전 기준 장비 재측정이 필요하며 게이트를 완화하지 않는다.
+
+### FK 검증 단위
+
+`FiveAxisKinematics`는 계약을 검증하고 자체 복사본을 소유한다. 입력 상태는
+플러그인에 바인딩하여 검사한 뒤 공작물 기준 끝점(mm)·홀더 방향 unit vector를
+반환한다. 선언된 축 방향은 허용 오차 내 unit vector임을 확인하고 회전 계산에서
+정규화한다. 출력 -0은 0으로 통일하며 중간 계산의 overflow는 성공 pose로 내보내지
+않는다. 입력 배열 순서가 아니라 선언된 chain 순서를 사용한다.
+
+TypeScript는 점·방향의 Rodrigues 회전, Rust는 rigid transform matrix 합성이다.
+기존 simulation-cli에 five-axis-fk 요청만 추가하며 3축 분기는 유지한다.
+Rust 입력도 기존 domain 수치 검증과 신규 plugin/state 검증을 모두 수행한다.
+지금은 native core parity이며 Worker/WASM의 5축 기능이 구현되었다고 표현하지 않는다.
+
+19개 Golden의 손계산 근거와 허용치는
+`tests/fixtures/machines/five-axis/README.md`에 고정했다.
+위치 <=1e-9 mm, 방향 각도 <=1e-9 rad는 수치 회귀 기준이며 S1 절삭 인증이 아니다.
+공구축 주위 roll은 비교하지 않는다. mode와 tcpEnabled는 입력 capability 검증에만
+사용되고 FK의 수학적 변환을 바꾸지 않는다. IK/TCP 보정이나 3+2 경로의 자세
+고정·동시 5축 경로 보간은 이 단계에서 수행하지 않는다.
 
 ```sh
 pnpm test:contracts --filter machine-plugin
@@ -71,4 +96,7 @@ pnpm test:contracts
 pnpm test:unit
 pnpm typecheck
 pnpm lint
+pnpm test:unit --filter kinematics-5axis
+pnpm test:parity --filter fk-ik
+pnpm verify
 ```

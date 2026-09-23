@@ -2,6 +2,7 @@
 
 pub mod canonical;
 pub mod domain;
+pub mod machine_plugin;
 mod required_nullable;
 mod semantic;
 pub mod units;

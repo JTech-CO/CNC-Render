@@ -28,9 +28,174 @@ struct PoseRequest {
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
 enum CliRequest {
+    FiveAxisSelect(Box<FiveAxisSelectRequest>),
+    FiveAxisInverse(Box<FiveAxisInverseRequest>),
+    FiveAxis(Box<FiveAxisRequest>),
     StockHash(StockHashRequest),
     LatheProfile(LatheProfileRequest),
     Poses(PoseRequest),
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct FiveAxisSelectRequest {
+    request_type: FiveAxisSelectRequestType,
+    plugin: cnc_render_contracts::machine_plugin::MachinePlugin,
+    target: cnc_render_contracts::machine_plugin::FiveAxisTarget,
+    reference: cnc_render_contracts::machine_plugin::MachinePluginState,
+    #[serde(default)]
+    weights: cnc_render_contracts::machine_plugin::SolutionWeights,
+    repetitions: u32,
+}
+#[derive(Debug, Deserialize)]
+enum FiveAxisSelectRequestType {
+    #[serde(rename = "five-axis-select")]
+    Select,
+}
+#[derive(Serialize)]
+struct FiveAxisSelectResponse {
+    stable: bool,
+    result: cnc_render_simulation_core::five_axis_selection::Selection,
+}
+fn execute_five_axis_select(
+    request: FiveAxisSelectRequest,
+) -> Result<FiveAxisSelectResponse, String> {
+    let _ = request.request_type;
+    if !(1..=100).contains(&request.repetitions) {
+        return Err("five-axis selection request bounds exceeded".into());
+    }
+    let solver = cnc_render_simulation_core::five_axis_selection::FiveAxisSolutionSelector::new(
+        request.plugin,
+    )
+    .map_err(|e| e.to_string())?;
+    let evaluate = || {
+        solver
+            .select(&request.target, &request.reference, &request.weights)
+            .map_err(|e| e.to_string())
+    };
+    let result = evaluate()?;
+    let bytes = serde_json::to_vec(&result).map_err(|e| e.to_string())?;
+    let mut stable = true;
+    for _ in 1..request.repetitions {
+        stable &= serde_json::to_vec(&evaluate()?).map_err(|e| e.to_string())? == bytes;
+    }
+    Ok(FiveAxisSelectResponse { stable, result })
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct FiveAxisInverseRequest {
+    request_type: FiveAxisInverseRequestType,
+    plugin: cnc_render_contracts::machine_plugin::MachinePlugin,
+    operations: Vec<InverseOperation>,
+    repetitions: u32,
+}
+#[derive(Debug, Deserialize)]
+enum FiveAxisInverseRequestType {
+    #[serde(rename = "five-axis-inverse")]
+    Inverse,
+}
+#[derive(Debug, Deserialize)]
+#[serde(tag = "kind", rename_all = "lowercase", deny_unknown_fields)]
+enum InverseOperation {
+    Ik {
+        target: cnc_render_contracts::machine_plugin::FiveAxisTarget,
+        seed: cnc_render_contracts::machine_plugin::MachinePluginState,
+    },
+    Tcp {
+        reference: cnc_render_contracts::machine_plugin::MachinePluginState,
+        commanded: cnc_render_contracts::machine_plugin::MachinePluginState,
+    },
+}
+#[derive(Serialize)]
+struct FiveAxisInverseResponse {
+    stable: bool,
+    results: Vec<cnc_render_simulation_core::five_axis_inverse::InverseResult>,
+}
+fn execute_five_axis_inverse(
+    request: FiveAxisInverseRequest,
+) -> Result<FiveAxisInverseResponse, String> {
+    let _ = request.request_type;
+    if !(1..=100).contains(&request.repetitions)
+        || request.operations.is_empty()
+        || request.operations.len() > 1024
+        || request.operations.len() * request.repetitions as usize > 10000
+    {
+        return Err("five-axis inverse request bounds exceeded".into());
+    }
+    let solver = cnc_render_simulation_core::five_axis_inverse::FiveAxisInverseKinematics::new(
+        request.plugin,
+    )
+    .map_err(|e| e.to_string())?;
+    let evaluate = || {
+        request
+            .operations
+            .iter()
+            .map(|operation| match operation {
+                InverseOperation::Ik { target, seed } => solver.inverse(target, seed),
+                InverseOperation::Tcp {
+                    reference,
+                    commanded,
+                } => solver.compensate_tcp(reference, commanded),
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())
+    };
+    let results = evaluate()?;
+    let bytes = serde_json::to_vec(&results).map_err(|e| e.to_string())?;
+    let mut stable = true;
+    for _ in 1..request.repetitions {
+        stable &= serde_json::to_vec(&evaluate()?).map_err(|e| e.to_string())? == bytes;
+    }
+    Ok(FiveAxisInverseResponse { stable, results })
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct FiveAxisRequest {
+    request_type: FiveAxisRequestType,
+    plugin: cnc_render_contracts::machine_plugin::MachinePlugin,
+    states: Vec<cnc_render_contracts::machine_plugin::MachinePluginState>,
+    repetitions: u32,
+}
+
+#[derive(Debug, Deserialize)]
+enum FiveAxisRequestType {
+    #[serde(rename = "five-axis-fk")]
+    Fk,
+}
+
+#[derive(Debug, Serialize)]
+struct FiveAxisResponse {
+    stable: bool,
+    results: Vec<cnc_render_simulation_core::five_axis::FiveAxisPose>,
+}
+
+fn execute_five_axis(request: FiveAxisRequest) -> Result<FiveAxisResponse, String> {
+    let _ = request.request_type;
+    if !(1..=10000).contains(&request.repetitions)
+        || request.states.is_empty()
+        || request.states.len() > 10000
+    {
+        return Err("five-axis request bounds exceeded".into());
+    }
+    let fk = cnc_render_simulation_core::five_axis::FiveAxisKinematics::new(request.plugin)
+        .map_err(|e| e.to_string())?;
+    let evaluate = || {
+        request
+            .states
+            .iter()
+            .map(|s| fk.solve(s))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())
+    };
+    let results = evaluate()?;
+    let bytes = serde_json::to_vec(&results).map_err(|e| e.to_string())?;
+    let mut stable = true;
+    for _ in 1..request.repetitions {
+        stable &= serde_json::to_vec(&evaluate()?).map_err(|e| e.to_string())? == bytes;
+    }
+    Ok(FiveAxisResponse { stable, results })
 }
 
 #[derive(Debug, Deserialize)]
@@ -276,6 +441,13 @@ fn run() -> Result<(), String> {
     let request = serde_json::from_str::<CliRequest>(&input)
         .map_err(|error| format!("invalid request JSON: {error}"))?;
     let output = match request {
+        CliRequest::FiveAxisSelect(request) => {
+            serde_json::to_string(&execute_five_axis_select(*request)?)
+        }
+        CliRequest::FiveAxisInverse(request) => {
+            serde_json::to_string(&execute_five_axis_inverse(*request)?)
+        }
+        CliRequest::FiveAxis(request) => serde_json::to_string(&execute_five_axis(*request)?),
         CliRequest::Poses(request) => {
             serde_json::to_string(&execute(request).map_err(|error| error.to_string())?)
         }

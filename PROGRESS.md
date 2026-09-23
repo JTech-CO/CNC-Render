@@ -1,16 +1,112 @@
 ﻿# CNC Render Progress
 
-- Current phase: M13 3+2축·동시 5축 확장 — machine plugin contract
-- Status: in progress — 첫 계약 단위 구현, M13 전체 DoD 미완료
-- Last completed: M13 세 구조 데이터 계약과 축 상태 검증, contracts 94·unit 343·typecheck·lint 통과
-- Next task: 회전축 FK·세 구조 Golden Pose 및 Rust/TypeScript parity
+- Current phase: M13 3+2축·동시 5축 확장 — 다해 후보·비용 기반 결정론적 해 선택
+- Status: in progress — bounded 후보/비용 선택 단위 완료; M13 전체 DoD 미완료
+- Last completed: verify(unit 400/contracts 94/parity 87)·프로덕션 빌드 및 Rust fmt/clippy/test 통과
+- Next task: 회전 특이점·축 한계·급격한 자세 변화 진단 및 rewind
 - Open questions: 5축 제거 Precision 체적·잔삭 허용 기준은 해당 구현 단위에서 승인·고정 필요
 - Known regressions: 과거 LCP 6273.8 ms 1회 초과는 원인 미확정인 승인된 P2. 해결됨으로 닫지 않으며 2.5초 기준·실패 증거를 유지
+
+## 2026-09-24 M13 다해 후보·비용 기반 결정론적 해 선택
+
+- 사용자 요청에 따라 `codex/m13-machine-plugin`에서 직전 미커밋 FK/IK/TCP
+  변경을 포함해 검증했다. 아래 로컬 검증 결과를 포함한 누적 M13 변경을
+  이번 커밋/푸시 대상으로 한다. PR·병합·Pages 배포는 범위에 포함하지 않는다.
+- ADR 0021에 정책 version 1을 고정했다. reference/home/회전축 5×5 grid의
+  고정 27개 seed에 국소 IK를 적용하고 중복 수치 해를 제거한다. travel 범위,
+  최종 위치 <=1e-9 mm·방향 <=1e-9 rad 기준을 유지한다.
+- 축 이동량/한계 페널티/방향 Jacobian 특이점 위험을 각각 정수 비용으로
+  계산한다. 기본 가중치는 10/1/2, 동률은 작은 seed index가 우선이다.
+  동일 입력·정책의 반복 재현성과 입력 배열 순서 독립성을 검사했다.
+- 세 구조의 다해 후보, 독립 TT 두 branch, Golden 19개, 가중치에 따른
+  선택 변경, pole/regular 위험, 비대칭 한계, 실패/잘못된 입력을 검사했다.
+  신규 unit 10개·native parity 5개가 통과했다. 고정 seed의 세 구조×12개
+  목표는 참조 자세를 변경한 뒤 후보·정수 비용·순위·선택을 두 언어에서
+  정확히 비교했다. 가중치별 native 100회 반복과 별도 프로세스도 통과했다.
+- 전체 `pnpm verify` 통과: unit 400/contracts 94/parity 87, 타입/lint/모듈
+  경계/toolchain, WASM 및 프로덕션 빌드 포함. Rust fmt check/clippy
+  (`-D warnings`)/workspace test와 `git diff --check`도 통과했다.
+  기존 chunk >500 kB advisory와 Windows DLL linker 정보 warning은 유지된다.
+- `check-reference-evidence`는 `runtime changed; remeasure on the approved
+  reference host`로 실패했다. 이는 기존에 기록한 새 소스 지문 재측정 필요
+  상태이며 증거를 재작성하거나 gate를 완화하지 않았다. 이번 단위에서
+  UI E2E·bundle 예산·실장비 성능 재측정·원격 CI 완료를 주장하지 않는다.
+- M13 DoD 3은 ADR 0021의 bounded 후보/fixture 범위에서 통과했다. 전체 해
+  열거·전역 최적·산업용 안전을 보증하지 않는다. 충돌은 결과에 명시적으로
+  `not-evaluated`이며 충돌 비용 0으로 간주하지 않는다. 방향 불연속 비용과
+  경로 연속성 역시 후속 범위다. 특이점 위험 점수가 DoD 4 진단을 대체하지 않는다.
+- M13 전체는 계속 진행 중이다. DoD 4–8의 진단/rewind/5축 충돌/제거/lesson,
+  G-code IR·Worker/WASM/UI 연결, 릴리스 전 기준 장비 재측정이 남았다.
+
+## 2026-09-24 M13 국소 IK·TCP 및 왕복 검증
+
+- 기존 미커밋 FK 변경 위에 구현했다. `codex/m13-machine-plugin`을 유지하며
+  이번 단위는 커밋·푸시·PR·병합·공개 배포하지 않았다. 원격 최신은 계약 커밋 8bf2272다.
+- ADR 0020에 목표 pose 계약, seed-local IK와 TCP 단일 자세 보정의 수치 기준을
+  고정했다. TypeScript/Rust 모두 회전축 방향 DLS 후 선형축 affine 해를 계산하고
+  최종 FK 잔차·축 한계를 검증한다. 상태를 새로 반환하며 입력은 변경하지 않는다.
+- 반복 80회, 회전 step 최대 0.35 rad, line search 최대 12회로 제한한다.
+  실패는 코드와 반복 수만 반환하며 근사 해·NaN/Infinity pose를 만들지 않는다.
+  `orientation-not-converged`는 국소 수렴 실패이지 전역 도달 불가가 아니다.
+- Golden 목표 19개에서 회전 seed를 변경한 뒤 IK→FK 왕복을 검증했다.
+  고정 seed 0x13002410으로 구조별 100개(총 300개)를 추가 검증했으며 HH는
+  기울어진 공구축으로 C축의 방향 기여도 확인했다. 최종 오차 기준은 두 언어
+  각각 위치 <=1e-9 mm·방향 <=1e-9 rad이며 그대로 유지한다.
+- 공구 끝점 고정 TCP: A=π/2의 독립 손계산 세 사례 및 두 모드×세 구조×5개
+  회전 명령을 통과했다. 회전축 명령은 그대로 두고 XYZ만 보정한다.
+  3plus2와 simultaneous-5axis는 단일 자세 계산이며 경로 보간·절삭 안전 보증이 아니다.
+- 초기 IK 선형축 min/max 테스트에서 TT/HT 두 사례가 실패했다. 방향 허용치에
+  가까운 잔차가 travel 경계의 위치로 증폭된 원인이었다. 내부 방향 수렴을
+  1e-12 rad로 강화한 후 min/max 6개를 두 언어 모두 통과했다. 공개 위치/방향
+  gate나 엄격한 입력 travel 기준은 완화하지 않았다.
+- 검증: 신규 IK/TCP unit 26개·native parity 7개, 타입 검사, Rust fmt/clippy
+  (`-D warnings`)/workspace test 통과. clippy가 찾은 행렬 소거 loop는 iterator로
+  수정했다. 전체 `pnpm verify` 통과: unit 390/contracts 94/parity 82,
+  타입·lint·모듈 경계·고정 toolchain·WASM 빌드·프로덕션 빌드 포함.
+  빌드는 기존 chunk >500 kB advisory를 출력했다. 별도 UI E2E·bundle 예산·
+  실장비 성능 측정은 이 단위에서 실행하지 않았다.
+- M13 DoD 2는 ADR 0020의 국소 IK/fixture 범위에서 통과했다. DoD 3–8은
+  미완료이며 전역 수렴·최적 branch·산업용 검증 도구와 동등한 정확도를 주장하지 않는다.
+- 남은 범위: 전역 다해 후보/비용 기반 선택, 회전 특이점·rewind 진단,
+  5축 충돌·희소 복셀 제거·lesson, G-code IR·Worker/WASM/UI 연결.
+  실장비 성능 재측정이 필요한 기존 지문 불일치와 승인된 P2도 그대로 남아 있다.
+
+## 2026-09-24 M13 회전축 FK·Golden Pose·Rust/TypeScript 동등성
+
+- 요청 순서대로 직전 계약 변경 6개 파일을 `8bf2272`로 커밋하고
+  `origin/codex/m13-machine-plugin`에 푸시했다. 그 후 이 FK 단위를 구현했다.
+  FK 단위는 아직 미커밋이며 PR 생성·병합·공개 배포는 하지 않았다.
+- TypeScript `FiveAxisKinematics`는 점·방향 Rodrigues 회전, Rust는 rigid matrix
+  합성으로 독립 구현했다. parent frame pivot, 비영점 home, root→leaf 순서,
+  tool/workpiece 장착 좌표 및 workpiece inverse 변환을 적용한다.
+- Rust에 plugin/state 계약을 추가하고 기존 domain의 수치 검증을 재사용했다.
+  각 생성자는 자체 검증된 복사본을 소유하고 잘못된 구조·단위·축 한계·capability와
+  finite 입력의 중간 overflow를 거부한다. 기존 3축 코어·CLI 분기는 유지했다.
+- 세 구조 각각 home/양·음 회전/C 단독/공구 offset과 공작물 Euler 장착,
+  비영점 home, 대각 회전축, 테이블 선형축 배치를 포함하는 Golden 19개를 고정했다.
+  기대값은 구현 결과에서 생성하지 않았고 fixture README에 손계산 근거를 기록했다.
+- 위치 Euclidean 오차 <=1e-9 mm, 공구축 방향 각도 <=1e-9 rad,
+  방향 길이 오차 <=1e-12를 TypeScript·Rust 각각 Golden 및 상호 비교로 통과했다.
+  고정 seed 0x13002409의 구조별 임의 100개+min/max 2개, 총 306개도 통과했다.
+  100회 반복과 별도 Rust 프로세스의 JSON 바이트 재현성을 확인했다.
+- 검증: `pnpm verify` 전체 통과(unit 364/contracts 94/parity 75, lint·타입·
+  모듈 경계·WASM 빌드·프로덕션 빌드 포함), Rust fmt/clippy(`-D warnings`)/
+  workspace test 통과. 신규 FK unit 21개와 native parity 6개 포함.
+  clippy가 찾은 불필요한 변환 2곳과 CLI enum 크기 경고는 변환 제거·Box로 수정했고,
+  최종 CLI 수정 후 5축 parity 6개도 재통과했다. 기준/테스트를 완화하지 않았다.
+- 빌드는 chunk 크기 advisory, Windows native WASM DLL linker의 라이브러리 생성
+  안내 경고를 출력했지만 성공했다. 별도 bundle/E2E/실장비 성능 측정은 실행하지 않았다.
+- M13 DoD 1(세 구조 Golden FK)은 위 fixture 범위에서 통과했다. DoD 2–8은
+  아직 미완료다. FK 출력은 공구 끝점과 홀더 방향이며 축 주위 roll은 포함하지 않는다.
+  5축 Worker/WASM 연결, G-code 회전축 실행, IK/TCP 보정, 특이점·rewind,
+  충돌·제거·lesson·UI 지원을 구현한 것으로 해석하지 않는다.
+- 소스 변경 후 M12 기준 장비 증거의 지문은 계속 유효하지 않다. 새 릴리스 전
+  재측정이 필요하며 승인된 기존 P2와 과거 실패 증거를 유지한다.
 
 ## 2026-09-24 M13 첫 단위 — 머신 플러그인 계약
 
 - 사용자 M13 진행 요청에 따라 `main`에서 `codex/m13-machine-plugin`을 생성했다.
-  기존 stash는 보존했으며 커밋·푸시·병합·공개 배포는 하지 않았다.
+  기존 stash는 보존했다. 첫 단위 검증 당시에는 미커밋이었으며, 이후 커밋·푸시는 위 절에 기록했다.
 - ADR 0019에 데이터 전용 플러그인 버전, 좌표·장착 변환, 모드/TCP 선언 및
   비범위를 고정했다. 기존 MachineDefinition/linear/rotary schema를 재사용하고
   M4의 3축 구현 및 프로젝트/Worker schema 1은 유지한다.

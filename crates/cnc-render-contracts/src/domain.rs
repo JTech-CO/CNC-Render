@@ -1007,7 +1007,7 @@ impl Project {
     }
 }
 
-fn validate_machine(machine: &MachineDefinition, path: &str) -> ContractResult<()> {
+pub(crate) fn validate_machine(machine: &MachineDefinition, path: &str) -> ContractResult<()> {
     validate_schema_version(machine.schema_version, &field(path, "schemaVersion"))?;
     validate_uuid(&machine.id, &field(path, "id"))?;
     validate_text(&machine.name, 1, 128, &field(path, "name"))?;
@@ -1570,13 +1570,13 @@ pub(crate) fn validate_lower_hex(
     }
 }
 
-fn validate_vec3(value: &Vec3Mm, path: &str) -> ContractResult<()> {
+pub(crate) fn validate_vec3(value: &Vec3Mm, path: &str) -> ContractResult<()> {
     validate_finite(value.x_mm, &field(path, "xMm"))?;
     validate_finite(value.y_mm, &field(path, "yMm"))?;
     validate_finite(value.z_mm, &field(path, "zMm"))
 }
 
-fn validate_direction(value: &DirectionUnit, path: &str) -> ContractResult<()> {
+pub(crate) fn validate_direction(value: &DirectionUnit, path: &str) -> ContractResult<()> {
     validate_finite(value.x, &field(path, "x"))?;
     validate_finite(value.y, &field(path, "y"))?;
     validate_finite(value.z, &field(path, "z"))?;
@@ -1598,7 +1598,7 @@ fn validate_rotation(value: &RotationRad, path: &str) -> ContractResult<()> {
     validate_finite(value.z_rad, &field(path, "zRad"))
 }
 
-fn validate_transform(value: &Transform, path: &str) -> ContractResult<()> {
+pub(crate) fn validate_transform(value: &Transform, path: &str) -> ContractResult<()> {
     validate_vec3(&value.position_mm, &field(path, "positionMm"))?;
     validate_rotation(&value.rotation_rad, &field(path, "rotationRad"))
 }

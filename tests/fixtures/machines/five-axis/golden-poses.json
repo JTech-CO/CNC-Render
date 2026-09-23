@@ -1,0 +1,26 @@
+{
+  "fixtureVersion": 1,
+  "positionToleranceMm": 1e-9,
+  "orientationToleranceRad": 1e-9,
+  "poses": [
+    { "id": "tt-home", "architecture": "table-table", "positions": [0,0,0,0,0], "point": [0,0,-220], "direction": [0,0,1] },
+    { "id": "ht-home", "architecture": "head-table", "positions": [0,0,0,0,0], "point": [0,0,-220], "direction": [0,0,1] },
+    { "id": "hh-home", "architecture": "head-head", "positions": [0,0,0,0,0], "point": [0,0,-220], "direction": [0,0,1] },
+    { "id": "tt-ac-positive", "architecture": "table-table", "positions": [10,20,30,1.5707963267948966,1.5707963267948966], "point": [-190,-10,-20], "direction": [1,0,0] },
+    { "id": "ht-ac-positive", "architecture": "head-table", "positions": [10,20,30,1.5707963267948966,1.5707963267948966], "point": [240,-10,30], "direction": [-1,0,0] },
+    { "id": "hh-ac-positive", "architecture": "head-head", "positions": [10,20,30,1.5707963267948966,1.5707963267948966], "point": [10,240,30], "direction": [0,-1,0] },
+    { "id": "tt-ac-negative", "architecture": "table-table", "positions": [10,20,30,-1.5707963267948966,-1.5707963267948966], "point": [-190,10,20], "direction": [1,0,0] },
+    { "id": "ht-ac-negative", "architecture": "head-table", "positions": [10,20,30,-1.5707963267948966,-1.5707963267948966], "point": [200,10,30], "direction": [-1,0,0] },
+    { "id": "hh-ac-negative", "architecture": "head-head", "positions": [10,20,30,-1.5707963267948966,-1.5707963267948966], "point": [10,-200,30], "direction": [0,1,0] },
+    { "id": "tt-c-positive", "architecture": "table-table", "positions": [10,20,30,0,1.5707963267948966], "point": [20,-10,-190], "direction": [0,0,1] },
+    { "id": "ht-c-positive", "architecture": "head-table", "positions": [10,20,30,0,1.5707963267948966], "point": [20,-10,-190], "direction": [0,0,1] },
+    { "id": "hh-c-positive", "architecture": "head-head", "positions": [10,20,30,0,1.5707963267948966], "point": [10,20,-190], "direction": [0,0,1] },
+    { "id": "tt-offset", "architecture": "table-table", "variant": "offset", "positions": [10,20,30,1.5707963267948966,1.5707963267948966], "point": [-190,-50,-20], "direction": [1,0,0] },
+    { "id": "ht-offset", "architecture": "head-table", "variant": "offset", "positions": [10,20,30,1.5707963267948966,1.5707963267948966], "point": [240,-50,30], "direction": [-1,0,0] },
+    { "id": "hh-offset", "architecture": "head-head", "variant": "offset", "positions": [10,20,30,1.5707963267948966,1.5707963267948966], "point": [10,240,70], "direction": [0,-1,0] },
+    { "id": "workpiece-euler", "architecture": "head-head", "variant": "mount-rotation", "positions": [0,0,0,0,0], "point": [220,0,0], "direction": [-1,0,0] },
+    { "id": "nonzero-home", "architecture": "head-table", "variant": "home", "positions": [10,20,30,1.5707963267948966,1.5707963267948966], "point": [0,0,-220], "direction": [0,0,1] },
+    { "id": "diagonal-axis", "architecture": "head-head", "variant": "diagonal", "positions": [0,0,0,3.141592653589793,0], "point": [0,40,220], "direction": [0,0,-1] },
+    { "id": "linear-table", "architecture": "table-table", "variant": "linear-table", "positions": [10,20,30,1.5707963267948966,1.5707963267948966], "point": [-250,10,20], "direction": [1,0,0] }
+  ]
+}

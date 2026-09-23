@@ -69,6 +69,21 @@ export const MachinePluginSchema = z.strictObject({
 export type MachinePlugin = z.infer<typeof MachinePluginSchema>;
 export type FiveAxisMode = z.infer<typeof FiveAxisModeSchema>;
 
+/** Workpiece coordinates; tool-axis roll is intentionally not part of the task. */
+export const FiveAxisTargetSchema = z.strictObject({
+  tcpPositionMm: Vec3MmSchema,
+  toolAxisUnit: DirectionUnitSchema,
+});
+export type FiveAxisTarget = z.infer<typeof FiveAxisTargetSchema>;
+export type MachinePluginState = z.infer<ReturnType<typeof createMachinePluginStateSchema>>;
+
+export const SolutionWeightsSchema = z.strictObject({
+  axisTravel: z.number().int().min(0).max(1000),
+  limitPenalty: z.number().int().min(0).max(1000),
+  singularityRisk: z.number().int().min(0).max(1000),
+}).refine((w) => w.axisTravel + w.limitPenalty + w.singularityRisk > 0, "at least one weight must be positive");
+export type SolutionWeights = z.infer<typeof SolutionWeightsSchema>;
+
 export const MachineAxisPositionSchema = z.discriminatedUnion("kind", [
   z.strictObject({ axisId: UuidSchema, kind: z.literal("linear"), positionMm: FiniteNumberSchema }),
   z.strictObject({ axisId: UuidSchema, kind: z.literal("rotary"), positionRad: FiniteNumberSchema }),
