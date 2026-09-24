@@ -1,11 +1,48 @@
 ﻿# CNC Render Progress
 
-- Current phase: M13 3+2축·동시 5축 확장 — 다해 후보·비용 기반 결정론적 해 선택
-- Status: in progress — bounded 후보/비용 선택 단위 완료; M13 전체 DoD 미완료
-- Last completed: verify(unit 400/contracts 94/parity 87)·프로덕션 빌드 및 Rust fmt/clippy/test 통과
-- Next task: 회전 특이점·축 한계·급격한 자세 변화 진단 및 rewind
+- Current phase: M13 3+2축·동시 5축 확장 — 특이점·자세 급변 진단과 rewind 계획
+- Status: in progress — 표본 기반 수치 진단/비실행형 rewind 계획 단위 완료; M13 전체 DoD 미완료
+- Last completed: 표준 verify·빌드·Rust 검사 통과, 추가 사례 후 unit 414/contracts 94/parity 94 검증
+- Next task: 5축 기계 링크·홀더·스핀들·테이블·공작물·고정구 충돌 Fixture
 - Open questions: 5축 제거 Precision 체적·잔삭 허용 기준은 해당 구현 단위에서 승인·고정 필요
 - Known regressions: 과거 LCP 6273.8 ms 1회 초과는 원인 미확정인 승인된 P2. 해결됨으로 닫지 않으며 2.5초 기준·실패 증거를 유지
+
+## 2026-09-24 M13 특이점·자세 급변 진단과 rewind 계획
+
+- `codex/m13-machine-plugin`의 de39bf6 위에서 구현했다. 사용자 요청대로
+  이번 단위는 로컬 검증 후 커밋/푸시하며 PR·병합·Pages 배포는 수행하지 않는다.
+- ADR 0022에 policyVersion 1을 고정했다. `FiveAxisMotionGuard`가 전이의
+  축 한계/한계 접근, 방향 Jacobian 특이점/근접, 공구 방향 급변, 회전축의 큰
+  unwrapped 이동, rewind 검토 필요를 명시적인 code/axisId/sampleIndex로 반환한다.
+  축 선형 보간은 회전 이동량 합 기준 1도 이하 간격, 최대 720구간/721표본이다.
+  수치 실패·샘플 예산 초과를 clear로 처리하지 않는다. 표본 사이 연속 안전이나
+  속도/가속도 제한을 검증했다는 뜻은 아니다.
+- 양 끝은 정규 자세지만 중간에 극점이 있는 경우, ±π 경계의 작은 방향 변화에
+  숨겨진 큰 축 이동, 한계 접근/이탈, 선형/회전축 inclusive 한계를 검증했다.
+  경고 임계값은 교육용 고정 정책이며 기계별 산업용 인증 기준이 아니다.
+- Rewind는 선택한 회전축의 향후 진행 방향 반대로 2π를 되감는다. 명시적인
+  후퇴 거리 요청으로 stop → retract → TCP 보정 회전 72개 표본 → return의
+  75개 비절삭 step을 생성한다. 양 모드/양방향/세 구조 및 두 번째 회전축을 검사했다.
+  원래 자세 복귀와 모든 TCP 회전 표본은 위치 <=1e-9 mm·방향 <=1e-9 rad
+  수치 기준을 유지한다. 독립 90도 중간 자세 손계산 기대값도 통과했다.
+- 후퇴/중간 회전 축 한계 또는 수치 실패 시 부분 경로 없이 빈 failed 결과다.
+  계획 생성 성공도 executionAllowed=false, review-required이며 충돌 상태는
+  not-evaluated다. 특이점 진단은 유지한다. 충돌 검증된 clearance나 실제 제어
+  명령을 생성했다고 표현하지 않으며 실행 API/Worker/WASM/UI 연결은 아직 없다.
+- 신규 unit 14개/native parity 7개 통과. code/axis/sampleIndex 일치, 유한
+  수치 오차, 입력 비변경/배열 재배열, 100회 native 반복과 별도 프로세스를 검사했다.
+- `pnpm verify` 통과: unit 411/contracts 94/parity 94, 타입/lint/모듈 경계,
+  고정 toolchain, WASM/프로덕션 빌드 포함. 이후 추가한 두 번째 회전축 사례를
+  포함해 타입 검사·전체 unit 414개·진단 parity 7개를 다시 실행해 통과했다.
+  Rust fmt check/clippy(-D warnings)/workspace test도 통과했다.
+  빌드는 기존 500 kB chunk advisory, plugin timing 안내 및 Windows DLL linker
+  정보 warning을 출력했다. 성능 기준을 바꾸지 않았고 별도 UI E2E/bundle 예산/실장비
+  재측정/원격 CI 완료는 주장하지 않는다.
+- 기준 장비 증거 검사는 기존과 같이 `runtime changed; remeasure on the
+  approved reference host`로 실패한다. 재측정 필요와 과거 P2 기록은 유지한다.
+- M13 DoD 4의 표본 기반 core 진단/rewind Fixture 범위는 통과했다.
+  UI E2E와 실제 실행 연결은 미완료다. 다음은 DoD 5의 5축 충돌이며, 이후
+  승인된 Precision 기준의 희소 복셀 제거·대표 lesson·전체 실행 연결이 남았다.
 
 ## 2026-09-24 M13 다해 후보·비용 기반 결정론적 해 선택
 

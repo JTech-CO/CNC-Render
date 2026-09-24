@@ -50,6 +50,31 @@ pub struct FiveAxisTarget {
     pub tool_axis_unit: DirectionUnit,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RewindDirection {
+    Positive,
+    Negative,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RewindRequest {
+    pub axis_id: String,
+    pub direction: RewindDirection,
+    pub retract_distance_mm: f64,
+}
+impl ContractValidate for RewindRequest {
+    fn validate(&self) -> ContractResult<()> {
+        domain::validate_uuid(&self.axis_id, "$.axisId")?;
+        require(
+            self.retract_distance_mm.is_finite()
+                && self.retract_distance_mm > 0.0
+                && self.retract_distance_mm <= 500.0,
+            "retract distance must be in (0,500] mm",
+        )
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SolutionWeights {

@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 
 pub mod five_axis;
+pub mod five_axis_diagnostics;
 pub mod five_axis_inverse;
 pub mod five_axis_selection;
 pub mod material_removal;

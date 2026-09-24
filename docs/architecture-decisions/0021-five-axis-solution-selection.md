@@ -4,6 +4,9 @@
 - 날짜: 2026-09-24
 - 참조: ADR 0019/0020, 기술 백서 §4.5.3, QA harness M13 DoD 3
 
+후속: 표본 기반 특이점/자세 급변 진단과 비실행형 rewind 계획은 ADR 0022를 참조한다.
+기존 비용 정책과 이 문서의 선택기 범위는 변경하지 않는다.
+
 ## 탐색 범위와 계약
 
 `FiveAxisSolutionSelector.select(target, reference, weights)`는 기존 FK/국소 IK 위의

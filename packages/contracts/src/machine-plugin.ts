@@ -84,6 +84,14 @@ export const SolutionWeightsSchema = z.strictObject({
 }).refine((w) => w.axisTravel + w.limitPenalty + w.singularityRisk > 0, "at least one weight must be positive");
 export type SolutionWeights = z.infer<typeof SolutionWeightsSchema>;
 
+/** Requested future rotation direction; rewind takes one full turn in the opposite direction. */
+export const RewindRequestSchema = z.strictObject({
+  axisId: UuidSchema,
+  direction: z.enum(["positive", "negative"]),
+  retractDistanceMm: FiniteNumberSchema.refine((v) => v > 0 && v <= 500, "retract distance must be in (0,500] mm"),
+});
+export type RewindRequest = z.infer<typeof RewindRequestSchema>;
+
 export const MachineAxisPositionSchema = z.discriminatedUnion("kind", [
   z.strictObject({ axisId: UuidSchema, kind: z.literal("linear"), positionMm: FiniteNumberSchema }),
   z.strictObject({ axisId: UuidSchema, kind: z.literal("rotary"), positionRad: FiniteNumberSchema }),

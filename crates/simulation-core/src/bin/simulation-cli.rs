@@ -28,12 +28,71 @@ struct PoseRequest {
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
 enum CliRequest {
+    FiveAxisGuard(Box<FiveAxisGuardRequest>),
     FiveAxisSelect(Box<FiveAxisSelectRequest>),
     FiveAxisInverse(Box<FiveAxisInverseRequest>),
     FiveAxis(Box<FiveAxisRequest>),
     StockHash(StockHashRequest),
     LatheProfile(LatheProfileRequest),
     Poses(PoseRequest),
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct FiveAxisGuardRequest {
+    request_type: FiveAxisGuardRequestType,
+    plugin: cnc_render_contracts::machine_plugin::MachinePlugin,
+    operation: GuardOperation,
+    repetitions: u32,
+}
+#[derive(Debug, Deserialize)]
+enum FiveAxisGuardRequestType {
+    #[serde(rename = "five-axis-guard")]
+    Guard,
+}
+#[derive(Debug, Deserialize)]
+#[serde(tag = "kind", rename_all = "lowercase", deny_unknown_fields)]
+enum GuardOperation {
+    Transition {
+        from: cnc_render_contracts::machine_plugin::MachinePluginState,
+        to: cnc_render_contracts::machine_plugin::MachinePluginState,
+    },
+    Rewind {
+        reference: cnc_render_contracts::machine_plugin::MachinePluginState,
+        request: cnc_render_contracts::machine_plugin::RewindRequest,
+    },
+}
+fn execute_five_axis_guard(request: FiveAxisGuardRequest) -> Result<serde_json::Value, String> {
+    let _ = request.request_type;
+    if !(1..=100).contains(&request.repetitions) {
+        return Err("five-axis guard request bounds exceeded".into());
+    }
+    let guard =
+        cnc_render_simulation_core::five_axis_diagnostics::FiveAxisMotionGuard::new(request.plugin)
+            .map_err(|e| e.to_string())?;
+    let evaluate = || -> Result<serde_json::Value, String> {
+        match &request.operation {
+            GuardOperation::Transition { from, to } => serde_json::to_value(
+                guard
+                    .analyze_transition(from, to)
+                    .map_err(|e| e.to_string())?,
+            )
+            .map_err(|e| e.to_string()),
+            GuardOperation::Rewind { reference, request } => serde_json::to_value(
+                guard
+                    .plan_rewind(reference, request)
+                    .map_err(|e| e.to_string())?,
+            )
+            .map_err(|e| e.to_string()),
+        }
+    };
+    let result = evaluate()?;
+    let bytes = serde_json::to_vec(&result).map_err(|e| e.to_string())?;
+    let mut stable = true;
+    for _ in 1..request.repetitions {
+        stable &= serde_json::to_vec(&evaluate()?).map_err(|e| e.to_string())? == bytes;
+    }
+    Ok(serde_json::json!({ "stable": stable,"result": result }))
 }
 
 #[derive(Debug, Deserialize)]
@@ -441,6 +500,9 @@ fn run() -> Result<(), String> {
     let request = serde_json::from_str::<CliRequest>(&input)
         .map_err(|error| format!("invalid request JSON: {error}"))?;
     let output = match request {
+        CliRequest::FiveAxisGuard(request) => {
+            serde_json::to_string(&execute_five_axis_guard(*request)?)
+        }
         CliRequest::FiveAxisSelect(request) => {
             serde_json::to_string(&execute_five_axis_select(*request)?)
         }

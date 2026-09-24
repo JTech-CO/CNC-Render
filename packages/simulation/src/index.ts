@@ -12,6 +12,7 @@ export * from "./kinematics";
 export * from "./kinematics-5axis";
 export * from "./kinematics-5axis-inverse";
 export * from "./kinematics-5axis-selection";
+export * from "./kinematics-5axis-diagnostics";
 export * from "./material-removal-demo";
 export * from "./material-removal-milling";
 export * from "./milling-target-measurement";
